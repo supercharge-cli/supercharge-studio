@@ -7,3 +7,5 @@ coverage/
 .DS_Store
 *.tsbuildinfo
 node_modules/.cache/
+test-results/
+playwright-report/

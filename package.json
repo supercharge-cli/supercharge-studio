@@ -13,7 +13,10 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "smoke": "vite-node scripts/smoke.ts"
+    "smoke": "vite-node scripts/smoke.ts",
+    "fake-agent": "vite-node scripts/fake-agent.ts --",
+    "e2e": "playwright test",
+    "live": "vite-node scripts/live.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.3",
@@ -21,6 +24,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@tauri-apps/cli": "^2.12.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
