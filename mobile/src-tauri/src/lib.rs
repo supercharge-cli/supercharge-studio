@@ -1,9 +1,10 @@
 //! Supercharge Studio mobile companion. All logic lives in the shared web UI
-//! (src/mobile); the native side is a plain webview shell.
+//! (src/mobile); the native side only adds QR scanning.
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .run(tauri::generate_context!())
-        .expect("error while running Supercharge Studio mobile");
+    let builder = tauri::Builder::default();
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+    builder.run(tauri::generate_context!()).expect("error while running Supercharge Studio mobile");
 }
