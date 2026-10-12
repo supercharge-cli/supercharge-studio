@@ -20,6 +20,15 @@ const P: Record<string, string> = {
   bolt: "M13 2 3 14h9l-1 8 10-12h-9Z",
   refresh: "M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5",
   check: "M20 6 9 17l-5-5",
+  plug: "M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0ZM12 18v4",
+  server: "M3 4h18v6H3zM3 14h18v6H3zM7 7h.01M7 17h.01",
+  phone: "M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1ZM11 18h2",
+  chart: "M3 3v18h18M8 17V11M13 17V7M18 17v-4",
+  search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM21 21l-4.3-4.3",
+  command: "M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3Z",
+  file: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8ZM14 2v6h6",
+  qr: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM18 18h3v3h-3z",
+  arrowLeft: "M19 12H5M12 19l-7-7 7-7",
 };
 
 export function Icon({ name, size = 16, title }: { name: keyof typeof P | string; size?: number; title?: string }) {

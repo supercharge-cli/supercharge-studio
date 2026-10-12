@@ -11,6 +11,8 @@ type Props = {
   onNewChat: (projectId: string) => void;
   onTree: (a: TreeAction) => void;
   onSettings: () => void;
+  onUsage?: () => void;
+  onPalette?: () => void;
 };
 
 /** Inline text input: Enter commits, Escape / blur cancels. */
@@ -60,6 +62,7 @@ export function Sidebar(p: Props) {
     return (
       <aside className="sidebar collapsed">
         <button className="icon" title="Expand sidebar" data-testid="expand-sidebar" onClick={p.onToggle}><Icon name="panelLeft" size={18} /></button>
+        <button className="icon" title="Usage" onClick={p.onUsage}><Icon name="chart" size={18} /></button>
         <button className="icon" title="Settings" onClick={p.onSettings}><Icon name="settings" size={18} /></button>
       </aside>
     );
@@ -130,7 +133,11 @@ export function Sidebar(p: Props) {
         {ed?.kind === "newGroup" && <Inline placeholder="Group name" onDone={(v) => (v && p.onTree({ type: "addGroup", name: v }), setEd(null))} />}
       </nav>
       <div className="side-foot">
-        <button className="secondary" data-testid="open-settings" onClick={p.onSettings}><Icon name="settings" /> Settings</button>
+        <button className="side-search" data-testid="open-palette" onClick={p.onPalette} title="Command palette"><Icon name="search" size={14} /><span>Search & commands</span><kbd>Ctrl K</kbd></button>
+        <div className="side-foot-row">
+          <button className="secondary" data-testid="open-usage" onClick={p.onUsage}><Icon name="chart" /> Usage</button>
+          <button className="secondary" data-testid="open-settings" onClick={p.onSettings}><Icon name="settings" /> Settings</button>
+        </div>
       </div>
     </aside>
   );

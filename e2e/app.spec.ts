@@ -34,7 +34,7 @@ test("renders tool cards and the tools panel", async ({ page }) => {
   const card = page.locator(".messages .toolcard");
   await expect(card).toHaveClass(/completed/);
   await expect(card).toContainText("Run ls -la");
-  await card.locator("summary").click();
+  await card.locator(".tc-summary").click();
   await expect(card).toContainText("README.md");
   await page.getByRole("button", { name: /Tools \(1\)/ }).click();
   await expect(page.locator(".toollist .toolcard")).toContainText("Run ls -la");
@@ -106,7 +106,7 @@ test("slash menu and settings", async ({ page }) => {
   await expect(page.locator(".composer textarea")).toHaveValue("/setup ");
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-agent").click();
-  await expect(page.locator(".modal")).toContainText("supercharge/demo");
+  await expect(page.getByTestId("settings-screen")).toContainText("supercharge/demo");
   await page.getByTestId("tab-appearance").click();
   await page.getByTestId("theme-light").click();
   await page.getByTestId("tab-providers").click();
@@ -150,4 +150,65 @@ test("unsupported model shows a clear hint", async ({ page }) => {
   await boot(page);
   await ask(page, "modelfail");
   await expect(page.locator(".bubble.system").last()).toContainText("not available from your provider");
+});
+
+test("command palette: search and run commands with the keyboard", async ({ page }) => {
+  await boot(page);
+  await ask(page, "hello palette");
+  await expect(page.locator(".bubble.agent").last()).toHaveText("echo: hello palette");
+  await page.keyboard.press("Control+k");
+  await expect(page.getByTestId("palette")).toBeVisible();
+  await page.getByTestId("palette-input").fill("usage");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("usage-screen")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".composer textarea")).toBeVisible();
+  await page.keyboard.press("Control+k");
+  await page.getByTestId("palette-input").fill("new chat");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".empty h2")).toContainText("Start a chat");
+  await page.keyboard.press("Control+,");
+  await expect(page.getByTestId("settings-screen")).toBeVisible();
+  await page.getByTestId("tab-devices").click();
+  await expect(page.getByTestId("settings-screen")).toContainText("desktop app");
+});
+
+test("usage screen aggregates tokens and estimates cost from editable pricing", async ({ page }) => {
+  await boot(page);
+  await ask(page, "count me");
+  await expect(page.locator(".bubble.agent").last()).toHaveText("echo: count me");
+  await ask(page, "and again");
+  await expect(page.locator(".bubble.agent").last()).toHaveText("echo: and again");
+  await page.getByTestId("open-usage").click();
+  await expect(page.getByTestId("stat-input")).toHaveText("2.4k"); // turn report counted once per turn
+  await expect(page.getByTestId("stat-output")).toHaveText("600");
+  await expect(page.locator(".tbl").first()).toContainText("fake-model");
+  await page.getByTestId("price-input").fill("10");
+  await page.getByTestId("price-output").fill("100");
+  // (2400-400 cached billed at input when no cached price) ... all input at $10/M + 600 out at $100/M
+  await expect(page.getByTestId("stat-cost")).toHaveText("$0.08");
+  await page.getByTestId("period-month").click();
+  await expect(page.getByTestId("stat-input")).toHaveText("2.4k");
+  await expect(page.locator(".chart svg")).toBeVisible();
+});
+
+test("diff tool cards render added/removed lines and collapse", async ({ page }) => {
+  await boot(page);
+  await ask(page, "edit file");
+  const card = page.locator(".messages .toolcard").first();
+  await expect(card.getByTestId("diff")).toBeVisible();
+  await expect(card.locator(".tc-diffstat")).toHaveText("+3 −2");
+  await expect(card.locator(".dl.add").first()).toContainText("const b = 3;");
+  await card.locator(".tc-summary").click();
+  await expect(card).not.toHaveClass(/open/);
+});
+
+test("long chats are virtualized and stay pinned to the bottom", async ({ page }) => {
+  await boot(page);
+  await ask(page, "long run");
+  await expect(page.locator(".messages")).toHaveAttribute("data-virtual", "true");
+  await expect(page.locator(".bubble.agent").last()).toHaveText("line 299");
+  expect(await page.locator(".row-wrap").count()).toBeLessThan(150);
+  const atBottom = await page.locator(".messages").evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 80);
+  expect(atBottom).toBe(true);
 });

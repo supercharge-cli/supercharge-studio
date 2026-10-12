@@ -39,7 +39,7 @@ pub fn tools() -> Value {
           "inputSchema": obj(json!({ "url": { "type": "string" } }), &["url"]) },
         { "name": "browser_snapshot", "description": "Read the current page: URL, title, visible text and interactive elements with numeric refs.",
           "inputSchema": obj(json!({}), &[]) },
-        { "name": "browser_screenshot", "description": "PNG screenshot of the visible side browser.",
+        { "name": "browser_screenshot", "description": "Screenshot (image) of the visible side browser, max 1280px. Use it to check visual details such as colors, layout and images.",
           "inputSchema": obj(json!({}), &[]) },
         { "name": "browser_click", "description": "Click an element by ref (from browser_snapshot) or CSS selector.",
           "inputSchema": obj(target.clone(), &[]) },

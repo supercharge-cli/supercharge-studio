@@ -154,8 +154,23 @@ wss.on("connection", (ws: WebSocket) => {
           if (report) writeFileSync(report, JSON.stringify(results, null, 2));
           say(sid, "```\n" + JSON.stringify(results, null, 1).slice(0, 1500) + "\n```");
         }
-        if (!/stream|tool|perm|slow|browser|modelfail/.test(text)) say(sid, `echo: ${text}`);
-        return reply({ stopReason: "end_turn" });
+        if (/edit/.test(text)) {
+          update(sid, {
+            sessionUpdate: "tool_call", toolCallId: "e1", title: "Edit src/app.ts", kind: "edit", status: "completed",
+            content: [{ type: "diff", path: "src/app.ts", oldText: "const a = 1;\nconst b = 2;\nexport { a, b };", newText: "const a = 1;\nconst b = 3;\nconst c = 4;\nexport { a, b, c };" }],
+          });
+          say(sid, "Edited.");
+        }
+        if (/long/.test(text)) {
+          for (let i = 0; i < 300; i++) {
+            update(sid, { sessionUpdate: i % 2 ? "agent_message_chunk" : "agent_thought_chunk", content: { type: "text", text: `line ${i}` } });
+          }
+        }
+        if (!/stream|tool|perm|slow|browser|modelfail|edit|long/.test(text)) say(sid, `echo: ${text}`);
+        // Usage as an extension notification (turn report) and on the prompt result.
+        const usage = { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 200, reasoningTokens: 50, modelCalls: 1, modelUsage: { "fake-model": { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 200, reasoningTokens: 50, modelCalls: 1 } } };
+        send({ method: "_supercharge/session/update", params: { sessionId: sid, update: { sessionUpdate: "turn_completed", prompt_id: `p${nextId++}`, stop_reason: "end_turn", usage } } });
+        return reply({ stopReason: "end_turn", usage });
       }
       default:
         if (m.id != null) send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });

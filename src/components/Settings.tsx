@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { ReactNode, useState } from "react";
 import type { ApiFormat, Provider, Settings as S } from "../lib/store";
 import { uid } from "../lib/store";
 import type { ConfigOption } from "../acp/types";
@@ -16,7 +16,18 @@ type Props = {
   onProviderKey: (id: string, key: string) => Promise<string>;
   /** Make a provider active and apply it to the agent. */
   onActivate: (p: Provider, all: Provider[]) => Promise<void>;
+  /** Extra section rendered under "Devices" (mobile pairing). */
+  devices?: ReactNode;
 };
+
+const SECTIONS = [
+  { id: "connection", label: "Connection", icon: "plug" },
+  { id: "providers", label: "Providers", icon: "server" },
+  { id: "appearance", label: "Appearance", icon: "sun" },
+  { id: "agent", label: "Agent", icon: "bolt" },
+  { id: "devices", label: "Devices", icon: "phone" },
+] as const;
+type Section = (typeof SECTIONS)[number]["id"];
 
 const FORMATS: { v: ApiFormat; label: string }[] = [
   { v: "responses", label: "Responses" },
@@ -55,27 +66,32 @@ function ProviderEditor({ p, desktop, onChange, onKey, onRemove }: { p: Provider
   );
 }
 
-export function SettingsModal(props: Props) {
+export function SettingsScreen(props: Props & { initial?: Section }) {
   const { value, configOptions, extensions, desktop, onSave, onConfig, onClose } = props;
   const [s, set] = useState<S>({ ...value, providers: value.providers ?? [] });
-  const [tab, setTab] = useState<"connection" | "providers" | "appearance" | "agent">("connection");
+  const [tab, setTab] = useState<Section>(props.initial ?? "connection");
   const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
   const providers = s.providers ?? [];
   const setProviders = (ps: Provider[]) => set({ ...s, providers: ps });
 
   return (
-    <div className="modal-bg" onClick={onClose}>
-      <div className="modal wide" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Settings">
-        <div className="modal-head">
-          <h3>Settings</h3>
-          <button className="icon" onClick={onClose} title="Close"><Icon name="x" /></button>
-        </div>
-        <div className="seg">
-          {(["connection", "providers", "appearance", "agent"] as const).map((t) => (
-            <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)} data-testid={`tab-${t}`}>{t[0].toUpperCase() + t.slice(1)}</button>
-          ))}
-        </div>
+    <div className="screen settings-screen" role="region" aria-label="Settings" data-testid="settings-screen">
+      <nav className="screen-nav">
+        <div className="screen-nav-title">Settings</div>
+        {SECTIONS.map((t) => (
+          <button key={t.id} className={tab === t.id ? "on" : ""} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}>
+            <Icon name={t.icon} /> {t.label}
+          </button>
+        ))}
+      </nav>
+      <div className="screen-main">
+        <header className="screen-head">
+          <h2>{SECTIONS.find((x) => x.id === tab)?.label}</h2>
+          <div className="spacer" />
+          <button className="icon" onClick={onClose} title="Close (Esc)"><Icon name="x" /></button>
+        </header>
+        <div className="screen-body section-anim" key={tab}>
 
         {tab === "connection" && (
           <div className="stack">
@@ -171,10 +187,14 @@ export function SettingsModal(props: Props) {
           </div>
         )}
 
-        <div className="row end">
-          <button className="secondary" onClick={onClose}>Cancel</button>
-          <button onClick={() => onSave(s)} data-testid="settings-save">Save & reconnect</button>
+        {tab === "devices" && <div className="stack">{props.devices ?? <p className="muted">Pairing needs the desktop app.</p>}</div>}
         </div>
+        {tab !== "devices" && (
+          <footer className="screen-foot">
+            <button className="secondary" onClick={onClose}>Cancel</button>
+            <button onClick={() => onSave(s)} data-testid="settings-save">Save & reconnect</button>
+          </footer>
+        )}
       </div>
     </div>
   );

@@ -99,12 +99,26 @@ export class BrowserController {
     return out.value;
   }
 
-  /** Native PNG capture; falls back to a text snapshot when unavailable. */
-  async screenshot(): Promise<{ mimeType: string; data: string } | { fallback: "snapshot"; error: string; [k: string]: unknown }> {
+  /** Wait (briefly) until the page finished loading, so captures are not blank. */
+  async settle(timeoutMs = 4000) {
+    const end = Date.now() + timeoutMs;
+    while (Date.now() < end) {
+      const st = await this.evaluate("document.readyState").catch(() => "loading");
+      if (st === "complete") break;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    await new Promise((r) => setTimeout(r, 120)); // one more paint
+  }
+
+  /** Native capture of the visible area, normalized for vision models; falls back to a text snapshot. */
+  async screenshot(): Promise<ScreenshotResult | { fallback: "snapshot"; error: string; [k: string]: unknown }> {
     try {
       if (!isDesktop()) throw new Error("Screenshots need the desktop app");
-      const data = await invoke<string>("browser_screenshot");
-      return { mimeType: "image/png", data };
+      await this.settle();
+      const png = await invoke<string>("browser_screenshot");
+      const img = await normalizeImage(png).catch(() => ({ mimeType: "image/png", data: png, width: 0, height: 0 }));
+      const meta = await this.evaluate("({ url: location.href, title: document.title })").catch(() => ({ url: this.url, title: "" }));
+      return { ...img, ...meta };
     } catch (e: any) {
       const snap = await this.evaluate("__sc.snapshot()").catch(() => ({}));
       return { fallback: "snapshot", error: String(e?.message ?? e), ...snap };
@@ -153,10 +167,7 @@ export class BrowserController {
       let result: any;
       try {
         const out = await this.run(name.replace(/^browser_/, ""), args);
-        result =
-          out && typeof out.data === "string" && out.mimeType
-            ? { content: [{ type: "image", data: out.data, mimeType: out.mimeType }] }
-            : { content: [{ type: "text", text: JSON.stringify(out) }] };
+        result = mcpContent(out);
       } catch (e: any) {
         result = { isError: true, content: [{ type: "text", text: String(e?.message ?? e) }] };
       }
@@ -171,6 +182,41 @@ export class BrowserController {
       client.handle(m, (p) => this.run(op, p));
     }
   }
+}
+
+export type ScreenshotResult = { mimeType: string; data: string; width: number; height: number; url?: string; title?: string };
+
+/** Longest side sent to the model; keeps text legible while staying small. */
+export const MAX_SIDE = 1280;
+const MAX_PNG_BYTES = 900_000;
+
+/** Fit within MAX_SIDE; keep PNG (sharp text) unless large, then use high-quality JPEG. */
+export async function normalizeImage(pngB64: string, maxSide = MAX_SIDE): Promise<ScreenshotResult> {
+  const img = new Image();
+  img.src = `data:image/png;base64,${pngB64}`;
+  await img.decode();
+  const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
+  if (scale === 1 && pngB64.length * 0.75 <= MAX_PNG_BYTES) return { mimeType: "image/png", data: pngB64, width: w, height: h };
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const g = c.getContext("2d")!;
+  g.imageSmoothingQuality = "high";
+  g.drawImage(img, 0, 0, w, h);
+  let url = c.toDataURL("image/png");
+  if (url.length * 0.75 > MAX_PNG_BYTES) url = c.toDataURL("image/jpeg", 0.88);
+  const [head, data] = url.split(",");
+  return { mimeType: head.slice(5, head.indexOf(";")), data, width: w, height: h };
+}
+
+/** MCP tool result: images become an image block plus a short caption. */
+export function mcpContent(out: any) {
+  if (out && typeof out.data === "string" && out.mimeType) {
+    const cap = `Screenshot of ${out.url ?? "the side browser"}${out.title ? ` ("${out.title}")` : ""}${out.width ? `, ${out.width}×${out.height}px` : ""}.`;
+    return { content: [{ type: "image", data: out.data, mimeType: out.mimeType }, { type: "text", text: cap }] };
+  }
+  return { content: [{ type: "text", text: JSON.stringify(out) }] };
 }
 
 export const browser = new BrowserController();
