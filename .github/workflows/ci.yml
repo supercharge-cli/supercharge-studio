@@ -22,6 +22,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - run: npm run build:mobile
 
   e2e:
     name: E2E (fake ACP agent + Chromium)
@@ -85,4 +86,65 @@ jobs:
             src-tauri/target/**/release/bundle/**/*.dmg
             src-tauri/target/**/release/bundle/**/*.msi
             src-tauri/target/**/release/bundle/**/*.exe
+          if-no-files-found: warn
+
+  android:
+    name: Android APK (debug)
+    needs: test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: mobile/src-tauri
+      - run: npm ci
+      - name: Build APK
+        working-directory: mobile
+        run: |
+          export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          npx tauri android build --debug --apk --target aarch64 x86_64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: supercharge-studio-android
+          path: mobile/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+
+  ios:
+    name: iOS (unsigned simulator build)
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim,aarch64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: mobile/src-tauri
+      - run: npm ci
+      - run: brew install xcodegen || true
+      - name: Generate Xcode project
+        working-directory: mobile
+        run: npx tauri ios init --ci
+      - name: Build for the simulator (no signing)
+        working-directory: mobile
+        run: npx tauri ios build --debug --target aarch64-sim --ci
+      - uses: actions/upload-artifact@v4
+        with:
+          name: supercharge-studio-ios-simulator
+          path: mobile/src-tauri/gen/apple/build/**/*.app
           if-no-files-found: warn
