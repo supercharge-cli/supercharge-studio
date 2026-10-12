@@ -31,3 +31,11 @@ describe("browser bridge over ACP", () => {
     expect(agent.received.find((m) => m.id === 78).error.message).toMatch(/desktop/);
   });
 });
+
+import { wrapScript } from "../src/browser/bridge";
+describe("page scripts", () => {
+  it("are valid JS expressions", () => {
+    for (const e of ["__sc.snapshot()", "(__sc.find({\"ref\":1,\"selector\":null}).click(), true)", "document.title"])
+      expect(() => new Function(`return ${wrapScript(e)};`)).not.toThrow();
+  });
+});

@@ -30,7 +30,7 @@ export type Bounds = { x: number; y: number; width: number; height: number };
 
 /** Page-side helpers, inlined into every evaluated script. */
 const HELPERS = `
-const __sc = window.__sc || (window.__sc = {
+(window.__sc = window.__sc || {
   find(a) {
     if (a.ref != null) { const el = document.querySelector('[data-sc-ref="' + a.ref + '"]'); if (el) return el; }
     if (a.selector) { const el = document.querySelector(a.selector); if (el) return el; }
@@ -48,7 +48,10 @@ const __sc = window.__sc || (window.__sc = {
     }
     return { url: location.href, title: document.title, text: (document.body.innerText || '').slice(0, 8000), elements: els };
   }
-});`;
+})`;
+
+/** Script sent to the page: installs helpers, then evaluates `expression`. */
+export const wrapScript = (expression: string) => `(${HELPERS.trim()}, (${expression}))`;
 
 export class BrowserController {
   url = "about:blank";
@@ -69,11 +72,15 @@ export class BrowserController {
     this.bounds = bounds;
     if (isDesktop()) await invoke("browser_set_bounds", { bounds }).catch(() => {});
   }
+  async setVisible(visible: boolean) {
+    if (isDesktop()) await invoke("browser_set_visible", { visible }).catch(() => {});
+  }
   async hide() {
     if (isDesktop()) await invoke("browser_close").catch(() => {});
   }
   async navigate(url: string) {
-    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+    url = url.trim();
+    if (!/^([a-z][a-z0-9+.-]*:\/\/|data:|about:)/i.test(url)) url = `https://${url}`;
     this.url = url;
     if (isDesktop()) {
       if (this.bounds) await invoke("browser_open", { url, bounds: this.bounds });
@@ -84,7 +91,7 @@ export class BrowserController {
   }
   async evaluate(expression: string): Promise<any> {
     if (!isDesktop()) throw new Error("Side browser control needs the desktop app");
-    const raw = await invoke<string>("browser_eval", { script: `(${HELPERS.trim()}, (${expression}))` });
+    const raw = await invoke<string>("browser_eval", { script: wrapScript(expression) });
     const out = JSON.parse(raw);
     if (!out.ok) throw new Error(out.error);
     return out.value;
