@@ -40,5 +40,5 @@ input,textarea,select{background:#0b0c0f;color:var(--fg);border:1px solid var(--
 input.inline{margin:3px 6px;width:calc(100% - 12px);padding:4px 7px}.danger-text{color:var(--bad)!important}
 select option{background:#15171c;color:var(--fg)}
 .modal .row.end{flex-wrap:wrap}.modal .row.end button{flex:1 1 auto}
-.topbar>*{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.topbar .muted{flex:0 1 auto}
+.topbar>*{flex:none;white-space:nowrap}.topbar>strong,.topbar>.muted{flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;min-width:0}
 select{appearance:none;-webkit-appearance:none;background:#0b0c0f url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238b93a3'/%3E%3C/svg%3E") no-repeat right 10px center;padding-right:26px}
