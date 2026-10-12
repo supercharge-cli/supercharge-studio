@@ -53,3 +53,17 @@ export const providerSeedFromEnv = (id: string) => invoke<ProviderDef | null>("p
 export const providerApply = (provider: ProviderDef) => invoke<string[]>("provider_apply", { provider });
 export const agentRestart = (bind: string, secret: string, alwaysApprove: boolean) =>
   invoke<string>("agent_restart", { bind, secret, alwaysApprove });
+
+// ---- Mobile gateway (see src-tauri/src/gateway.rs) ----
+export type GwDevice = { id: string; name: string; paired_at: number; last_seen: number };
+export type GwStatus = { running: boolean; url?: string | null; devices: GwDevice[]; connected: string[] };
+export type GwPairing = { uri: string; svg: string; expiresAt: number; pairingId: string };
+export const gateway = {
+  status: () => invoke<GwStatus>("gateway_status"),
+  start: (bind?: string) => invoke<string>("gateway_start", { bind }),
+  stop: () => invoke<void>("gateway_stop"),
+  pairBegin: (publicUrl?: string, desktopName?: string) => invoke<GwPairing>("gateway_pair_begin", { publicUrl, desktopName }),
+  pairAnswer: (pairingId: string, allow: boolean) => invoke<void>("gateway_pair_answer", { pairingId, allow }),
+  revoke: (deviceId: string) => invoke<void>("gateway_revoke", { deviceId }),
+  send: (deviceId: string, msg: unknown) => invoke<boolean>("gateway_send", { deviceId, msg }).catch(() => false),
+};
