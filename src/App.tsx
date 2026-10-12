@@ -7,6 +7,7 @@ import { browser, browserClientMeta } from "./browser/bridge";
 import { BrowserPanel } from "./components/BrowserPanel";
 import { Command, CommandPalette } from "./components/CommandPalette";
 import { defaultGatewayPrefs, DevicesSection, gatewayBind } from "./components/Devices";
+import { Onboarding } from "./components/Onboarding";
 import { Icon } from "./components/Icon";
 import { Markdown } from "./components/Markdown";
 import { PermissionModal } from "./components/Permission";
@@ -36,7 +37,7 @@ export default function App() {
   const [sideCollapsed, setSideCollapsed] = useState(false);
   const [panel, setPanel] = useState(true);
   const [view, setView] = useState<View>("chat");
-  const [settingsSection, setSettingsSection] = useState<"connection" | "devices" | undefined>();
+  const [settingsSection, setSettingsSection] = useState<"connection" | "devices" | "providers" | undefined>();
   const [palette, setPalette] = useState(false);
   const [perm, setPerm] = useState<PermState | null>(null);
   const [pairReq, setPairReq] = useState<{ pairingId: string; name: string } | null>(null);
@@ -400,7 +401,7 @@ export default function App() {
     sess.commands.length > 0 ? sess.commands : ((clientRef.current?.initResult?._meta as any)?.availableCommands ?? []);
 
   const setTheme = (t: "dark" | "light") => update((d) => ({ ...d, settings: { ...d.settings, theme: t } }));
-  const openSettings = (section?: "connection" | "devices") => { setSettingsSection(section); setView("settings"); };
+  const openSettings = (section?: "connection" | "devices" | "providers") => { setSettingsSection(section); setView("settings"); };
 
   // ---- Command palette + keyboard shortcuts ----
   const paletteCommands: Command[] = useMemo(() => {
@@ -514,7 +515,7 @@ export default function App() {
           </header>
           {(notice || (conn !== "open" && status)) && (
             <div className="notice" data-testid="notice">
-              <span>{notice || status}</span>
+              <span role="status">{notice || status}</span>
               {notice && <button className="icon sm" title="Dismiss" onClick={() => setNotice("")}><Icon name="x" size={14} /></button>}
             </div>
           )}
@@ -526,8 +527,21 @@ export default function App() {
             render={renderItem}
             header={
               <>
-                {sess.items.length === 0 && !isBusy && (
-                  <div className="empty">
+                {sess.items.length === 0 && !isBusy && !data.settings.onboarded && (
+                  <Onboarding
+                    connected={conn === "open"}
+                    connecting={conn === "connecting" || conn === "reconnecting"}
+                    status={status}
+                    hasProvider={(data.settings.providers ?? []).length > 0}
+                    hasProject={!!active}
+                    onConnect={() => void connect()}
+                    onConnection={() => openSettings("connection")}
+                    onProviders={() => openSettings("providers")}
+                    onDismiss={() => update((d) => ({ ...d, settings: { ...d.settings, onboarded: true } }))}
+                  />
+                )}
+                {sess.items.length === 0 && !isBusy && data.settings.onboarded && (
+                  <div className="empty fade-in">
                     <div className="empty-icon"><Icon name="bolt" size={28} /></div>
                     <h2>{active ? `Start a chat in ${active.project.name}` : "Welcome to Supercharge Studio"}</h2>
                     <p>{active ? <>The agent works in <code>{active.project.cwd}</code>. Type a message below, or use <code>/</code> for commands.</> : "Pick or add a project in the sidebar to begin."}</p>
