@@ -167,12 +167,20 @@ const known = new Set<string>();
           });
           say(sid, "Edited.");
         }
+        if (/tokens/.test(text)) {
+          // Realistic token stream: ~600 small chunks, one every 4 ms, with markdown.
+          const words = "The **quick** brown fox `jumps` over the lazy dog and keeps streaming tokens".split(" ");
+          for (let i = 0; i < 600; i++) {
+            update(sid, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: (i % 40 === 39 ? "\n\n" : " ") + words[i % words.length] } });
+            await new Promise((r) => setTimeout(r, 4));
+          }
+        }
         if (/long/.test(text)) {
           for (let i = 0; i < 300; i++) {
             update(sid, { sessionUpdate: i % 2 ? "agent_message_chunk" : "agent_thought_chunk", content: { type: "text", text: `line ${i}` } });
           }
         }
-        if (!/stream|tool|perm|slow|browser|modelfail|edit|long/.test(text)) say(sid, `echo: ${text}`);
+        if (!/stream|tool|perm|slow|browser|modelfail|edit|long|tokens/.test(text)) say(sid, `echo: ${text}`);
         // Usage as an extension notification (turn report) and on the prompt result.
         const usage = { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 200, reasoningTokens: 50, modelCalls: 1, modelUsage: { "fake-model": { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 200, reasoningTokens: 50, modelCalls: 1 } } };
         send({ method: "_supercharge/session/update", params: { sessionId: sid, update: { sessionUpdate: "turn_completed", prompt_id: `p${nextId++}`, stop_reason: "end_turn", usage } } });
