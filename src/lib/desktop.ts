@@ -68,3 +68,10 @@ export const gateway = {
   relaySet: (relayUrl?: string, hostId?: string) => invoke<void>("gateway_relay_set", { relayUrl, hostId }),
   send: (deviceId: string, msg: unknown) => invoke<boolean>("gateway_send", { deviceId, msg }).catch(() => false),
 };
+
+// ---- Managed agent (see src-tauri/src/agent.rs) ----
+export type AgentInfo = { bin: string | null; managed: boolean; log: string };
+export const agentInfo = () => invoke<AgentInfo>("agent_info");
+export const agentLog = () => invoke<string>("agent_log");
+export const agentInstall = () => invoke<string>("agent_install");
+export const agentProbe = (addr: string) => (isDesktop() ? invoke<boolean>("agent_probe", { addr }) : Promise.resolve(false));

@@ -3,6 +3,7 @@ import type { ApiFormat, Provider, Settings as S } from "../lib/store";
 import { uid } from "../lib/store";
 import type { ConfigOption } from "../acp/types";
 import { Icon } from "./Icon";
+import { agentInfo, agentLog, type AgentInfo } from "../lib/desktop";
 
 type Props = {
   value: S;
@@ -108,6 +109,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
             <label className="check"><input type="checkbox" checked={s.autoStart} onChange={(e) => set({ ...s, autoStart: e.target.checked })} /> Start the agent automatically if it is not running</label>
             <label className="check"><input type="checkbox" checked={s.alwaysApprove} onChange={(e) => set({ ...s, alwaysApprove: e.target.checked })} /> Always approve tool calls</label>
             <p className="muted">{desktop ? "The server key is stored in the OS keychain." : "Web mode: settings are stored in this browser."}</p>
+            {desktop && <AgentLog />}
           </div>
         )}
 
@@ -196,6 +198,20 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
           </footer>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Where the agent binary was found, and the captured agent stdout/stderr. */
+function AgentLog() {
+  const [info, setInfo] = useState<AgentInfo | null>(null);
+  const [log, setLog] = useState<string | null>(null);
+  const load = () => { void agentInfo().then(setInfo, () => {}); void agentLog().then(setLog, (e) => setLog(String(e))); };
+  return (
+    <div className="agent-log" data-testid="agent-log">
+      <div className="row"><strong>Agent</strong><div className="spacer" /><button className="secondary compact" onClick={load}>{log == null ? "Show agent log" : "Refresh"}</button></div>
+      {info && <p className="muted small">CLI: <code>{info.bin ?? "not found"}</code>{info.managed ? " · started by Supercharge Studio" : ""} · log: <code>{info.log}</code></p>}
+      {log != null && <pre className="log">{log || "(empty)"}</pre>}
     </div>
   );
 }

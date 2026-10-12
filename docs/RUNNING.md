@@ -205,3 +205,23 @@ armv7 ≈ 4.7 MiB, x86_64 ≈ 6.4 MiB.
 
 iOS (macOS + Xcode + xcodegen): `cd mobile && npx tauri ios init && TAURI_APP_PATH=$PWD/src-tauri npx tauri ios build --debug --target aarch64-sim`.
 CI builds the Android release APKs and an unsigned iOS simulator build on every push.
+
+## Managed agent (desktop)
+
+The desktop app runs `supercharge agent serve` itself:
+
+- **Finding the CLI.** Launching from a desktop entry often gives the app a minimal PATH, so it looks in several places: `SUPERCHARGE_BIN`, `PATH`, `~/.local/bin`, `~/.supercharge/bin`, `~/.cargo/bin`, `/usr/local/bin`, `/usr/bin` and `/opt/homebrew/bin`. As a last resort it asks your login shell (`$SHELL -lic 'command -v supercharge'`).
+- **Server key.** The shipped default key is replaced by a random key for each install, stored in the OS keychain. If an agent is already listening, the app attaches with the key you configured instead.
+- **Supervision.**
+  - The app waits up to 15 s for the agent to become ready.
+  - If the agent crashes, the app restarts it with backoff and gives up after 5 failed attempts.
+  - When the app exits, it stops the agent if it started it. On Linux this also happens when the app is killed (`PR_SET_PDEATHSIG`).
+- **Logs.** Agent stdout/stderr goes to `~/.local/share/supercharge-studio/agent.log` (the OS data dir). You can view it under Settings → Connection → Show agent log.
+- **CLI not found.** The app shows a setup card with **Install** (runs the official installer), **Copy command** and **Retry**.
+
+On Linux the app also uses the software WebKit path by default, which avoids Wayland "Error 71" and "GBM buffer" failures:
+
+- `SUPERCHARGE_STUDIO_GPU=1` re-enables GPU rendering.
+- `--safe-graphics` additionally forces X11.
+- `SUPERCHARGE_STUDIO_GDK_BACKEND` picks the backend.
+- If a native Wayland start dies early, the app retries once with XWayland.

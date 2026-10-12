@@ -32,7 +32,7 @@ export class WebSocketTransport implements Transport {
         resolve();
       };
       ws.onerror = () => {
-        if (!opened) reject(new Error("WebSocket error — is `supercharge agent serve` running?"));
+        if (!opened) reject(new Error("Can’t reach the agent yet"));
       };
       ws.onclose = (ev: CloseEvent) => {
         if (this.ws === ws) this.ws = null;

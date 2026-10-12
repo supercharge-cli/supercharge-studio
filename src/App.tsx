@@ -21,7 +21,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ToolCard } from "./components/ToolCard";
 import { VirtualList } from "./components/VirtualList";
 import { GatewayHub } from "./gateway/hub";
-import { agentRestart, appConfig, ensureAgent, gateway, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
+import { agentInfo, agentInstall, agentProbe, agentRestart, appConfig, ensureAgent, gateway, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
 import { AppData, applyTree, findProject, load, mapProject, Provider, save, uid, wsUrl } from "./lib/store";
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
 
@@ -59,6 +59,8 @@ export default function App() {
   const [pricing, setPricing] = useState(loadPricing);
   const clientRef = useRef<AcpClient | null>(null);
   const secretRef = useRef("");
+  const [agentMissing, setAgentMissing] = useState(false);
+  const [installing, setInstalling] = useState("");
   const mcpRef = useRef<string | null | undefined>(undefined);
   const overrides = useRef<{ bind?: string | null; secret?: string | null } | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -169,15 +171,32 @@ export default function App() {
       const k = await keychainGet();
       if (k) base = { ...base, secret: k };
     }
+    // Per-install agent secret: replace the shipped default before we start our own agent.
+    // (If an agent is already listening, keep the configured secret so we can attach.)
+    if (isDesktop() && !o.secret && base.autoStart && base.transport === "ws" && (!base.secret || base.secret === "dev-secret") && !(await agentProbe(o.bind || base.bind))) {
+      const fresh = Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => b.toString(16).padStart(2, "0")).join("");
+      const inKc = await keychainSet(fresh);
+      update((d) => ({ ...d, settings: { ...d.settings, secret: inKc ? "" : fresh, secretInKeychain: inKc } }));
+      base = { ...base, secret: fresh };
+    }
     secretRef.current = base.secret;
     const s = { ...base, ...(o.bind ? { bind: o.bind } : {}), ...(o.secret ? { secret: o.secret } : {}) };
     try {
       if (s.autoStart && s.transport === "ws") {
         setStatus("Starting agent…");
-        setStatus(`Agent ${await ensureAgent(s.bind, s.secret, s.alwaysApprove)}`);
+        const r = await ensureAgent(s.bind, s.secret, s.alwaysApprove);
+        setAgentMissing(false);
+        setStatus(r === "started" ? "Agent started" : r === "attached" ? "Attached to running agent" : "");
       }
     } catch (e: any) {
-      setStatus(String(e?.message ?? e));
+      const msg = String(e?.message ?? e);
+      if (msg.includes("AGENT_NOT_FOUND")) {
+        setAgentMissing(true);
+        setConn("closed");
+        setStatus("Supercharge CLI not found");
+        return; // nothing to connect to: show the setup card instead of a retry loop
+      }
+      setStatus(msg);
     }
     const client = new AcpClient({
       ...(s.transport === "stdio" ? { transportFactory: () => new StdioTransport(s.alwaysApprove) } : { url: wsUrl(s) }),
@@ -260,6 +279,12 @@ export default function App() {
   useEffect(() => {
     if (!isDesktop()) return;
     const offs: Promise<() => void>[] = [
+      listen<string>("agent://status", (st) => {
+        if (st === "starting") setStatus("Starting agent…");
+        else if (st === "restarting") setStatus("Agent stopped unexpectedly — restarting…");
+        else if (st === "crashed") setStatus("The agent keeps crashing. Open Settings → Connection → Agent log for details.");
+        else if (st === "ready") setStatus("Agent running");
+      }),
       listen<{ deviceId: string; msg: any }>("gateway://message", ({ deviceId, msg }) => void hub.receive(deviceId, msg)),
       listen<{ deviceId: string; name: string }>("gateway://connected", ({ deviceId, name }) => { deviceNames.current.set(deviceId, name); hub.connected(deviceId); setDevicesOnline(hub.deviceCount); }),
       listen<{ deviceId: string }>("gateway://disconnected", ({ deviceId }) => { hub.disconnected(deviceId); setDevicesOnline(hub.deviceCount); }),
@@ -543,7 +568,22 @@ export default function App() {
             <button className="icon" title="Command palette (Ctrl K)" onClick={() => setPalette(true)}><Icon name="search" size={17} /></button>
             <button className="icon" title={panel ? "Hide browser & tools (Ctrl \\)" : "Show browser & tools (Ctrl \\)"} onClick={() => setPanel((x) => !x)}><Icon name="panelRight" size={18} /></button>
           </header>
-          {(notice || (conn !== "open" && status)) && (
+          {agentMissing && (
+            <div className="agent-setup" data-testid="agent-setup">
+              <h3>Install the Supercharge CLI</h3>
+              <p className="muted">Supercharge Studio runs <code>supercharge agent serve</code> for you, but could not find the <code>supercharge</code> binary (checked PATH, ~/.local/bin, ~/.supercharge/bin, /usr/local/bin, /usr/bin and your login shell).</p>
+              <pre className="cmd">curl -fsSL https://superchargeai.in/install.sh | bash</pre>
+              <div className="row">
+                <button disabled={!!installing} onClick={() => { setInstalling("Installing…"); void agentInstall().then(() => { setInstalling(""); void connect(); }, (e) => setInstalling(String(e?.message ?? e))); }} data-testid="agent-install">{installing === "Installing…" ? "Installing…" : "Install"}</button>
+                <button className="secondary" onClick={() => void navigator.clipboard?.writeText("curl -fsSL https://superchargeai.in/install.sh | bash")}>Copy command</button>
+                <button className="secondary" onClick={() => void agentInfo().then(() => connect())} data-testid="agent-retry">Retry</button>
+                <button className="ghost" onClick={() => openSettings("connection")}>Settings</button>
+              </div>
+              {installing && installing !== "Installing…" && <div className="error-text">{installing}</div>}
+              <p className="muted small">Already installed somewhere else? Set <code>SUPERCHARGE_BIN</code> to its path.</p>
+            </div>
+          )}
+          {!agentMissing && (notice || (conn !== "open" && status)) && (
             <div className="notice" data-testid="notice">
               <span role="status">{notice || status}</span>
               <div className="spacer" />

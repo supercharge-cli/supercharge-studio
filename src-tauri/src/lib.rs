@@ -23,19 +23,19 @@ mod mcp;
 mod providers;
 mod screenshot;
 mod secrets;
+mod agent;
 
 const BROWSER: &str = "browser";
 
 #[derive(Default)]
 struct AppState {
-    serve: Mutex<Option<Child>>,
     stdio_child: Mutex<Option<Child>>,
     stdio_in: tokio::sync::Mutex<Option<ChildStdin>>,
     eval_seq: AtomicU64,
 }
 
-fn agent_bin() -> String {
-    std::env::var("SUPERCHARGE_BIN").unwrap_or_else(|_| "supercharge".into())
+fn agent_bin() -> std::path::PathBuf {
+    agent::bin()
 }
 
 /// Startup overrides from the environment: SUPERCHARGE_STUDIO_AGENT (host:port) and
@@ -51,66 +51,37 @@ fn app_config() -> serde_json::Value {
 /// True if something is listening on the agent address.
 #[tauri::command]
 async fn agent_probe(addr: String) -> bool {
-    matches!(
-        tokio::time::timeout(Duration::from_millis(800), tokio::net::TcpStream::connect(&addr)).await,
-        Ok(Ok(_))
-    )
+    agent::probe(&addr).await
 }
 
-/// Attach if already running; otherwise spawn `supercharge agent serve`.
-/// Returns "attached" or "started".
+/// Attach if already running; otherwise spawn and supervise `supercharge agent serve`.
+/// Returns "attached" or "started"; fails with "AGENT_NOT_FOUND" when the CLI is missing.
 #[tauri::command]
-async fn agent_start(state: State<'_, AppState>, bind: String, secret: String, always_approve: bool) -> Result<String, String> {
-    if agent_probe(bind.clone()).await {
-        return Ok("attached".into());
-    }
-    let mut cmd = Command::new(agent_bin());
-    cmd.arg("agent");
-    if always_approve {
-        cmd.arg("--always-approve");
-    }
-    cmd.args(["serve", "--bind", &bind, "--secret", &secret])
-        .env("SUPERCHARGE_AGENT_SECRET", &secret)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    let child = cmd.spawn().map_err(|e| format!("failed to start `{}`: {e}", agent_bin()))?;
-    *state.serve.lock().unwrap() = Some(child);
-    for _ in 0..50 {
-        if agent_probe(bind.clone()).await {
-            return Ok("started".into());
-        }
-        tokio::time::sleep(Duration::from_millis(200)).await;
-    }
-    Err("agent did not start listening within 10s".into())
+async fn agent_start(app: AppHandle, bind: String, secret: String, always_approve: bool) -> Result<String, String> {
+    agent::start(app, bind, secret, always_approve).await
 }
 
 /// Restart the agent the app started (to pick up provider changes). Returns
 /// "restarted", or "external" when the agent was started outside the app.
 #[tauri::command]
-async fn agent_restart(state: State<'_, AppState>, bind: String, secret: String, always_approve: bool) -> Result<String, String> {
-    let child = state.serve.lock().unwrap().take();
-    let Some(mut c) = child else {
-        return Ok(if agent_probe(bind).await { "external".into() } else { "stopped".into() });
-    };
-    let _ = c.kill().await;
+async fn agent_restart(app: AppHandle, bind: String, secret: String, always_approve: bool) -> Result<String, String> {
+    if !agent::managed() {
+        return Ok(if agent::probe(&bind).await { "external".into() } else { "stopped".into() });
+    }
+    agent::stop_now();
     for _ in 0..25 {
-        if !agent_probe(bind.clone()).await {
+        if !agent::probe(&bind).await {
             break;
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
-    agent_start(state, bind, secret, always_approve).await?;
+    agent::start(app, bind, secret, always_approve).await?;
     Ok("restarted".into())
 }
 
 #[tauri::command]
-async fn agent_stop(state: State<'_, AppState>) -> Result<(), String> {
-    let child = state.serve.lock().unwrap().take();
-    if let Some(mut c) = child {
-        let _ = c.kill().await;
-    }
+async fn agent_stop() -> Result<(), String> {
+    agent::stop_now();
     Ok(())
 }
 
@@ -359,13 +330,18 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            app_config, agent_probe, agent_start, agent_stop,
+            app_config, agent_probe, agent_start, agent_stop, agent::agent_info, agent::agent_log, agent::agent_install,
             stdio_start, stdio_send, stdio_stop,
             browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible, browser_screenshot,
             secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info,
             providers::provider_set_key, providers::provider_has_key, providers::provider_seed_from_env, providers::provider_apply, agent_restart,
-            gateway::gateway_status, gateway::gateway_start, gateway::gateway_stop, gateway::gateway_pair_begin, gateway::gateway_pair_answer, gateway::gateway_revoke, gateway::gateway_send, gateway::gateway_relay_set, gateway::gateway_relay_set
+            gateway::gateway_status, gateway::gateway_start, gateway::gateway_stop, gateway::gateway_pair_begin, gateway::gateway_pair_answer, gateway::gateway_revoke, gateway::gateway_send, gateway::gateway_relay_set
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Supercharge Studio");
+        .build(tauri::generate_context!())
+        .expect("error while running Supercharge Studio")
+        .run(|_app, ev| {
+            if let tauri::RunEvent::Exit = ev {
+                agent::stop_now();
+            }
+        });
 }
