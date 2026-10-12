@@ -8,7 +8,11 @@ import { BrowserPanel } from "./components/BrowserPanel";
 import { Command, CommandPalette } from "./components/CommandPalette";
 import { defaultGatewayPrefs, DevicesSection, gatewayBind } from "./components/Devices";
 const SettingsScreen = lazy(() => import("./components/Settings").then((m) => ({ default: m.SettingsScreen })));
+// Warm the lazy screens once the app is idle so the first open is instant.
+const idle = (globalThis as any).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 1200));
+if (typeof window !== "undefined") idle(() => { void import("./components/Settings"); void import("./components/Usage"); });
 const UsageScreen = lazy(() => import("./components/Usage").then((m) => ({ default: m.UsageScreen })));
+import { transition } from "./lib/motion";
 import { Onboarding } from "./components/Onboarding";
 import { Icon } from "./components/Icon";
 import { Markdown } from "./components/Markdown";
@@ -36,7 +40,13 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [sideCollapsed, setSideCollapsed] = useState(false);
   const [panel, setPanel] = useState(true);
-  const [view, setView] = useState<View>("chat");
+  const [view, setViewNow] = useState<View>("chat");
+  const viewRef = useRef<View>("chat");
+  const setView = useCallback((v: View) => {
+    if (viewRef.current === v) return;
+    viewRef.current = v;
+    transition(() => setViewNow(v));
+  }, []);
   const retryRef = useRef<((t: string) => void) | null>(null);
   const [loadingChats, setLoadingChats] = useState<Set<string>>(() => new Set());
   const [settingsSection, setSettingsSection] = useState<"connection" | "devices" | "providers" | undefined>();
@@ -62,12 +72,9 @@ export default function App() {
   /** Synchronous data update: keeps dataRef current for async flows. */
   const update = useCallback((fn: (d: AppData) => AppData) => {
     dataRef.current = fn(dataRef.current);
+    save(dataRef.current); // persist now: effects may run after an immediate reload/quit
     setData(dataRef.current);
   }, []);
-
-  useEffect(() => {
-    save(data);
-  }, [data]);
 
   const chatForSession = (sid: string) => {
     for (const g of dataRef.current.groups) for (const p of g.projects) for (const c of p.chats) if (c.sessionId === sid) return { group: g, project: p, chat: c };
@@ -444,7 +451,7 @@ export default function App() {
       else if (mod(e) && k === "\\") { e.preventDefault(); setPanel((x) => !x); }
       else if (mod(e) && k === "l") { e.preventDefault(); setView("chat"); composerRef.current?.focus(); }
       else if (mod(e) && k === ".") { e.preventDefault(); stop(); }
-      else if (k === "escape" && !palette && !perm && view !== "chat") setView("chat");
+      else if (k === "escape" && !palette && !perm && viewRef.current !== "chat") setView("chat");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

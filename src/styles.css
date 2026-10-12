@@ -267,15 +267,15 @@ button.compact{padding:5px 11px;font-size:12.5px}
 @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .onboard{max-width:520px;margin:9vh auto 0;padding:22px;border:1px solid var(--line);border-radius:16px;background:var(--raise);box-shadow:0 10px 40px -18px rgba(0,0,0,.45);animation:fadeUp .32s cubic-bezier(.2,.7,.2,1) both}
 .onboard-head{display:flex;gap:14px;align-items:center}.onboard-head h2{margin:0 0 2px;font-size:19px;letter-spacing:-.01em}.onboard-head p{margin:0}
-.onboard-bar{height:4px;border-radius:4px;background:var(--line);margin:16px 0 6px;overflow:hidden}.onboard-bar i{display:block;height:100%;background:var(--acc);border-radius:4px;transition:width .4s cubic-bezier(.2,.7,.2,1)}
+.onboard-bar{height:4px;border-radius:4px;background:var(--line);margin:16px 0 6px;overflow:hidden}.onboard-bar i{display:block;height:100%;width:100%;background:var(--acc);border-radius:4px;transform-origin:0 50%;transition:transform .5s var(--spring)}
 .onboard-steps{list-style:none;padding:0;margin:8px 0 12px;display:flex;flex-direction:column;gap:4px}
 .onboard-steps li{display:flex;gap:12px;align-items:center;padding:10px;border-radius:11px;transition:background .15s}.onboard-steps li:hover{background:var(--hover)}
-.onboard-num{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);font-size:12px;font-weight:600;color:var(--muted);transition:all .2s}
+.onboard-num{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);font-size:12px;font-weight:600;color:var(--muted);transition:background-color .2s,border-color .2s,color .2s}
 .onboard-steps li.done .onboard-num{background:var(--acc);border-color:var(--acc);color:#fff}
 .onboard-steps li.done b{color:var(--muted)}
 .onboard-text{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.onboard-text b{font-weight:600}.onboard-text span{color:var(--muted);font-size:12.5px}
-.skeleton{background:linear-gradient(90deg,var(--line) 25%,var(--hover) 50%,var(--line) 75%);background-size:200% 100%;animation:shimmer 1.3s infinite linear;border-radius:8px}
-@keyframes shimmer{to{background-position:-200% 0}}
+.skeleton{position:relative;overflow:hidden;background:var(--line);border-radius:8px;isolation:isolate}.skeleton::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--fg) 7%,transparent),transparent);transform:translateX(-100%);animation:sweep 1.3s infinite var(--ease);will-change:transform}
+@keyframes sweep{to{transform:translateX(100%)}}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .bubble.error{align-self:stretch;max-width:none;background:color-mix(in srgb,#e5484d 9%,var(--raise));border:1px solid color-mix(in srgb,#e5484d 35%,var(--line));color:var(--fg);border-radius:12px;padding:11px 13px;white-space:pre-wrap;animation:fadeUp .25s both}
@@ -283,3 +283,26 @@ button.compact{padding:5px 11px;font-size:12.5px}
 .skel-chat{display:flex;flex-direction:column;gap:14px;padding:18px 4px}
 .notice{display:flex;align-items:center;gap:8px}
 .screen-skel{display:flex;flex-direction:column;gap:16px;padding:28px 32px}
+
+/* ---- motion system: GPU-only (transform/opacity), spring easing, view transitions ---- */
+:root{--spring:cubic-bezier(.22,1.2,.36,1);--spring-soft:cubic-bezier(.3,1.1,.4,1)}
+@supports (transition-timing-function:linear(0,1)){:root{
+  --spring:linear(0,.009,.035 2.1%,.141 4.4%,.723 12.9%,.938 16.7%,1.017 19.8%,1.061 23.2%,1.068 26.1%,1.051 30.6%,1.009 39.6%,.993 46.1%,.998 62%,1);
+  --spring-soft:linear(0,.02,.08 3%,.33 9%,.69 17%,.89 25%,.98 33%,1.01 42%,1.005 60%,1)}}
+.row-wrap,.onboard,.fade-in,.bubble.error{animation-timing-function:var(--spring-soft)}
+.modal{animation:pop .32s var(--spring) both}
+.modal-bg{animation:fade .16s ease-out both}
+/* Off-screen rows skip layout/paint in non-virtualised chats. */
+.messages:not([data-virtual]) .row-wrap{content-visibility:auto;contain-intrinsic-size:auto 72px}
+/* Tool card body: animate the content with transform/opacity; the size change itself is instant. */
+.tc-collapse{transition:none}
+.toolcard .tc-collapse>*{opacity:0;transform:translateY(-4px);transition:opacity .18s ease-out,transform .28s var(--spring-soft)}
+.toolcard.open .tc-collapse>*{opacity:1;transform:none}
+/* Screen changes use the View Transitions API where available. */
+::view-transition-old(root),::view-transition-new(root){animation-duration:.26s;animation-timing-function:var(--spring-soft)}
+::view-transition-old(root){animation-name:vt-out}
+::view-transition-new(root){animation-name:vt-in}
+@keyframes vt-out{to{opacity:0;transform:scale(.985)}}
+@keyframes vt-in{from{opacity:0;transform:translateY(8px)}}
+.no-vt .main,.no-vt .screen{animation:rise .26s var(--spring-soft) both}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}}

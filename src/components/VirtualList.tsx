@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /**
  * Windowed list with measured row heights and stick-to-bottom behaviour.
@@ -16,17 +16,25 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const heights = useRef(new Map<string | number, number>());
+  const heights = useRef(new Map<string, number>());
   const stick = useRef(true);
   const [, force] = useState(0);
   const [view, setView] = useState({ top: 0, h: 800 });
   const virtual = items.length > threshold;
 
+  // Scroll handling is coalesced to one read + one state update per frame.
+  const frame = useRef(0);
   const onScroll = useCallback(() => {
-    const el = ref.current!;
-    stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-    if (virtual) setView({ top: el.scrollTop, h: el.clientHeight });
+    if (frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      const el = ref.current;
+      if (!el) return;
+      stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      if (virtual) setView((v) => (Math.abs(v.top - el.scrollTop) < 40 && v.h === el.clientHeight ? v : { top: el.scrollTop, h: el.clientHeight }));
+    });
   }, [virtual]);
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
   // Keep pinned to the bottom while content grows (streaming), unless the user scrolled up.
   useLayoutEffect(() => {
@@ -43,18 +51,26 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
     return () => ro.disconnect();
   }, []);
 
-  const measure = useCallback((k: string | number) => (node: HTMLDivElement | null) => {
-    if (!node) return;
-    const h = node.offsetHeight;
-    if (h && heights.current.get(k) !== h) {
-      heights.current.set(k, h);
-      if (virtual) force((x) => x + 1);
-    }
-  }, [virtual]);
+  // Row heights come from one ResizeObserver (batched, no forced synchronous layout).
+  const virtualRef = useRef(virtual);
+  virtualRef.current = virtual;
+  const rows = useRef<ResizeObserver | null>(null);
+  if (!rows.current && typeof ResizeObserver !== "undefined")
+    rows.current = new ResizeObserver((entries) => {
+      let changed = false;
+      for (const e of entries) {
+        const k = (e.target as HTMLElement).dataset.k!;
+        const h = Math.round(e.borderBoxSize?.[0]?.blockSize ?? (e.target as HTMLElement).offsetHeight);
+        if (h && heights.current.get(k) !== h) { heights.current.set(k, h); changed = true; }
+      }
+      if (changed && virtualRef.current) force((x) => x + 1);
+    });
+  useEffect(() => () => rows.current?.disconnect(), []);
+
 
   let start = 0, end = items.length, padTop = 0, padBottom = 0;
   if (virtual) {
-    const hs = items.map((it, i) => heights.current.get(keyOf(it, i)) ?? estimate);
+    const hs = items.map((it, i) => heights.current.get(String(keyOf(it, i))) ?? estimate);
     let y = 0;
     start = -1;
     for (let i = 0; i < items.length; i++) {
@@ -74,7 +90,7 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
         {items.slice(start, end).map((it, j) => {
           const i = start + j;
           const k = keyOf(it, i);
-          return <div key={k} ref={measure(k)} className="row-wrap">{render(it, i)}</div>;
+          return <Row key={k} k={k} ro={rows.current} item={it} index={i} render={render as (x: unknown, i: number) => ReactNode} />;
         })}
         {padBottom > 0 && <div style={{ height: padBottom }} aria-hidden />}
         {footer}
@@ -82,3 +98,15 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
     </div>
   );
 }
+
+/** Memoised row: unchanged items (same object) skip re-render while the last one streams. */
+const Row = memo(function Row({ k, ro, item, index, render }: { k: string | number; ro: ResizeObserver | null; item: unknown; index: number; render: (x: unknown, i: number) => ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const n = ref.current;
+    if (!n || !ro) return;
+    ro.observe(n);
+    return () => ro.unobserve(n);
+  }, [ro]);
+  return <div ref={ref} data-k={k} className="row-wrap">{render(item, index)}</div>;
+});

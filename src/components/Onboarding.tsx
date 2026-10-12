@@ -35,7 +35,7 @@ export function Onboarding(props: {
           <p className="muted">{doneCount} of {steps.length} ready</p>
         </div>
       </div>
-      <div className="onboard-bar" role="progressbar" aria-valuemin={0} aria-valuemax={steps.length} aria-valuenow={doneCount}><i style={{ width: `${(doneCount / steps.length) * 100}%` }} /></div>
+      <div className="onboard-bar" role="progressbar" aria-valuemin={0} aria-valuemax={steps.length} aria-valuenow={doneCount}><i style={{ transform: `scaleX(${doneCount / steps.length})` }} /></div>
       <ol className="onboard-steps">
         {steps.map((s, i) => (
           <li key={s.id} className={s.done ? "done" : ""} data-testid={`onboard-${s.id}`}>
