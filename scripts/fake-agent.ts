@@ -14,10 +14,11 @@ import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
 import { writeFileSync } from "fs";
 
-// Shared across connections (like one agent process serving several clients).
-let sessions = 0;
-const listed: { sessionId: string; cwd: string; title: string }[] = [];
-const known = new Set<string>();
+// Session state is per connection, unless FAKE_AGENT_SHARED=1 (one agent serving several
+// clients, as the headless server e2e needs).
+type St = { n: number; listed: { sessionId: string; cwd: string; title: string }[]; known: Set<string> };
+const fresh = (): St => ({ n: 0, listed: [], known: new Set() });
+const shared = fresh();
 const arg = (k: string, d: string) => {
   const i = process.argv.indexOf(`--${k}`);
   return i > 0 ? process.argv[i + 1] : d;
@@ -38,6 +39,8 @@ const wss = new WebSocketServer({
 });
 
 wss.on("connection", (ws: WebSocket) => {
+  const st = process.env.FAKE_AGENT_SHARED === "1" ? shared : fresh();
+  const { listed, known } = st;
   let nextId = 1000;
   const pending = new Map<number, (m: any) => void>();
   const cancelled = new Set<string>();
@@ -68,11 +71,11 @@ wss.on("connection", (ws: WebSocket) => {
       case "session/list":
         return reply({ sessions: listed.map((x) => ({ ...x })) });
       case "session/new":
-        known.add(`fake-${++sessions}`);
-        listed.splice(0, listed.length, ...listed.filter((x) => x.sessionId !== `fake-${sessions}`));
-        listed.push({ sessionId: `fake-${sessions}`, cwd: m.params?.cwd ?? "/tmp", title: "New chat" });
+        known.add(`fake-${++st.n}`);
+        listed.splice(0, listed.length, ...listed.filter((x) => x.sessionId !== `fake-${st.n}`));
+        listed.push({ sessionId: `fake-${st.n}`, cwd: m.params?.cwd ?? "/tmp", title: "New chat" });
         return reply({
-          sessionId: `fake-${sessions}`,
+          sessionId: `fake-${st.n}`,
           configOptions: [{ id: "reasoning_effort", name: "Reasoning Effort", currentValue: "high", options: [{ value: "high", name: "High" }, { value: "low", name: "Low" }] }],
         });
       case "session/set_config_option":

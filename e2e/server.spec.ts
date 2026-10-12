@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 /**
  * Headless server end to end: phone UI ↔ (relay) ↔ supercharge-studio-server ↔ ACP agent.
- * Uses the fake agent (2421) and the reference relay started by the gateway double (2432).
+ * Uses a shared-state fake agent (2451) and the reference relay started by the gateway double (2432).
  * Skipped when the server binary has not been built (cargo build --release in server/).
  */
 const BIN = process.env.SCS_BIN ?? join(process.cwd(), "server/target/release/supercharge-studio-server" + (process.platform === "win32" ? ".exe" : ""));
@@ -18,7 +18,7 @@ let server: ChildProcess | null = null;
 let data = "";
 test.beforeAll(async () => {
   data = mkdtempSync(join(tmpdir(), "scs-"));
-  server = spawn(BIN, ["run", "--bind", "127.0.0.1:2440", "--public-url", "ws://127.0.0.1:9/gw", "--agent", "ws://127.0.0.1:2421", "--agent-secret", "e2e", "--relay", "ws://127.0.0.1:2432", "--data-dir", data, "--control", "127.0.0.1:2441", "--name", "CI Server"], { stdio: ["ignore", "inherit", "pipe"] });
+  server = spawn(BIN, ["run", "--bind", "127.0.0.1:2440", "--public-url", "ws://127.0.0.1:9/gw", "--agent", "ws://127.0.0.1:2451", "--agent-secret", "e2e", "--relay", "ws://127.0.0.1:2432", "--data-dir", data, "--control", "127.0.0.1:2441", "--name", "CI Server"], { stdio: ["ignore", "inherit", "pipe"] });
   await new Promise<void>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error("server did not reach the relay")), 15000);
     const t0 = Date.now();
@@ -39,7 +39,7 @@ async function pairCode(): Promise<{ uri: string; done: Promise<number> }> {
 
 async function seedSession() {
   const { default: WebSocket } = await import("ws");
-  const ws = new WebSocket("ws://127.0.0.1:2421/ws?server-key=e2e");
+  const ws = new WebSocket("ws://127.0.0.1:2451/ws?server-key=e2e");
   await new Promise((r) => ws.once("open", r));
   const call = (id: number, method: string, params: unknown) => new Promise((r) => { ws.on("message", (d) => { const m = JSON.parse(String(d)); if (m.id === id) r(m.result); }); ws.send(JSON.stringify({ jsonrpc: "2.0", id, method, params })); });
   await call(1, "initialize", { protocolVersion: 1, clientCapabilities: {} });
