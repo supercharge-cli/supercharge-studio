@@ -377,7 +377,7 @@ pub fn gateway_stop() {
 
 /// New one-time pairing code. `public_url` overrides the advertised URL (tunnel).
 #[tauri::command]
-pub fn gateway_pair_begin(public_url: Option<String>, desktop_name: Option<String>) -> Result<Value, String> {
+pub fn gateway_pair_begin(public_url: Option<String>, desktop_name: Option<String>, relay_url: Option<String>) -> Result<Value, String> {
     let mut s = st();
     let url = public_url.filter(|u| !u.trim().is_empty()).or_else(|| s.url.clone()).ok_or("gateway is not running")?;
     let id = format!("p-{}", hex(&rand::<8>()));
@@ -386,13 +386,18 @@ pub fn gateway_pair_begin(public_url: Option<String>, desktop_name: Option<Strin
     s.pairings.retain(|_, p| p.expires >= now());
     s.pairings.insert(id.clone(), Pairing { secret, expires });
     let name = desktop_name.unwrap_or_else(|| "Supercharge Studio".into());
-    let uri = format!(
+    let mut uri = format!(
         "scstudio://pair?u={}&i={}&k={}&n={}",
         pct(&url),
         id,
         B64URL.encode(secret),
         pct(&name)
     );
+    // Optional relay route (device falls back to it; frames stay end-to-end encrypted).
+    if let Some(r) = relay_url.filter(|r| r.starts_with("wss://") || r.starts_with("ws://")) {
+        uri.push_str("&r=");
+        uri.push_str(&pct(&r));
+    }
     let svg = qrcode::QrCode::with_error_correction_level(uri.as_bytes(), qrcode::EcLevel::M)
         .map_err(|e| e.to_string())?
         .render::<qrcode::render::svg::Color>()

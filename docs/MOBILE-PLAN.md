@@ -55,6 +55,46 @@ enable it in **Settings → Devices**.
    test vector checks the two implementations agree (`cargo test` and `tests/gateway.test.ts`).
 6. Devices can be revoked from Settings → Devices; that deletes the key and closes the socket.
 
+## 2a. Relay mode (client hook implemented; relay server specified below)
+
+For phones that are not on the same network and when no tunnel is configured, the
+desktop can advertise a **relay** in the pairing code (`&r=wss://relay.example.com/v1/connect/<hostId>`).
+
+**Client behaviour (implemented):** the device tries the direct URL first (2.5 s
+connect timeout, cancelled once the gateway answers), then the relay. Authentication
+failures never fall through. The handshake and AES-256-GCM channel are identical on both
+routes, so the relay sees only `hello`/`challenge`/`auth`/`ok` envelopes (nonces and
+MACs, no secrets) and opaque binary frames. The app shows a `relay` badge when that route
+is in use. Desktop: Settings → Devices → **Relay URL** adds the route to new pairing
+codes and picks a random 96-bit `hostId` (a routing id, not a secret).
+
+**Desktop dial-out (next step):** the desktop keeps one outbound control socket to the
+relay and opens a lane per device, feeding each lane into the same gateway connection
+handler used for LAN sockets.
+
+### Relay server spec (lightweight, stateless, ~200 lines)
+
+| Endpoint | Who | Purpose |
+|---|---|---|
+| `GET /v1/host/<hostId>` (WebSocket) | desktop | Control socket. First text frame `{"t":"register","proof":<b64>}` where proof = HMAC-SHA256(hostKey, "relay-register"\|hostId\|ts) and `ts` in seconds; relay remembers `hostId → hostKeyHash` on first use (TOFU) and rejects other keys. |
+| `GET /v1/connect/<hostId>` (WebSocket) | device | Relay allocates a random `lane` id, sends `{"t":"lane","lane":<id>}` on the host control socket, and holds the device socket (max 10 s) until the host attaches. |
+| `GET /v1/lane/<hostId>/<lane>` (WebSocket) | desktop | Attaches to a pending lane; from then on the relay pipes frames both ways verbatim (text and binary preserved). |
+
+Rules:
+
+- No payload inspection, no storage, no logging of frame contents; only counters.
+- Limits: 64 KiB per frame, 1 MiB/s and 8 lanes per host, 60 s idle timeout on lanes, 30 s
+  ping on control sockets; unknown host → close code `4404`; host offline → `4503`.
+- TLS terminates at the relay (`wss://`); end-to-end confidentiality and integrity come from
+  the gateway channel, so a malicious relay can only drop or delay traffic. Replays are
+  already rejected by the per-direction frame counters.
+- Horizontal scale: route by `hostId` (consistent hashing) so control socket and lanes meet
+  on the same instance.
+
+Test double: `scripts/fake-gateway.ts` runs a blind relay on `port+1`;
+`e2e/mobile.spec.ts` pairs and chats through it with an unreachable direct URL and asserts
+that no plaintext JSON-RPC ever crossed the relay.
+
 ## 3. Session continuity / handoff
 
 - Sessions live in the agent; desktop and phone are both views. The desktop keeps a

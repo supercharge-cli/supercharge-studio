@@ -4,10 +4,12 @@
  *
  *   GET /pair            → { uri }  new one-time pairing code (auto-approved)
  *   GET /handoff?sid=..  → send a handoff to all devices
+ *   GET /pair?relay=1    → same, but the direct URL is unreachable and `r=` points at the relay
+ *   GET /relay-stats     → frames forwarded by the relay double and whether any was plaintext
  *   GET /perm            → raise a permission request on session s1; result at /perm-result
  */
 import { createServer } from "http";
-import { WebSocketServer } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 import { b64, Channel, deviceKey, hmac, random, sessionKey } from "../src/gateway/crypto";
 import { GatewayHub } from "../src/gateway/hub";
 
@@ -62,8 +64,11 @@ const http = createServer(async (req, res) => {
     const secret = random(32);
     pairings.set(id, await deviceKey(secret));
     const k = b64.enc(secret).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    return res.end(JSON.stringify({ uri: `scstudio://pair?u=${encodeURIComponent(`ws://127.0.0.1:${port}/gw`)}&i=${id}&k=${k}&n=Test%20Desktop` }));
+    const direct = u.searchParams.get("relay") ? "ws://127.0.0.1:9/gw" : `ws://127.0.0.1:${port}/gw`;
+    const relay = u.searchParams.get("relay") ? `&r=${encodeURIComponent(`ws://127.0.0.1:${port + 1}/v1/connect/test-host`)}` : "";
+    return res.end(JSON.stringify({ uri: `scstudio://pair?u=${encodeURIComponent(direct)}&i=${id}&k=${k}&n=Test%20Desktop${relay}` }));
   }
+  if (u.pathname === "/relay-stats") return res.end(JSON.stringify(relayStats));
   if (u.pathname === "/handoff") return res.end(JSON.stringify({ n: hub.handoff(u.searchParams.get("sid") ?? "s2") }));
   if (u.pathname === "/perm") {
     permResult = null;
@@ -113,3 +118,28 @@ wss.on("connection", (ws) => {
   ws.on("close", () => { conns.delete(id); hub.disconnected(id); });
 });
 http.listen(port, "127.0.0.1", () => console.log(`fake gateway on ws://127.0.0.1:${port}/gw`));
+
+
+// ---- Relay double (see docs/MOBILE-PLAN.md "Relay"): blind byte pipe client <-> host. ----
+// The real relay pairs a device socket with a host lane; here the "host lane" is simply a
+// socket to the gateway above, which is exactly what the desktop would open outbound.
+const relayStats = { connections: 0, frames: 0, binaryFrames: 0, plaintextSeen: false };
+const relay = new WebSocketServer({ port: port + 1 });
+relay.on("connection", (client, req) => {
+  if (!/^\/v1\/connect\/[\w-]+$/.test(req.url ?? "")) return client.close(4404, "unknown host");
+  relayStats.connections++;
+  const host = new WebSocket(`ws://127.0.0.1:${port}/gw`);
+  const queue: [unknown, boolean][] = [];
+  const inspect = (data: any, isBinary: boolean) => {
+    relayStats.frames++;
+    if (isBinary) {
+      relayStats.binaryFrames++;
+      if (Buffer.from(data).toString("latin1").includes("jsonrpc")) relayStats.plaintextSeen = true;
+    } else if (String(data).includes("jsonrpc")) relayStats.plaintextSeen = true;
+  };
+  client.on("message", (data, isBinary) => { inspect(data, isBinary); host.readyState === WebSocket.OPEN ? host.send(data, { binary: isBinary }) : queue.push([data, isBinary]); });
+  host.on("open", () => { for (const [d, b] of queue.splice(0)) host.send(d as any, { binary: b }); });
+  host.on("message", (data, isBinary) => { inspect(data, isBinary); client.send(data, { binary: isBinary }); });
+  host.on("close", () => client.close());
+  client.on("close", () => host.close());
+});

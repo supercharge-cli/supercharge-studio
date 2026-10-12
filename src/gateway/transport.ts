@@ -2,7 +2,14 @@ import type { Transport } from "../acp/transport";
 import { b64, Channel, hmac, random, sessionKey } from "./crypto";
 
 /** Credentials a device keeps after pairing. The key never leaves the device. */
-export type DeviceCreds = { url: string; deviceId: string; key: Uint8Array; name: string; desktopName?: string };
+export type DeviceCreds = { url: string; deviceId: string; key: Uint8Array; name: string; desktopName?: string; relay?: string };
+
+/**
+ * Where to reach the desktop, in order: the direct (LAN/tunnel) URL, then the optional
+ * relay. The relay only forwards opaque frames; the handshake and AES-GCM channel are
+ * end-to-end between this device and the desktop, exactly as on the LAN.
+ */
+export const candidates = (c: Pick<DeviceCreds, "url" | "relay">) => [c.url, ...(c.relay && c.relay !== c.url ? [c.relay] : [])];
 
 type WsCtor = new (url: string) => WebSocket;
 
@@ -18,12 +25,34 @@ export class GatewayTransport implements Transport {
   onClose: (reason?: string) => void = () => {};
   /** Device id assigned by the desktop (set after a successful handshake). */
   deviceId = "";
+  /** The URL that connected ("direct" or "relay" route). */
+  route: "direct" | "relay" = "direct";
+  private urls: string[];
 
-  constructor(private url: string, private id: string, private key: Uint8Array, private name: string, private Ctor: WsCtor = globalThis.WebSocket as WsCtor, private onStage?: (s: string) => void) {}
+  constructor(url: string | string[], private id: string, private key: Uint8Array, private name: string, private Ctor: WsCtor = globalThis.WebSocket as WsCtor, private onStage?: (s: string) => void, private directTimeoutMs = 2500) {
+    this.urls = Array.isArray(url) ? url : [url];
+  }
 
-  open(): Promise<void> {
+  async open(): Promise<void> {
+    let last: unknown;
+    for (let i = 0; i < this.urls.length; i++) {
+      try {
+        await this.openOne(this.urls[i], i < this.urls.length - 1 ? this.directTimeoutMs : 0);
+        this.route = i === 0 ? "direct" : "relay";
+        return;
+      } catch (e) {
+        last = e;
+        // Auth failures are final; only unreachable routes fall through to the next one.
+        if (!/reach|closed|timed out/i.test(String((e as Error)?.message))) throw e;
+      }
+    }
+    throw last;
+  }
+
+  private openOne(url: string, timeoutMs: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      const ws = new this.Ctor(this.url);
+      const ws = new this.Ctor(url);
+      const timer = timeoutMs ? setTimeout(() => { if (!ready) { reject(new Error("Gateway timed out")); ws.close(); } }, timeoutMs) : 0;
       ws.binaryType = "arraybuffer";
       this.ws = ws;
       const nc = random(16);
@@ -42,6 +71,7 @@ export class GatewayTransport implements Transport {
           }
           const m = JSON.parse(String(ev.data));
           if (m.t === "challenge") {
+            if (timer) clearTimeout(timer); // route is live; pairing approval may take a while
             ns = b64.dec(m.ns);
             sk = await sessionKey(this.key, nc, ns);
             this.onStage?.("waiting");
@@ -52,6 +82,7 @@ export class GatewayTransport implements Transport {
             this.ch = await Channel.create(sk);
             this.deviceId = m.deviceId;
             ready = true;
+            if (timer) clearTimeout(timer);
             resolve();
           } else if (m.t === "denied") fail(m.reason ?? "Denied");
         })();

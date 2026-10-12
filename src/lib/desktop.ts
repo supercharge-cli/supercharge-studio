@@ -62,7 +62,7 @@ export const gateway = {
   status: () => invoke<GwStatus>("gateway_status"),
   start: (bind?: string) => invoke<string>("gateway_start", { bind }),
   stop: () => invoke<void>("gateway_stop"),
-  pairBegin: (publicUrl?: string, desktopName?: string) => invoke<GwPairing>("gateway_pair_begin", { publicUrl, desktopName }),
+  pairBegin: (publicUrl?: string, desktopName?: string, relayUrl?: string) => invoke<GwPairing>("gateway_pair_begin", { publicUrl, desktopName, relayUrl }),
   pairAnswer: (pairingId: string, allow: boolean) => invoke<void>("gateway_pair_answer", { pairingId, allow }),
   revoke: (deviceId: string) => invoke<void>("gateway_revoke", { deviceId }),
   send: (deviceId: string, msg: unknown) => invoke<boolean>("gateway_send", { deviceId, msg }).catch(() => false),

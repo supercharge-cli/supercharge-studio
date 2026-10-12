@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { gateway, GwPairing, GwStatus } from "../lib/desktop";
 import { Icon } from "./Icon";
 
-export type GatewayPrefs = { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string };
+export type GatewayPrefs = { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string; relayUrl?: string; hostId?: string };
+/** Device-facing connect URL on the relay for this computer (see docs/MOBILE-PLAN.md, Relay). */
+export const relayConnectUrl = (p: GatewayPrefs) => (p.relayUrl?.trim() && p.hostId ? `${p.relayUrl.trim().replace(/\/+$/, "")}/v1/connect/${p.hostId}` : undefined);
 export const defaultGatewayPrefs: GatewayPrefs = { enabled: false, mode: "lan", port: 2420, publicUrl: "" };
 export const gatewayBind = (p: GatewayPrefs) => `${p.mode === "lan" ? "0.0.0.0" : "127.0.0.1"}:${p.port}`;
 
@@ -55,13 +57,17 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
         <label>Public URL (optional, for tunnels)
           <input placeholder="wss://my-tunnel.example.com/gw" value={prefs.publicUrl} onChange={(e) => onPrefs({ ...prefs, publicUrl: e.target.value })} />
         </label>
+        <label>Relay URL (optional, preview)
+          <input data-testid="gw-relay" placeholder="wss://relay.example.com" value={prefs.relayUrl ?? ""} onChange={(e) => onPrefs({ ...prefs, relayUrl: e.target.value, hostId: prefs.hostId || Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("") })} />
+          <span className="muted small">Phones try the direct address first, then this relay. The relay only forwards encrypted frames.</span>
+        </label>
         {err && <div className="error-text">{err}</div>}
       </div>
 
       <div className="card">
         <div className="row between">
           <strong>Pair a phone</strong>
-          <button data-testid="gw-pair" disabled={!st?.running} onClick={() => void gateway.pairBegin(prefs.publicUrl || undefined).then(setPair).catch((e) => setErr(String(e)))}>
+          <button data-testid="gw-pair" disabled={!st?.running} onClick={() => void gateway.pairBegin(prefs.publicUrl || undefined, undefined, relayConnectUrl(prefs)).then(setPair).catch((e) => setErr(String(e)))}>
             <Icon name="qr" /> {pair && left > 0 ? "New code" : "Show pairing code"}
           </button>
         </div>

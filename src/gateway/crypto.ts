@@ -63,12 +63,14 @@ export class Channel {
   }
 }
 
-export type PairInfo = { url: string; pairingId: string; secret: Uint8Array; desktopName: string };
+export type PairInfo = { url: string; pairingId: string; secret: Uint8Array; desktopName: string; relay?: string };
 export function parsePairUri(uri: string): PairInfo {
   const q = new URL(uri.trim().replace(/^scstudio:\/\//, "https://x/"));
   const url = q.searchParams.get("u"), id = q.searchParams.get("i"), k = q.searchParams.get("k");
   if (!url || !id || !k) throw new Error("Not a Supercharge Studio pairing code");
   const secret = b64.decUrl(k);
   if (secret.length !== 32) throw new Error("Invalid pairing secret");
-  return { url, pairingId: id, secret, desktopName: q.searchParams.get("n") ?? "Desktop" };
+  const relay = q.searchParams.get("r") ?? undefined;
+  if (relay && !/^wss?:\/\//.test(relay)) throw new Error("Invalid relay URL");
+  return { url, pairingId: id, secret, desktopName: q.searchParams.get("n") ?? "Desktop", relay };
 }
