@@ -14,13 +14,19 @@ async function pair(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("m-status")).toHaveText("open");
 }
 
+const shot = (page: import("@playwright/test").Page, name: string) => (process.env.SHOTS ? page.screenshot({ path: `${process.env.SHOTS}/${name}.png` }) : Promise.resolve());
+
 test("pairs with the gateway, lists projects/chats and replays history", async ({ page }) => {
+  const keyWarnings: string[] = [];
+  page.on("console", (m) => /same key/.test(m.text()) && keyWarnings.push(m.text()));
   await pair(page);
   await expect(page.getByTestId("m-list")).toContainText("api");
+  await shot(page, "40-mobile-list");
   await expect(page.getByTestId("m-chat").first()).toContainText("Fix login bug");
   await page.getByTestId("m-chat").first().click();
   await expect(page.getByTestId("m-thread")).toContainText("The token check is inverted.");
   await expect(page.locator(".m-thread strong")).toHaveText("token");
+  expect(keyWarnings).toEqual([]);
   // reload: credentials persist, device reconnects with its own key (no pairing)
   await page.reload();
   await expect(page.getByTestId("m-status")).toHaveText("open");
@@ -34,6 +40,8 @@ test("continues a session with streaming and diff tool cards", async ({ page }) 
   await expect(page.locator(".bubble.agent").last()).toHaveText("Sure — working on it.");
   await expect(page.locator(".bubble.user").last()).toHaveText("please fix it");
   await expect(page.locator(".toolcard .tc-diffstat").last()).toHaveText("+1 −1");
+  if (process.env.SHOTS) await page.waitForTimeout(400);
+  await shot(page, "41-mobile-chat");
 });
 
 test("answers permission requests and receives handoffs", async ({ page }) => {
@@ -42,6 +50,8 @@ test("answers permission requests and receives handoffs", async ({ page }) => {
   await page.getByTestId("m-input").fill("perm please");
   await page.getByTestId("m-send").click();
   await expect(page.getByTestId("m-perm")).toContainText("Run npm test");
+  if (process.env.SHOTS) await page.waitForTimeout(500);
+  await shot(page, "42-mobile-permission");
   await page.getByRole("button", { name: "Allow once" }).click();
   await expect(page.getByTestId("m-thread")).toContainText("Permission: selected:y");
   await page.getByTestId("m-back").click();

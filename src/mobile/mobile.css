@@ -26,3 +26,17 @@ html,body,#root{height:100%}
 .m-handoff{margin:8px 10px 0;justify-content:center;border-radius:12px}
 .m-toast{position:fixed;left:50%;bottom:calc(80px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--raise);border:1px solid var(--line);padding:8px 14px;border-radius:20px;box-shadow:var(--shadow);animation:rise .2s var(--ease) both}
 .m-unpair{margin:10px auto;display:flex}
+/* polish */
+.m-top{position:sticky;top:0;z-index:5;backdrop-filter:saturate(1.4) blur(10px);background:color-mix(in srgb,var(--panel) 86%,transparent)}
+.m-chat{display:flex;align-items:center;gap:10px;min-height:48px;transition:background .12s,transform .08s}
+.m-chat:active{transform:scale(.99)}
+.m-chat>svg:last-child{color:var(--muted);opacity:.6}
+.m-proj+.m-proj{margin-top:2px}
+.m-composer{padding:8px 10px calc(8px + env(safe-area-inset-bottom))}
+.m-composer textarea{border-radius:20px;padding:10px 14px;line-height:1.35}
+.m-composer .round{width:42px;height:42px;flex:none}
+.m-thread .bubble{max-width:88%;font-size:15px;line-height:1.5}
+.m-err{margin:8px 10px 0;border-radius:12px}
+.m-skel{padding:8px}
+.m-list .empty{margin-top:14vh}
+button,a{-webkit-tap-highlight-color:transparent}

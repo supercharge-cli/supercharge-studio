@@ -1,3 +1,4 @@
+import { cleanPermission } from "../lib/labels";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AcpClient, ConnectionState } from "../acp/client";
 import { applyUpdate, ChatItem, emptySession, SessionState } from "../acp/session";
@@ -56,6 +57,9 @@ export default function MobileApp() {
   const [perm, setPerm] = useState<{ req: PermissionRequest; resolve: (o: PermissionOutcome) => void } | null>(null);
   const [handoff, setHandoff] = useState<string | null>(null);
   const [toast, setToast] = useState("");
+  const [listed, setListed] = useState(false);
+  const [loadingSess, setLoadingSess] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
   const client = useRef<AcpClient | null>(null);
   const loadedRef = useRef(new Set<string>());
   const scroller = useRef<HTMLDivElement>(null);
@@ -64,7 +68,9 @@ export default function MobileApp() {
     const c = client.current;
     if (!c) return;
     const r: any = await c.listSessions();
-    setList(r.sessions ?? []);
+    const seen = new Set<string>();
+    setList((r.sessions ?? []).filter((x: Sess) => !seen.has(x.sessionId) && !!seen.add(x.sessionId)));
+    setListed(true);
     setProjects(r._meta?.projects ?? []);
   }, []);
 
@@ -88,7 +94,7 @@ export default function MobileApp() {
         } else if (method === "_supercharge/handoff") setHandoff(String(p?.sessionId ?? ""));
         else if (method === "_supercharge/sessions/changed") void refresh();
       },
-      onPermissionRequest: (req) => new Promise((resolve) => setPerm({ req, resolve })),
+      onPermissionRequest: (req) => new Promise((resolve) => setPerm({ req: cleanPermission(req), resolve })),
       onReconnected: () => { loadedRef.current.clear(); void refresh(); },
     });
     client.current = c;
@@ -103,7 +109,7 @@ export default function MobileApp() {
       }
     })();
     return () => c.close();
-  }, [creds, refresh]);
+  }, [creds, refresh, retryKey]);
 
   useEffect(() => {
     if (!toast) return;
@@ -118,7 +124,9 @@ export default function MobileApp() {
     if (!c || loadedRef.current.has(sid)) return;
     loadedRef.current.add(sid);
     setState((all) => ({ ...all, [sid]: emptySession() }));
-    await c.loadSession(sid, list.find((s) => s.sessionId === sid)?.cwd ?? "").catch((e) => setErr(String(e?.message ?? e)));
+    setLoadingSess(sid);
+    await c.loadSession(sid, list.find((s) => s.sessionId === sid)?.cwd ?? "").catch((e) => { loadedRef.current.delete(sid); setErr(`Could not load this chat: ${e?.message ?? e}`); });
+    setLoadingSess(null);
   }
 
   async function newChat(p: Project) {
@@ -140,7 +148,7 @@ export default function MobileApp() {
       const r = await c.prompt(open, text);
       if (r.stopReason !== "end_turn") setState((all) => ({ ...all, [open]: { ...all[open], items: [...all[open].items, { kind: "system", text: `stopped: ${r.stopReason}` }] } }));
     } catch (e: any) {
-      setState((all) => ({ ...all, [open]: { ...(all[open] ?? emptySession()), items: [...(all[open]?.items ?? []), { kind: "system", text: `Error: ${e?.message ?? e}` }] } }));
+      setState((all) => ({ ...all, [open]: { ...(all[open] ?? emptySession()), items: [...(all[open]?.items ?? []), { kind: "system", text: `The turn failed: ${e?.message ?? e}`, error: true } as any] } }));
     } finally {
       setBusy((b) => ({ ...b, [open]: false }));
     }
@@ -168,7 +176,7 @@ export default function MobileApp() {
   const title = list.find((s) => s.sessionId === open)?.title ?? "Chat";
   const isBusy = !!(open && busy[open]);
   const renderItem = (m: ChatItem, i: number) =>
-    m.kind === "tool" ? (sess.toolCalls[m.toolCallId] ? <ToolCard key={i} tc={sess.toolCalls[m.toolCallId]} compact /> : null) : m.kind === "agent" ? <div key={i} className="bubble agent"><Markdown text={m.text} /></div> : <div key={i} className={`bubble ${m.kind}`}>{m.text}</div>;
+    m.kind === "tool" ? (sess.toolCalls[m.toolCallId] ? <ToolCard key={i} tc={sess.toolCalls[m.toolCallId]} compact /> : null) : m.kind === "agent" ? <div key={i} className="bubble agent"><Markdown text={m.text} /></div> : <div key={i} className={`bubble ${(m as any).error ? "error" : m.kind}`} role={(m as any).error ? "alert" : undefined}>{m.text}</div>;
 
   return (
     <div className="m-app">
@@ -178,20 +186,33 @@ export default function MobileApp() {
         <span className={`status ${conn === "open" ? "ok" : "bad"}`} data-testid="m-status"><i className="dot" />{conn}</span>
         {open && <button className="icon" title="Open on computer" onClick={() => void client.current?.ext("_supercharge/focus", { sessionId: open })}><Icon name="panelRight" size={18} /></button>}
       </header>
-      {err && <div className="notice">{err}</div>}
+      {err && (
+        <div className="notice m-err" role="alert" data-testid="m-err">
+          <span>{err}</span>
+          <div className="spacer" />
+          <button className="secondary compact" onClick={() => { setErr(""); setRetryKey((k) => k + 1); }}>Retry</button>
+        </div>
+      )}
       {handoff && (
         <button className="m-handoff" data-testid="m-handoff" onClick={() => void openSession(handoff)}><Icon name="phone" /> Continue “{list.find((s) => s.sessionId === handoff)?.title ?? "chat"}” from your computer</button>
       )}
       {!open ? (
         <div className="m-list" data-testid="m-list">
-          {grouped.length === 0 && <div className="empty"><p className="muted">No projects yet.</p></div>}
+          {!listed && !err && [0, 1].map((k) => (
+            <section key={k} className="m-proj m-skel" aria-busy="true" data-testid="m-skeleton">
+              <div className="skeleton" style={{ width: "40%", height: 16, margin: "8px" }} />
+              <div className="skeleton" style={{ height: 40, margin: "6px" }} />
+              <div className="skeleton" style={{ height: 40, margin: "6px" }} />
+            </section>
+          ))}
+          {listed && grouped.length === 0 && <div className="empty"><div className="empty-icon"><Icon name="folder" size={24} /></div><h2>No projects yet</h2><p className="muted">Add a project on your computer and it will show up here.</p></div>}
           {grouped.map(({ project, sessions }, pi) => (
             <section key={`${project.projectId}-${pi}`} className="m-proj">
               <div className="m-proj-head"><Icon name="folder" size={14} /><b>{project.name}</b><span className="muted">{project.group}</span><div className="spacer" /><button className="icon" aria-label={`New chat in ${project.name}`} data-testid="m-new" onClick={() => void newChat(project)}><Icon name="plus" /></button></div>
               {sessions.length === 0 && <div className="muted m-none">No chats</div>}
               {sessions.map((s, si) => (
                 <button key={`${s.sessionId}-${si}`} className="m-chat" data-testid="m-chat" onClick={() => void openSession(s.sessionId)}>
-                  <Icon name="chat" size={15} /><span>{s.title || "Untitled"}</span>{s._meta?.busy && <i className="m-busy" />}
+                  <Icon name="chat" size={15} /><span>{s.title || "Untitled"}</span>{s._meta?.busy && <i className="m-busy" aria-label="working" />}<Icon name="chevronRight" size={14} />
                 </button>
               ))}
             </section>
@@ -202,6 +223,14 @@ export default function MobileApp() {
         <>
           <div className="m-thread" ref={scroller} data-testid="m-thread">
             <div className="thread">
+              {loadingSess === open && sess.items.length === 0 && (
+                <div className="skel-chat" aria-busy="true">
+                  <div className="skeleton" style={{ width: "50%", height: 34, marginLeft: "auto" }} />
+                  <div className="skeleton" style={{ width: "80%", height: 60 }} />
+                  <div className="skeleton" style={{ width: "60%", height: 30 }} />
+                </div>
+              )}
+              {loadingSess !== open && sess.items.length === 0 && !isBusy && <div className="empty"><p className="muted">Say something to start.</p></div>}
               {sess.items.map(renderItem)}
               {isBusy && <div className="typing"><i /><i /><i /></div>}
             </div>
