@@ -134,6 +134,14 @@ wss.on("connection", (ws: WebSocket) => {
           await step("type", { ref: input?.ref, text: "supercharge" });
           await step("click", { selector: "#go" });
           results.afterClick = (await call(B("eval"), { expression: "document.getElementById('out').textContent" })).result;
+          const shot = await call(B("screenshot"), {});
+          results.screenshot = shot.error
+            ? { error: shot.error.message }
+            : shot.result?.data
+              ? { mimeType: shot.result.mimeType, bytes: Buffer.from(shot.result.data, "base64").length }
+              : shot.result;
+          if (shot.result?.data && process.env.FAKE_AGENT_SHOT) writeFileSync(process.env.FAKE_AGENT_SHOT, Buffer.from(shot.result.data, "base64"));
+          say(sid, `screenshot: ${shot.result?.data ? "ok" : "fallback"}\n`);
           await step("scroll", { dy: 800 });
           results.scrollY = (await call(B("eval"), { expression: "window.scrollY" })).result;
           await step("eval", { expression: "document.title" });

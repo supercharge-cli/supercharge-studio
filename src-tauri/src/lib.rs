@@ -17,6 +17,7 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::oneshot;
 
 mod mcp;
+mod providers;
 mod screenshot;
 mod secrets;
 
@@ -80,6 +81,25 @@ async fn agent_start(state: State<'_, AppState>, bind: String, secret: String, a
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     Err("agent did not start listening within 10s".into())
+}
+
+/// Restart the agent the app started (to pick up provider changes). Returns
+/// "restarted", or "external" when the agent was started outside the app.
+#[tauri::command]
+async fn agent_restart(state: State<'_, AppState>, bind: String, secret: String, always_approve: bool) -> Result<String, String> {
+    let child = state.serve.lock().unwrap().take();
+    let Some(mut c) = child else {
+        return Ok(if agent_probe(bind).await { "external".into() } else { "stopped".into() });
+    };
+    let _ = c.kill().await;
+    for _ in 0..25 {
+        if !agent_probe(bind.clone()).await {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    agent_start(state, bind, secret, always_approve).await?;
+    Ok("restarted".into())
 }
 
 #[tauri::command]
@@ -339,7 +359,8 @@ pub fn run() {
             app_config, agent_probe, agent_start, agent_stop,
             stdio_start, stdio_send, stdio_stop,
             browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible, browser_screenshot,
-            secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info
+            secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info,
+            providers::provider_set_key, providers::provider_has_key, providers::provider_seed_from_env, providers::provider_apply, agent_restart
         ])
         .run(tauri::generate_context!())
         .expect("error while running Supercharge Studio");

@@ -46,3 +46,10 @@ export async function keychainSet(value: string): Promise<boolean> {
   if (!isDesktop()) return false;
   return invoke("secret_set", { account: KEY_ACCOUNT, value }).then(() => true, () => false);
 }
+
+export type ProviderDef = { id: string; name: string; baseUrl: string; format: string; models: string[] };
+export const providerSetKey = (id: string, key: string) => invoke<string>("provider_set_key", { id, key });
+export const providerSeedFromEnv = (id: string) => invoke<ProviderDef | null>("provider_seed_from_env", { id }).catch(() => null);
+export const providerApply = (provider: ProviderDef) => invoke<string[]>("provider_apply", { provider });
+export const agentRestart = (bind: string, secret: string, alwaysApprove: boolean) =>
+  invoke<string>("agent_restart", { bind, secret, alwaysApprove });

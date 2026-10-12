@@ -2,6 +2,10 @@
 export type Chat = { id: string; title: string; sessionId?: string; createdAt: number };
 export type Project = { id: string; name: string; cwd: string; chats: Chat[] };
 export type Group = { id: string; name: string; collapsed?: boolean; projects: Project[] };
+export type ApiFormat = "responses" | "chat_completions" | "messages";
+export type Provider = { id: string; name: string; baseUrl: string; format: ApiFormat; models: string[] };
+export type Theme = "dark" | "light" | "system";
+
 export type Settings = {
   bind: string;
   secret: string;
@@ -10,6 +14,9 @@ export type Settings = {
   alwaysApprove: boolean;
   /** Server key lives in the OS keychain; `secret` is then kept empty on disk. */
   secretInKeychain?: boolean;
+  providers?: Provider[];
+  activeProviderId?: string;
+  theme?: Theme;
 };
 export type AppData = { groups: Group[]; settings: Settings; activeProjectId?: string; activeChatId?: string };
 
@@ -18,7 +25,7 @@ export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().to
 
 export const defaultData = (): AppData => ({
   groups: [{ id: uid(), name: "Personal", projects: [{ id: uid(), name: "workspace", cwd: "/workspace", chats: [] }] }],
-  settings: { bind: "127.0.0.1:2419", secret: "dev-secret", transport: "ws", autoStart: true, alwaysApprove: true },
+  settings: { bind: "127.0.0.1:2419", secret: "dev-secret", transport: "ws", autoStart: true, alwaysApprove: true, providers: [], theme: "dark" },
 });
 
 export function load(): AppData {

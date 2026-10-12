@@ -3,6 +3,7 @@ import { browser } from "../browser/bridge";
 import { isDesktop } from "../lib/desktop";
 import type { ToolCall } from "../acp/types";
 import { ToolCard } from "./ToolCard";
+import { Icon } from "./Icon";
 
 /** Right panel: side browser (native child webview on desktop) + live tool calls. */
 export function BrowserPanel({ tools, onClose }: { tools: ToolCall[]; onClose: () => void }) {
@@ -41,10 +42,10 @@ export function BrowserPanel({ tools, onClose }: { tools: ToolCall[]; onClose: (
   return (
     <aside className="rpanel">
       <div className="tabs">
-        <button className={tab === "browser" ? "on" : ""} onClick={() => setTab("browser")}>Browser</button>
-        <button className={tab === "tools" ? "on" : ""} onClick={() => setTab("tools")}>Tools ({tools.length})</button>
+        <button className={tab === "browser" ? "on" : ""} onClick={() => setTab("browser")}><Icon name="globe" size={14} /> Browser</button>
+        <button className={tab === "tools" ? "on" : ""} onClick={() => setTab("tools")}><Icon name="tool" size={14} /> Tools ({tools.length})</button>
         <div style={{ flex: 1 }} />
-        <button className="icon" onClick={onClose} title="Close panel">×</button>
+        <button className="icon" onClick={onClose} title="Close panel"><Icon name="x" /></button>
       </div>
       {tab === "browser" ? (
         <>
@@ -55,7 +56,8 @@ export function BrowserPanel({ tools, onClose }: { tools: ToolCall[]; onClose: (
               void browser.navigate(url);
             }}
           >
-            <input value={url} onChange={(e) => setUrl(e.target.value)} />
+            <Icon name="globe" size={14} />
+            <input value={url} onChange={(e) => setUrl(e.target.value)} aria-label="Address" />
           </form>
           <div ref={slot} className="webslot">
             {!isDesktop() && <iframe title="browser" src={url} sandbox="allow-scripts allow-forms allow-same-origin" />}
@@ -63,7 +65,7 @@ export function BrowserPanel({ tools, onClose }: { tools: ToolCall[]; onClose: (
         </>
       ) : (
         <div className="toollist">
-          {tools.length === 0 && <div className="muted pad">Tool calls from the agent appear here.</div>}
+          {tools.length === 0 && <div className="empty small"><Icon name="tool" size={22} /><p>Tool calls from the agent appear here.</p></div>}
           {tools.map((t) => <ToolCard key={t.toolCallId} tc={t} compact />)}
         </div>
       )}

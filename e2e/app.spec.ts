@@ -105,7 +105,19 @@ test("slash menu and settings", async ({ page }) => {
   await page.locator(".slash button", { hasText: "/setup" }).click();
   await expect(page.locator(".composer textarea")).toHaveValue("/setup ");
   await page.getByTestId("open-settings").click();
+  await page.getByTestId("tab-agent").click();
   await expect(page.locator(".modal")).toContainText("supercharge/demo");
+  await page.getByTestId("tab-appearance").click();
+  await page.getByTestId("theme-light").click();
+  await page.getByTestId("tab-providers").click();
+  await page.getByTestId("prov-add").click();
+  await page.getByTestId("prov-name").fill("Local");
+  await page.getByTestId("prov-models").fill("m-1, m-2");
+  await page.getByTestId("settings-save").click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.getByTestId("open-settings").click();
+  await page.getByTestId("tab-providers").click();
+  await expect(page.getByTestId("provider-row")).toContainText("m-1, m-2");
   await page.getByRole("button", { name: "Cancel" }).click();
 });
 

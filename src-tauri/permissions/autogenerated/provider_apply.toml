@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-provider-apply"
+description = "Enables the provider_apply command without any pre-configured scope."
+commands.allow = ["provider_apply"]
+
+[[permission]]
+identifier = "deny-provider-apply"
+description = "Denies the provider_apply command without any pre-configured scope."
+commands.deny = ["provider_apply"]

@@ -1,49 +1,179 @@
 import { useState } from "react";
-import type { Settings as S } from "../lib/store";
+import type { ApiFormat, Provider, Settings as S } from "../lib/store";
+import { uid } from "../lib/store";
 import type { ConfigOption } from "../acp/types";
+import { Icon } from "./Icon";
 
 type Props = {
   value: S;
   configOptions: ConfigOption[];
   extensions: string[];
+  desktop: boolean;
   onSave: (s: S) => void;
   onConfig: (id: string, v: string) => void;
   onClose: () => void;
+  /** Store a provider API key in secure storage; resolves to the backend used. */
+  onProviderKey: (id: string, key: string) => Promise<string>;
+  /** Make a provider active and apply it to the agent. */
+  onActivate: (p: Provider, all: Provider[]) => Promise<void>;
 };
 
-export function SettingsModal({ value, configOptions, extensions, onSave, onConfig, onClose }: Props) {
-  const [s, set] = useState(value);
+const FORMATS: { v: ApiFormat; label: string }[] = [
+  { v: "responses", label: "Responses" },
+  { v: "chat_completions", label: "Chat Completions" },
+  { v: "messages", label: "Messages" },
+];
+
+function ProviderEditor({ p, desktop, onChange, onKey, onRemove }: { p: Provider; desktop: boolean; onChange: (p: Provider) => void; onKey: (k: string) => Promise<string>; onRemove: () => void }) {
+  const [key, setKey] = useState("");
+  const [keyState, setKeyState] = useState("");
   return (
-    <div className="modal-bg" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Settings</h3>
-        <label>Transport
-          <select value={s.transport} onChange={(e) => set({ ...s, transport: e.target.value as S["transport"] })}>
-            <option value="ws">ACP WebSocket (agent serve)</option>
-            <option value="stdio">ACP stdio (desktop only)</option>
+    <div className="card" data-testid="provider-editor">
+      <div className="grid2">
+        <label>Name<input data-testid="prov-name" value={p.name} onChange={(e) => onChange({ ...p, name: e.target.value })} /></label>
+        <label>API format
+          <select data-testid="prov-format" value={p.format} onChange={(e) => onChange({ ...p, format: e.target.value as ApiFormat })}>
+            {FORMATS.map((f) => <option key={f.v} value={f.v}>{f.label}</option>)}
           </select>
         </label>
-        <label>Agent address<input value={s.bind} onChange={(e) => set({ ...s, bind: e.target.value })} /></label>
-        <label>Server key<input type="password" value={s.secret} onChange={(e) => set({ ...s, secret: e.target.value })} /></label>
-        <label className="row"><input type="checkbox" checked={s.autoStart} onChange={(e) => set({ ...s, autoStart: e.target.checked })} /> Start agent automatically if not running</label>
-        <label className="row"><input type="checkbox" checked={s.alwaysApprove} onChange={(e) => set({ ...s, alwaysApprove: e.target.checked })} /> Always approve tool calls</label>
-        {configOptions.length > 0 && <h4>Session options</h4>}
-        {configOptions.map((o) => (
-          <label key={o.id}>{o.name ?? o.id}
-            <select defaultValue={o.currentValue} onChange={(e) => onConfig(o.id, e.target.value)}>
-              {(o.options ?? []).map((v) => <option key={v.value} value={v.value}>{v.name && v.name !== v.value ? `${v.name} (${v.value})` : v.value}</option>)}
-            </select>
-          </label>
-        ))}
-        {extensions.length > 0 && (
-          <>
-            <h4>Agent extensions</h4>
-            <div className="mono muted">{extensions.join("\n")}</div>
-          </>
+      </div>
+      <label>Base URL<input data-testid="prov-url" placeholder="https://api.example.com/v1" value={p.baseUrl} onChange={(e) => onChange({ ...p, baseUrl: e.target.value })} /></label>
+      <label>Model IDs (comma separated)
+        <input data-testid="prov-models" value={p.models.join(", ")} onChange={(e) => onChange({ ...p, models: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} />
+      </label>
+      <label>API key
+        <div className="row">
+          <input data-testid="prov-key" type="password" placeholder={desktop ? "Stored securely; leave blank to keep" : "Desktop app required"} value={key} disabled={!desktop} onChange={(e) => setKey(e.target.value)} />
+          <button className="secondary" disabled={!desktop || !key} onClick={async () => { setKeyState(`Saved (${await onKey(key)})`); setKey(""); }}>Save key</button>
+        </div>
+      </label>
+      <div className="row between">
+        <span className="muted">{keyState}</span>
+        <button className="ghost danger-text" onClick={onRemove}><Icon name="trash" /> Remove</button>
+      </div>
+    </div>
+  );
+}
+
+export function SettingsModal(props: Props) {
+  const { value, configOptions, extensions, desktop, onSave, onConfig, onClose } = props;
+  const [s, set] = useState<S>({ ...value, providers: value.providers ?? [] });
+  const [tab, setTab] = useState<"connection" | "providers" | "appearance" | "agent">("connection");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [busy, setBusy] = useState("");
+  const providers = s.providers ?? [];
+  const setProviders = (ps: Provider[]) => set({ ...s, providers: ps });
+
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal wide" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Settings">
+        <div className="modal-head">
+          <h3>Settings</h3>
+          <button className="icon" onClick={onClose} title="Close"><Icon name="x" /></button>
+        </div>
+        <div className="seg">
+          {(["connection", "providers", "appearance", "agent"] as const).map((t) => (
+            <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)} data-testid={`tab-${t}`}>{t[0].toUpperCase() + t.slice(1)}</button>
+          ))}
+        </div>
+
+        {tab === "connection" && (
+          <div className="stack">
+            <label>Transport
+              <select value={s.transport} onChange={(e) => set({ ...s, transport: e.target.value as S["transport"] })}>
+                <option value="ws">ACP WebSocket (agent serve)</option>
+                <option value="stdio">ACP stdio (desktop only)</option>
+              </select>
+            </label>
+            <div className="grid2">
+              <label>Agent address<input value={s.bind} onChange={(e) => set({ ...s, bind: e.target.value })} /></label>
+              <label>Server key<input type="password" value={s.secret} onChange={(e) => set({ ...s, secret: e.target.value })} /></label>
+            </div>
+            <label className="check"><input type="checkbox" checked={s.autoStart} onChange={(e) => set({ ...s, autoStart: e.target.checked })} /> Start the agent automatically if it is not running</label>
+            <label className="check"><input type="checkbox" checked={s.alwaysApprove} onChange={(e) => set({ ...s, alwaysApprove: e.target.checked })} /> Always approve tool calls</label>
+            <p className="muted">{desktop ? "The server key is stored in the OS keychain." : "Web mode: settings are stored in this browser."}</p>
+          </div>
         )}
+
+        {tab === "providers" && (
+          <div className="stack">
+            <p className="muted">Providers are written to the Supercharge agent config; the active one becomes the default model. Keys stay in secure storage.</p>
+            {providers.length === 0 && <div className="empty-card">No providers yet. Add one to use your own API key.</div>}
+            {providers.map((p) => (
+              <div key={p.id}>
+                <div className={`prov-row ${s.activeProviderId === p.id ? "active" : ""}`} data-testid="provider-row">
+                  <div className="prov-main">
+                    <strong>{p.name || "Untitled"}</strong>
+                    <span className="muted">{p.models.join(", ") || "no models"} · {FORMATS.find((f) => f.v === p.format)?.label}</span>
+                  </div>
+                  {s.activeProviderId === p.id ? (
+                    <span className="pill ok"><Icon name="check" size={12} /> Active</span>
+                  ) : (
+                    <button className="secondary" data-testid="prov-use" disabled={!!busy} onClick={async () => {
+                      setBusy(p.id);
+                      try {
+                        await props.onActivate(p, providers);
+                        set({ ...s, activeProviderId: p.id });
+                      } finally {
+                        setBusy("");
+                      }
+                    }}>{busy === p.id ? "Applying…" : "Use"}</button>
+                  )}
+                  <button className="icon" title="Edit" data-testid="prov-edit" onClick={() => setEditing(editing === p.id ? null : p.id)}><Icon name="edit" /></button>
+                </div>
+                {editing === p.id && (
+                  <ProviderEditor
+                    p={p}
+                    desktop={desktop}
+                    onChange={(np) => setProviders(providers.map((x) => (x.id === p.id ? np : x)))}
+                    onKey={(k) => props.onProviderKey(p.id, k)}
+                    onRemove={() => { setProviders(providers.filter((x) => x.id !== p.id)); setEditing(null); }}
+                  />
+                )}
+              </div>
+            ))}
+            <button className="secondary" data-testid="prov-add" onClick={() => {
+              const np: Provider = { id: uid(), name: "New provider", baseUrl: "", format: "responses", models: [] };
+              setProviders([...providers, np]);
+              setEditing(np.id);
+            }}><Icon name="plus" /> Add provider</button>
+          </div>
+        )}
+
+        {tab === "appearance" && (
+          <div className="stack">
+            <div className="seg" role="radiogroup">
+              {(["dark", "light", "system"] as const).map((t) => (
+                <button key={t} className={(s.theme ?? "dark") === t ? "on" : ""} data-testid={`theme-${t}`} onClick={() => set({ ...s, theme: t })}>
+                  <Icon name={t === "light" ? "sun" : t === "dark" ? "moon" : "panelLeft"} /> {t[0].toUpperCase() + t.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tab === "agent" && (
+          <div className="stack">
+            {configOptions.length === 0 && <p className="muted">Session options appear after you start a chat.</p>}
+            {configOptions.map((o) => (
+              <label key={o.id}>{o.name ?? o.id}
+                <select defaultValue={o.currentValue} onChange={(e) => onConfig(o.id, e.target.value)}>
+                  {(o.options ?? []).map((v) => <option key={v.value} value={v.value}>{v.name && v.name !== v.value ? `${v.name} (${v.value})` : v.value}</option>)}
+                </select>
+              </label>
+            ))}
+            {extensions.length > 0 && (
+              <>
+                <h4>Agent extensions</h4>
+                <div className="mono muted">{extensions.join("\n")}</div>
+              </>
+            )}
+          </div>
+        )}
+
         <div className="row end">
           <button className="secondary" onClick={onClose}>Cancel</button>
-          <button onClick={() => onSave(s)}>Save & reconnect</button>
+          <button onClick={() => onSave(s)} data-testid="settings-save">Save & reconnect</button>
         </div>
       </div>
     </div>

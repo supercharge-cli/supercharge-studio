@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { AppData, TreeAction } from "../lib/store";
+import { Icon } from "./Icon";
 
 type Props = {
   data: AppData;
@@ -40,7 +41,7 @@ function Del({ title, onConfirm }: { title: string; onConfirm: () => void }) {
       delete?
     </button>
   ) : (
-    <button className="icon sm" title={title} data-testid="delete" onClick={() => setArmed(true)}>×</button>
+    <button className="icon sm" title={title} data-testid="delete" onClick={() => setArmed(true)}><Icon name="trash" size={13} /></button>
   );
 }
 
@@ -58,17 +59,17 @@ export function Sidebar(p: Props) {
   if (p.collapsed)
     return (
       <aside className="sidebar collapsed">
-        <button className="icon" title="Expand sidebar" data-testid="expand-sidebar" onClick={p.onToggle}>»</button>
-        <button className="icon" title="Settings" onClick={p.onSettings}>⚙</button>
+        <button className="icon" title="Expand sidebar" data-testid="expand-sidebar" onClick={p.onToggle}><Icon name="panelLeft" size={18} /></button>
+        <button className="icon" title="Settings" onClick={p.onSettings}><Icon name="settings" size={18} /></button>
       </aside>
     );
   return (
     <aside className="sidebar" data-testid="sidebar">
       <div className="side-head">
-        <strong>Supercharge Studio</strong>
+        <span className="logo"><Icon name="bolt" size={16} /></span><strong>Supercharge Studio</strong>
         <div style={{ flex: 1 }} />
-        <button className="icon" title="New group" data-testid="add-group" onClick={() => setEd({ kind: "newGroup" })}>＋</button>
-        <button className="icon" title="Collapse sidebar" data-testid="collapse-sidebar" onClick={p.onToggle}>«</button>
+        <button className="icon" title="New group" data-testid="add-group" onClick={() => setEd({ kind: "newGroup" })}><Icon name="plus" /></button>
+        <button className="icon" title="Collapse sidebar" data-testid="collapse-sidebar" onClick={p.onToggle}><Icon name="panelLeft" /></button>
       </div>
       <nav className="tree">
         {p.data.groups.map((g) => (
@@ -78,12 +79,12 @@ export function Sidebar(p: Props) {
                 <Inline initial={g.name} onDone={(v) => (v && p.onTree({ type: "renameGroup", groupId: g.id, name: v }), setEd(null))} />
               ) : (
                 <button className="link" data-testid="group-name" onClick={() => p.onTree({ type: "toggleGroup", groupId: g.id })} onDoubleClick={() => setEd({ kind: "renameGroup", id: g.id })}>
-                  {g.collapsed ? "▸" : "▾"} {g.name}
+                  <Icon name={g.collapsed ? "chevronRight" : "chevronDown"} size={12} /> {g.name}
                 </button>
               )}
               <div className="acts">
-                <button className="icon sm" title="Rename group" data-testid="rename-group" onClick={() => setEd({ kind: "renameGroup", id: g.id })}>✎</button>
-                <button className="icon sm" title="Add project" data-testid="add-project" onClick={() => setEd({ kind: "newProjectName", groupId: g.id })}>＋</button>
+                <button className="icon sm" title="Rename group" data-testid="rename-group" onClick={() => setEd({ kind: "renameGroup", id: g.id })}><Icon name="edit" size={13} /></button>
+                <button className="icon sm" title="Add project" data-testid="add-project" onClick={() => setEd({ kind: "newProjectName", groupId: g.id })}><Icon name="plus" size={13} /></button>
                 <Del title="Delete group" onConfirm={() => p.onTree({ type: "removeGroup", groupId: g.id })} />
               </div>
             </div>
@@ -100,11 +101,11 @@ export function Sidebar(p: Props) {
                     {ed?.kind === "renameProject" && ed.id === proj.id ? (
                       <Inline initial={proj.name} onDone={(v) => (v && p.onTree({ type: "renameProject", projectId: proj.id, name: v }), setEd(null))} />
                     ) : (
-                      <button className="link grow" title={proj.cwd} data-testid="project-name" onClick={() => p.onSelectProject(proj.id)}>{proj.name}</button>
+                      <button className="link grow" title={proj.cwd} data-testid="project-name" onClick={() => p.onSelectProject(proj.id)}><Icon name="folder" size={14} /> {proj.name}</button>
                     )}
                     <div className="acts">
-                      <button className="icon sm" title="New chat" data-testid="new-chat" onClick={() => p.onNewChat(proj.id)}>＋</button>
-                      <button className="icon sm" title="Rename project" data-testid="rename-project" onClick={() => setEd({ kind: "renameProject", id: proj.id })}>✎</button>
+                      <button className="icon sm" title="New chat" data-testid="new-chat" onClick={() => p.onNewChat(proj.id)}><Icon name="plus" size={13} /></button>
+                      <button className="icon sm" title="Rename project" data-testid="rename-project" onClick={() => setEd({ kind: "renameProject", id: proj.id })}><Icon name="edit" size={13} /></button>
                       <Del title="Remove project" onConfirm={() => p.onTree({ type: "removeProject", projectId: proj.id })} />
                     </div>
                   </div>
@@ -116,7 +117,7 @@ export function Sidebar(p: Props) {
                         <button className="link grow" data-testid="chat-title" onClick={() => p.onSelectChat(proj.id, c.id)} onDoubleClick={() => setEd({ kind: "renameChat", id: c.id })}>{c.title}</button>
                       )}
                       <div className="acts">
-                        <button className="icon sm" title="Rename chat" data-testid="rename-chat" onClick={() => setEd({ kind: "renameChat", id: c.id })}>✎</button>
+                        <button className="icon sm" title="Rename chat" data-testid="rename-chat" onClick={() => setEd({ kind: "renameChat", id: c.id })}><Icon name="edit" size={13} /></button>
                         <Del title="Delete chat" onConfirm={() => p.onTree({ type: "removeChat", chatId: c.id })} />
                       </div>
                     </div>
@@ -125,10 +126,11 @@ export function Sidebar(p: Props) {
               ))}
           </section>
         ))}
+        {p.data.groups.length === 0 && !ed && <div className="side-empty">No groups yet. Use <Icon name="plus" size={12} /> to create one.</div>}
         {ed?.kind === "newGroup" && <Inline placeholder="Group name" onDone={(v) => (v && p.onTree({ type: "addGroup", name: v }), setEd(null))} />}
       </nav>
       <div className="side-foot">
-        <button className="secondary" data-testid="open-settings" onClick={p.onSettings}>⚙ Settings</button>
+        <button className="secondary" data-testid="open-settings" onClick={p.onSettings}><Icon name="settings" /> Settings</button>
       </div>
     </aside>
   );

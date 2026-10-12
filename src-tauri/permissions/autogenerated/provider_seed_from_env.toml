@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-provider-seed-from-env"
+description = "Enables the provider_seed_from_env command without any pre-configured scope."
+commands.allow = ["provider_seed_from_env"]
+
+[[permission]]
+identifier = "deny-provider-seed-from-env"
+description = "Denies the provider_seed_from_env command without any pre-configured scope."
+commands.deny = ["provider_seed_from_env"]

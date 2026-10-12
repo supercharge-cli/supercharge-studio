@@ -9,8 +9,9 @@ import { PermissionModal } from "./components/Permission";
 import { SettingsModal } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { ToolCard } from "./components/ToolCard";
-import { appConfig, ensureAgent, keychainGet, keychainSet, mcpUrl } from "./lib/desktop";
-import { AppData, applyTree, findProject, load, mapProject, save, uid, wsUrl } from "./lib/store";
+import { agentRestart, appConfig, ensureAgent, isDesktop, keychainGet, keychainSet, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
+import { Icon } from "./components/Icon";
+import { AppData, applyTree, findProject, load, mapProject, Provider, save, uid, wsUrl } from "./lib/store";
 
 export default function App() {
   const [data, setData] = useState<AppData>(load);
@@ -95,6 +96,41 @@ export default function App() {
       setStatus(String(e?.message ?? e));
     }
   }, []);
+
+  // Theme
+  const theme = data.settings.theme ?? "dark";
+  useEffect(() => {
+    const mq = window.matchMedia?.("(prefers-color-scheme: light)");
+    const apply = () => (document.documentElement.dataset.theme = theme === "system" ? (mq?.matches ? "light" : "dark") : theme);
+    apply();
+    mq?.addEventListener?.("change", apply);
+    return () => mq?.removeEventListener?.("change", apply);
+  }, [theme]);
+
+  // First desktop run: optional test provider from the environment (key goes straight to secure storage).
+  useEffect(() => {
+    if (!isDesktop() || (dataRef.current.settings.providers ?? []).length > 0) return;
+    void providerSeedFromEnv("test").then((p) => {
+      if (p) update((d) => ({ ...d, settings: { ...d.settings, providers: [p as Provider], activeProviderId: d.settings.activeProviderId } }));
+    });
+  }, [update]);
+
+  async function activateProvider(p: Provider, all: Provider[]) {
+    update((d) => ({ ...d, settings: { ...d.settings, providers: all } }));
+    try {
+      await providerApply(p);
+      const st = dataRef.current.settings;
+      const r = await agentRestart(st.bind, secretRef.current || st.secret, st.alwaysApprove);
+      update((d) => ({ ...d, settings: { ...d.settings, activeProviderId: p.id } }));
+      if (r === "external") setNotice(`Provider "${p.name}" saved to the agent config. Restart \`supercharge agent serve\` to use it.`);
+      else setNotice("");
+      await connect();
+      // Existing chats keep their old sessions; new chats use the new provider.
+    } catch (e: any) {
+      setNotice(`Could not apply provider "${p.name}": ${e?.message ?? e}`);
+      throw e;
+    }
+  }
 
   useEffect(() => {
     let off: (() => void) | undefined;
@@ -212,59 +248,84 @@ export default function App() {
       />
       <main className="main">
         <header className="topbar">
-          <span className="brand">Supercharge Studio</span>
-          <strong>{active ? `${active.group.name} / ${active.project.name}` : "Select a project"}</strong>
-          <span className="muted">{activeChat?.title}</span>
-          <div style={{ flex: 1 }} />
-          <span className={`status ${conn === "open" ? "ok" : "bad"}`} title={status}>{conn}</span>
-          {conn !== "open" && <button className="secondary" onClick={() => void connect()}>Connect</button>}
-          <button className="secondary" onClick={() => setPanel((x) => !x)}>{panel ? "Hide panel" : "Browser / tools"}</button>
+          <div className="crumbs">
+            <span className="crumb-dim">{active ? active.group.name : "Supercharge Studio"}</span>
+            {active && <Icon name="chevronRight" size={14} />}
+            <strong>{active ? active.project.name : ""}</strong>
+            {activeChat && <span className="crumb-dim chat-crumb">{activeChat.title}</span>}
+          </div>
+          <div className="spacer" />
+          <span className={`status ${conn === "open" ? "ok" : "bad"}`} title={status}><i className="dot" />{conn}</span>
+          {conn !== "open" && <button className="secondary" onClick={() => void connect()}><Icon name="refresh" /> Connect</button>}
+          <button className="icon" title={panel ? "Hide browser & tools" : "Show browser & tools"} onClick={() => setPanel((x) => !x)}><Icon name="panelRight" size={18} /></button>
         </header>
         {(notice || (conn !== "open" && status)) && (
           <div className="notice" data-testid="notice">
             <span>{notice || status}</span>
-            {notice && <button className="icon sm" onClick={() => setNotice("")}>×</button>}
+            {notice && <button className="icon sm" title="Dismiss" onClick={() => setNotice("")}><Icon name="x" size={14} /></button>}
           </div>
         )}
         <div className="messages">
-          {!activeChat && <div className="empty">Pick a project, then start a chat. Status: {status || conn}</div>}
-          {sess.plan.length > 0 && (
-            <div className="plan">{sess.plan.map((e, i) => <div key={i} className={`plan-${e.status}`}>{e.status === "completed" ? "☑" : "☐"} {e.content}</div>)}</div>
-          )}
-          {sess.items.map((m, i) =>
-            m.kind === "tool" ? (
-              sess.toolCalls[m.toolCallId] && <ToolCard key={i} tc={sess.toolCalls[m.toolCallId]} />
-            ) : (
-              <div key={i} className={`bubble ${m.kind}`}>{m.text}</div>
-            ),
-          )}
-          <div ref={bottomRef} />
-        </div>
-        {draft.startsWith("/") && commands.length > 0 && (
-          <div className="slash">
-            {commands.filter((c) => c.name.startsWith(draft.slice(1).split(" ")[0])).map((c) => (
-              <button key={c.name} className="secondary" title={c.description} onClick={() => setDraft(`/${c.name} `)}>/{c.name}</button>
-            ))}
+          <div className="thread">
+            {!activeChat && (
+              <div className="empty">
+                <div className="empty-icon"><Icon name="bolt" size={28} /></div>
+                <h2>{active ? `Start a chat in ${active.project.name}` : "Welcome to Supercharge Studio"}</h2>
+                <p>{active ? <>The agent works in <code>{active.project.cwd}</code>. Type a message below, or use <code>/</code> for commands.</> : "Pick or add a project in the sidebar to begin."}</p>
+                {conn !== "open" && <p className="muted">Agent status: {status || conn}</p>}
+              </div>
+            )}
+            {sess.plan.length > 0 && (
+              <div className="plan">
+                <div className="plan-title">Plan</div>
+                {sess.plan.map((e, i) => <div key={i} className={`plan-item plan-${e.status}`}><span className="box">{e.status === "completed" && <Icon name="check" size={12} />}</span>{e.content}</div>)}
+              </div>
+            )}
+            {sess.items.map((m, i) =>
+              m.kind === "tool" ? (
+                sess.toolCalls[m.toolCallId] && <ToolCard key={i} tc={sess.toolCalls[m.toolCallId]} />
+              ) : (
+                <div key={i} className={`bubble ${m.kind}`}>{m.text}</div>
+              ),
+            )}
+            {isBusy && <div className="typing" aria-label="Agent is working"><i /><i /><i /></div>}
+            <div ref={bottomRef} />
           </div>
-        )}
-        <div className="composer">
-          <textarea
-            value={draft}
-            placeholder={conn === "open" ? (active ? `Message Supercharge in ${active.project.cwd}` : "Select a project") : "Agent not connected"}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                if (!isBusy) void send();
-              }
-            }}
-            disabled={conn !== "open" || !active}
-          />
-          {isBusy ? (
-            <button className="danger" onClick={() => activeChat?.sessionId && clientRef.current?.cancel(activeChat.sessionId)}>Stop</button>
-          ) : (
-            <button onClick={() => void send()} disabled={conn !== "open" || !active || !draft.trim()}>Send</button>
+        </div>
+        <div className="composer-wrap">
+          {draft.startsWith("/") && commands.length > 0 && (
+            <div className="slash">
+              {commands.filter((c) => c.name.startsWith(draft.slice(1).split(" ")[0])).map((c) => (
+                <button key={c.name} className="chip" title={c.description} onClick={() => setDraft(`/${c.name} `)}><b>/{c.name}</b> <span>{c.description}</span></button>
+              ))}
+            </div>
           )}
+          <div className="composer">
+            <textarea
+              value={draft}
+              rows={1}
+              placeholder={conn === "open" ? (active ? `Message Supercharge…` : "Select a project") : "Agent not connected"}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                const t = e.target;
+                t.style.height = "auto";
+                t.style.height = `${Math.min(t.scrollHeight, 220)}px`;
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (!isBusy) void send();
+                }
+              }}
+              disabled={conn !== "open" || !active}
+            />
+            {isBusy ? (
+              <button className="danger round" aria-label="Stop" title="Stop" onClick={() => activeChat?.sessionId && clientRef.current?.cancel(activeChat.sessionId)}><Icon name="stop" /><span className="sr">Stop</span></button>
+            ) : (
+              <button className="round" aria-label="Send" title="Send (Enter)" onClick={() => void send()} disabled={conn !== "open" || !active || !draft.trim()}><Icon name="send" /><span className="sr">Send</span></button>
+            )}
+          </div>
+          <div className="hint">{active ? <>cwd <code>{active.project.cwd}</code> · Enter to send, Shift+Enter for a new line</> : " "}</div>
         </div>
       </main>
       {panel && <BrowserPanel tools={tools} onClose={() => setPanel(false)} />}
@@ -272,6 +333,9 @@ export default function App() {
         <SettingsModal
           value={{ ...data.settings, secret: secretRef.current || data.settings.secret }}
           configOptions={configOptions}
+          desktop={isDesktop()}
+          onProviderKey={(id, key) => providerSetKey(id, key)}
+          onActivate={activateProvider}
           extensions={clientRef.current ? [...clientRef.current.extensions.methods, ...clientRef.current.extensions.features, ...clientRef.current.extensions.notifications] : []}
           onClose={() => setShowSettings(false)}
           onConfig={(id, v) => activeChat?.sessionId && void clientRef.current
