@@ -1,0 +1,24 @@
+# Maintainer: R3AP3R editz <iotserver24@users.noreply.github.com>
+pkgname=supercharge-studio-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="Lightweight desktop app for the Supercharge coding agent (ACP client)"
+arch=('x86_64')
+url="https://github.com/iotserver24/supercharge-studio"
+license=('Apache-2.0')
+depends=('webkit2gtk-4.1' 'gtk3' 'hicolor-icon-theme')
+optdepends=('supercharge: the Supercharge CLI (the app can also install it)')
+provides=('supercharge-studio')
+conflicts=('supercharge-studio')
+options=('!strip' '!debug')
+source=("@SOURCE@")
+sha256sums=('@SHA256@')
+
+package() {
+  bsdtar -xf data.tar.* -C "$pkgdir"
+  # Desktop entry name without spaces.
+  if [ -f "$pkgdir/usr/share/applications/Supercharge Studio.desktop" ]; then
+    mv "$pkgdir/usr/share/applications/Supercharge Studio.desktop" "$pkgdir/usr/share/applications/supercharge-studio.desktop"
+  fi
+  chmod 755 "$pkgdir/usr/bin/supercharge-studio"
+}

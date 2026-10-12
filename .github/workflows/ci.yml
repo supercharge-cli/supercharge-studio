@@ -112,6 +112,50 @@ jobs:
       - name: Rust unit tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: npx tauri build ${{ matrix.args }}
+      # Launch the real built app and click through every screen (fails on crash/blank window).
+      - name: App smoke (Linux, WebKitGTK via WebDriver; default and no-compositing modes)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get install -y webkit2gtk-driver xvfb
+          cargo install tauri-driver --locked
+          npx vite-node scripts/fake-agent.ts -- --port 2421 --secret e2e &
+          sleep 5
+          export SUPERCHARGE_STUDIO_AGENT=127.0.0.1:2421 SUPERCHARGE_AGENT_SECRET=e2e SMOKE_EXPECT_OPEN=1
+          xvfb-run -a -s "-screen 0 1360x860x24" node scripts/app-smoke.mjs src-tauri/target/release/supercharge-studio smoke/linux
+          WEBKIT_DISABLE_COMPOSITING_MODE=1 xvfb-run -a -s "-screen 0 1360x860x24" node scripts/app-smoke.mjs src-tauri/target/release/supercharge-studio smoke/linux-nocomp
+      - name: App smoke (Windows, WebView2 via WebDriver)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          cargo install tauri-driver --locked
+          ver=$(powershell -NoProfile -Command "(Get-Item 'C:\Program Files (x86)\Microsoft\EdgeWebView\Application\*\msedgewebview2.exe').VersionInfo.ProductVersion" | head -1 | tr -d '\r')
+          echo "WebView2 $ver"
+          curl -fsSL -o edgedriver.zip "https://msedgedriver.microsoft.com/$ver/edgedriver_win64.zip" || curl -fsSL -o edgedriver.zip "https://msedgedriver.azureedge.net/$ver/edgedriver_win64.zip"
+          mkdir -p edgedriver && unzip -o -q edgedriver.zip -d edgedriver
+          export PATH="$PWD/edgedriver:$PATH"
+          npx vite-node scripts/fake-agent.ts -- --port 2421 --secret e2e &
+          sleep 5
+          export SUPERCHARGE_STUDIO_AGENT=127.0.0.1:2421 SUPERCHARGE_AGENT_SECRET=e2e SMOKE_EXPECT_OPEN=1
+          node scripts/app-smoke.mjs "$PWD/src-tauri/target/release/supercharge-studio.exe" smoke/windows
+      - name: App smoke (macOS, launch + screenshot; WebDriver is not available for WKWebView)
+        if: matrix.os == 'macos-latest'
+        run: |
+          app=$(find src-tauri/target -path '*release/bundle/macos/*.app' -maxdepth 6 | head -1)
+          bin="$app/Contents/MacOS/$(ls "$app/Contents/MacOS" | head -1)"
+          "$bin" > smoke-mac.log 2>&1 &
+          pid=$!
+          sleep 15
+          mkdir -p smoke/macos
+          screencapture -x smoke/macos/app.png || true
+          if ! kill -0 $pid 2>/dev/null; then echo "app exited early"; cat smoke-mac.log; exit 1; fi
+          kill $pid
+          echo "macOS app stayed up for 15s"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-smoke-${{ matrix.os }}
+          path: smoke/
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: supercharge-studio-${{ matrix.os }}
@@ -122,6 +166,29 @@ jobs:
             src-tauri/target/**/release/bundle/**/*.msi
             src-tauri/target/**/release/bundle/**/*.exe
           if-no-files-found: warn
+
+  aur:
+    name: AUR package (makepkg in Arch Linux)
+    needs: desktop
+    runs-on: ubuntu-22.04
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: supercharge-studio-ubuntu-22.04, path: bundles }
+      - name: Build and inspect the package
+        run: |
+          pacman -Syu --noconfirm --needed namcap
+          deb=$(find bundles -name '*.deb' | head -1)
+          ver=$(grep -m1 '"version"' src-tauri/tauri.conf.json | sed -E 's/.*"([0-9.]+)".*/\1/')
+          out=$(bash scripts/aur.sh "$ver" "$deb")
+          useradd -m builder && chown -R builder "$out"
+          cd "$out"
+          su builder -c "makepkg --printsrcinfo > .SRCINFO" && cat .SRCINFO
+          su builder -c "makepkg -f --nodeps"
+          namcap PKGBUILD || true
+          ls -l *.pkg.tar.*
+          bsdtar -tf *.pkg.tar.* | grep -q usr/bin/supercharge-studio
 
   android:
     name: Android APKs (release, per ABI)

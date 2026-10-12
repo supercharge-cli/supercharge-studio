@@ -174,9 +174,35 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: rel-ios, path: "rel/*", if-no-files-found: error }
 
+  aur:
+    name: AUR PKGBUILD
+    needs: desktop
+    runs-on: ubuntu-22.04
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: rel-desktop-ubuntu-22.04, path: bundles }
+      - name: Generate PKGBUILD + .SRCINFO for the release deb, and test-build it
+        run: |
+          deb=$(find bundles -name '*.deb' | head -1)
+          ver="${TAG#v}"
+          name=$(basename "$deb" | tr ' ' '-')
+          url="https://github.com/${{ github.repository }}/releases/download/$TAG/$name"
+          useradd -m builder
+          # Validate with the local file first, then emit the URL-based PKGBUILD.
+          out=$(bash scripts/aur.sh "$ver" "$deb")
+          chown -R builder "$out" && su builder -c "cd $out && makepkg -f --nodeps"
+          rm -rf "$out" && out=$(bash scripts/aur.sh "$ver" "$deb" "$url")
+          chown -R builder "$out" && su builder -c "cd $out && makepkg --printsrcinfo > .SRCINFO"
+          mkdir -p rel && cp "$out/PKGBUILD" rel/PKGBUILD && cp "$out/.SRCINFO" rel/SRCINFO.txt
+          cat rel/PKGBUILD
+      - uses: actions/upload-artifact@v4
+        with: { name: rel-aur, path: "rel/*", if-no-files-found: error }
+
   publish:
     name: Publish GitHub Release
-    needs: [desktop, server, android, ios]
+    needs: [desktop, server, android, ios, aur]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
