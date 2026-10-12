@@ -11,10 +11,10 @@ fn main() {
 /// Some Wayland compositor + GPU driver combinations abort WebKitGTK at startup with
 /// "Error 71 (Protocol error) dispatching to Wayland display" (DMA-BUF renderer).
 /// Others fail to paint on X11 ("Failed to create GBM buffer").
-/// - By default the DMA-BUF renderer and accelerated compositing are disabled (software path),
-///   unless the user set those WEBKIT_* variables. SUPERCHARGE_STUDIO_GPU=1 keeps the GPU path.
+/// - By default the DMA-BUF renderer is disabled unless the user set WEBKIT_DISABLE_DMABUF_RENDERER.
+///   SUPERCHARGE_STUDIO_GPU=1 keeps the full GPU path.
 /// - SUPERCHARGE_STUDIO_GDK_BACKEND=x11|wayland forces a GDK backend.
-/// - `--safe-graphics` (or SUPERCHARGE_STUDIO_SAFE_GRAPHICS=1) forces the software path and X11.
+/// - `--safe-graphics` (or SUPERCHARGE_STUDIO_SAFE_GRAPHICS=1) also disables compositing and forces X11.
 /// - On Wayland with XWayland available, if the app dies within a few seconds of starting,
 ///   it is relaunched once with GDK_BACKEND=x11 and compositing disabled.
 ///   Set SUPERCHARGE_STUDIO_NO_FALLBACK=1 to turn this off.
@@ -35,9 +35,10 @@ mod linux_graphics {
     pub fn prepare() {
         let gpu = var_os("SUPERCHARGE_STUDIO_GPU").is_some_and(|v| v == "1");
         if !gpu {
-            // Software path (no DMA-BUF/GBM). Inherited by every webview and WebKit web process.
+            // No DMA-BUF/GBM buffers (the cause of Wayland "Error 71" / "Failed to create GBM
+            // buffer"). Accelerated compositing stays on: WebKitGTK's no-compositing mode is
+            // less tested (it crashed in view transitions). Inherited by every webview.
             set_default("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-            set_default("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
         }
         if let Some(b) = var_os("SUPERCHARGE_STUDIO_GDK_BACKEND") {
             unsafe { set_var("GDK_BACKEND", b) }

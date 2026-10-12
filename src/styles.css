@@ -313,3 +313,6 @@ button.compact{padding:5px 11px;font-size:12.5px}
 .agent-setup .row, .agent-log .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .agent-log .log { max-height: 320px; white-space: pre-wrap; }
 .small { font-size: 12px; }
+/* Linux desktop shell: avoid effects that force compositing layers. */
+.wk-safe .modal-bg,.wk-safe .palette-bg{backdrop-filter:none}
+.wk-safe .skeleton::after{will-change:auto}

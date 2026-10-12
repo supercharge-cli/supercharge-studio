@@ -1,7 +1,12 @@
 import { flushSync } from "react-dom";
 
-const vt = typeof document !== "undefined" && "startViewTransition" in document;
+// WebKitGTK (the Linux desktop shell) can crash its web process in startViewTransition when
+// accelerated compositing is off, so view transitions are never used there; plain CSS
+// transitions are used instead. The `wk-safe` class also drops compositing-only effects.
+const isLinuxShell = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window && /Linux/i.test(navigator.userAgent) && !/Android/i.test(navigator.userAgent);
+const vt = typeof document !== "undefined" && "startViewTransition" in document && !isLinuxShell;
 if (typeof document !== "undefined" && !vt) document.documentElement.classList.add("no-vt");
+if (typeof document !== "undefined" && isLinuxShell) document.documentElement.classList.add("wk-safe");
 
 const reduced = () => typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 

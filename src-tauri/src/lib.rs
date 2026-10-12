@@ -173,6 +173,21 @@ mod linux_layout {
 
     pub fn wrap_main<R: Runtime>(main: &tauri::Webview<R>) {
         let _ = main.with_webview(|pw| {
+            // If the WebKit web process dies, reload instead of leaving a blank window
+            // (at most 3 times a minute, so a crash loop does not spin).
+            {
+                use webkit2gtk::WebViewExt;
+                let hits = std::rc::Rc::new(std::cell::RefCell::new(Vec::<std::time::Instant>::new()));
+                pw.inner().connect_web_process_terminated(move |v, reason| {
+                    eprintln!("supercharge-studio: web process terminated ({reason:?}); reloading");
+                    let mut h = hits.borrow_mut();
+                    h.retain(|t| t.elapsed() < std::time::Duration::from_secs(60));
+                    if h.len() < 3 {
+                        h.push(std::time::Instant::now());
+                        v.reload();
+                    }
+                });
+            }
             let w: gtk::Widget = pw.inner().upcast();
             let Some(parent) = w.parent().and_then(|p| p.downcast::<gtk::Box>().ok()) else { return };
             parent.remove(&w);
@@ -330,7 +345,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            app_config, agent_probe, agent_start, agent_stop, agent::agent_info, agent::agent_log, agent::agent_install,
+            app_config, agent_probe, agent_start, agent_stop, agent::agent_info, agent::agent_log, agent::agent_install, agent::agent_check, agent::agent_free_port, agent::agent_log_note,
             stdio_start, stdio_send, stdio_stop,
             browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible, browser_screenshot,
             secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info,
