@@ -23,6 +23,24 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  e2e:
+    name: E2E (fake ACP agent + Chromium)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-results
+          path: test-results/
+
   desktop:
     name: Desktop bundle (${{ matrix.os }})
     needs: test
@@ -31,7 +49,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-22.04
-            args: "--bundles deb,appimage"
+            args: "--bundles deb,rpm"
           - os: macos-latest
             args: "--target universal-apple-darwin"
           - os: windows-latest
@@ -61,7 +79,7 @@ jobs:
           name: supercharge-studio-${{ matrix.os }}
           path: |
             src-tauri/target/**/release/bundle/**/*.deb
-            src-tauri/target/**/release/bundle/**/*.AppImage
+            src-tauri/target/**/release/bundle/**/*.rpm
             src-tauri/target/**/release/bundle/**/*.dmg
             src-tauri/target/**/release/bundle/**/*.msi
             src-tauri/target/**/release/bundle/**/*.exe

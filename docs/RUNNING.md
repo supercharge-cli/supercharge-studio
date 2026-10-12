@@ -32,6 +32,11 @@ Manual check list:
 5. Restart the agent → pill shows `reconnecting`, then `open` again.
 6. Untick "Always approve" (and run the agent without `--always-approve`) → permission dialog.
 
+### Launcher overrides
+
+`SUPERCHARGE_STUDIO_AGENT=host:port` and `SUPERCHARGE_AGENT_SECRET` override the saved
+agent address / key for one run of the desktop app (they are not written to settings).
+
 ## Side browser control
 
 The app advertises client-side ACP extension methods in
@@ -48,8 +53,10 @@ JSON-RPC requests to the app:
 | `_supercharge/browser/eval` | `{ expression }` | `{ value }` |
 | `_supercharge/browser/back` | `{}` | `{ ok }` |
 
-The browser is a native child webview (desktop only). Pages in it may call exactly
-one app command (`browser_result`) to return script results.
+The browser is a native child webview (desktop only). Scripts run in the page and
+the app reads results back by polling the webview, so pages loaded in the side browser
+get no access to app commands. On Linux the browser is placed in a GTK overlay above
+the app UI (GTK cannot position child webviews absolutely).
 
 ## Tests
 
@@ -76,3 +83,31 @@ then builds desktop bundles (deb/AppImage, universal dmg, msi/nsis).
 - Extra update kinds: `config_option_update`, `session_info_update` (chat title).
 - Without a configured provider, `session/prompt` fails with JSON-RPC `-32603`
   and the real cause (HTTP 401) in `error.data`; the app shows a `/setup` hint.
+
+## End-to-end tests
+
+```bash
+npx playwright install chromium
+npm run e2e        # web UI + scripted fake ACP agent (scripts/fake-agent.ts)
+```
+
+Covers streaming (thought, plan, chunks), tool cards + tools panel, permission dialog,
+Stop/cancel, sidebar group/project/chat create/rename/delete + persistence, slash menu,
+settings, missing-provider hint and stale-session recovery.
+
+`npm run fake-agent -- --port 2422 --secret qa` runs the fake agent by hand; prompting
+`browser` makes it drive every `_supercharge/browser/*` method in the desktop app:
+
+```bash
+FAKE_AGENT_REPORT=/tmp/browser.json npm run fake-agent -- --port 2422 --secret qa &
+SUPERCHARGE_STUDIO_AGENT=127.0.0.1:2422 SUPERCHARGE_AGENT_SECRET=qa ./src-tauri/target/release/supercharge-studio
+```
+
+`npm run live` exercises a real agent with a configured provider (reply, tool call with
+permission, cancel). Keep prompts short; it uses real tokens.
+
+## Linux packages
+
+CI ships `.deb` and `.rpm` (~2 MB each; they depend on the system WebKitGTK).
+An AppImage is not built by default: it bundles WebKitGTK and GTK (~80 MB).
+Build one locally with `npx tauri build --bundles appimage` if needed.
