@@ -40,9 +40,12 @@ android {
             }
         }
         getByName("release") {
+            // R8 code shrinking + resource shrinking; native libs are stripped by cargo (strip = true).
             optimization {
                enable = true
             }
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 *fileTree(".") {
                   include("**/*.pro")
@@ -57,6 +60,17 @@ android {
     }
     buildFeatures {
         buildConfig = true
+    }
+    // Compressed native libs: the smallest APK to download/sideload (extracted on install).
+    packaging.jniLibs.useLegacyPackaging = true
+    androidResources {
+        // The UI is English-only; drop translated strings pulled in by AndroidX.
+        localeFilters += listOf("en")
+    }
+    packaging {
+        resources {
+            excludes += listOf("META-INF/*.version", "META-INF/*.kotlin_module", "META-INF/**/LICENSE*", "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/*-LICENSE", "kotlin/**", "DebugProbesKt.bin")
+        }
     }
 }
 
@@ -74,7 +88,6 @@ dependencies {
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.activity:activity-ktx:1.10.1")
-    implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.lifecycle:lifecycle-process:2.10.0")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
