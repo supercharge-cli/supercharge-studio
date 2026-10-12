@@ -9,3 +9,5 @@ coverage/
 node_modules/.cache/
 test-results/
 playwright-report/
+dist-mobile
+mobile/src-tauri/target

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Supercharge Studio",
+  "version": "0.1.0",
+  "identifier": "in.superchargeai.studio.mobile",
+  "build": {
+    "frontendDist": "../../dist-mobile",
+    "devUrl": "http://127.0.0.1:5175/mobile.html",
+    "beforeDevCommand": "npm --prefix .. run dev:mobile",
+    "beforeBuildCommand": "npm --prefix .. run build:mobile"
+  },
+  "app": {
+    "windows": [{ "title": "Supercharge Studio", "url": "mobile.html", "width": 400, "height": 800 }],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["../../src-tauri/icons/32x32.png", "../../src-tauri/icons/128x128.png", "../../src-tauri/icons/128x128@2x.png", "../../src-tauri/icons/icon.icns", "../../src-tauri/icons/icon.ico"],
+    "android": { "minSdkVersion": 26 }
+  }
+}

@@ -1,0 +1,28 @@
+html,body,#root{height:100%}
+.m-app{height:100dvh;display:flex;flex-direction:column;background:var(--bg);padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+.m-top{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+.m-title{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-list{flex:1;overflow:auto;padding:10px;-webkit-overflow-scrolling:touch}
+.m-proj{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:6px;margin-bottom:10px;animation:rise .2s var(--ease) both}
+.m-proj-head{display:flex;align-items:center;gap:8px;padding:6px 8px}
+.m-chat{width:100%;background:none;color:var(--fg);padding:12px 10px;border-radius:10px;font-weight:450;text-align:left}
+.m-chat span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-chat:active{background:var(--hover)}
+.m-busy{width:8px;height:8px;border-radius:50%;background:var(--acc);animation:blink 1s infinite}
+.m-none{padding:6px 10px 10px}
+.m-thread{flex:1;overflow:auto;-webkit-overflow-scrolling:touch}
+.m-thread .thread{padding:14px 12px}
+.m-composer{display:flex;gap:8px;align-items:flex-end;padding:8px 10px;border-top:1px solid var(--line);background:var(--panel)}
+.m-composer textarea{resize:none;max-height:140px;font-size:16px}
+.m-big{width:100%;justify-content:center;padding:12px;font-size:15px;border-radius:12px}
+.m-pair{display:flex;flex-direction:column;gap:14px;padding:28px 20px;max-width:520px;margin:0 auto;width:100%}
+.m-pair label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
+.m-hero{text-align:center}.m-hero h1{font-size:22px;margin:12px 0 4px}
+.logo.big{width:52px;height:52px;border-radius:16px;margin:0 auto}
+.m-sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-end;animation:fade .14s ease both;z-index:20}
+.m-sheet{width:100%;background:var(--raise);border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px;animation:sheet .22s var(--ease) both;max-height:80vh;overflow:auto}
+.m-sheet h3{margin:0}.m-sheet pre{background:var(--code);padding:8px;border-radius:8px;overflow:auto;max-height:30vh}
+@keyframes sheet{from{transform:translateY(100%)}to{transform:none}}
+.m-handoff{margin:8px 10px 0;justify-content:center;border-radius:12px}
+.m-toast{position:fixed;left:50%;bottom:calc(80px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--raise);border:1px solid var(--line);padding:8px 14px;border-radius:20px;box-shadow:var(--shadow);animation:rise .2s var(--ease) both}
+.m-unpair{margin:10px auto;display:flex}
