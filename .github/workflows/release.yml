@@ -182,8 +182,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { pattern: rel-*, path: dist, merge-multiple: true }
-      - name: Checksums
-        run: cd dist && sha256sum * > SHA256SUMS.txt && ls -l
+      - name: Flatten, normalize names, checksums
+        run: |
+          mkdir -p out
+          find dist -type f | while read -r f; do n=$(basename "$f" | tr ' ' '-'); cp "$f" "out/$n"; done
+          rm -rf dist && mv out dist
+          cd dist && sha256sum * > SHA256SUMS.txt && ls -l
       - name: Create or update the release
         env:
           GH_TOKEN: ${{ github.token }}
