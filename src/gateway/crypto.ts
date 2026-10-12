@@ -64,13 +64,34 @@ export class Channel {
 }
 
 export type PairInfo = { url: string; pairingId: string; secret: Uint8Array; desktopName: string; relay?: string };
-export function parsePairUri(uri: string): PairInfo {
-  const q = new URL(uri.trim().replace(/^(scstudio|supercharge-studio):\/\//, "https://x/"));
-  const url = q.searchParams.get("u"), id = q.searchParams.get("i"), k = q.searchParams.get("k");
-  if (!url || !id || !k) throw new Error("Not a Supercharge Studio pairing code");
-  const secret = b64.decUrl(k);
-  if (secret.length !== 32) throw new Error("Invalid pairing secret");
-  const relay = q.searchParams.get("r") ?? undefined;
-  if (relay && !/^wss?:\/\//.test(relay)) throw new Error("Invalid relay URL");
-  return { url, pairingId: id, secret, desktopName: q.searchParams.get("n") ?? "Desktop", relay };
+export const PAIR_ERROR = "That QR code isn't a Supercharge Studio pairing code. Open Settings → Devices → Show pairing code on your computer and scan that.";
+
+/**
+ * Parse a scanned or pasted pairing code. Never throws anything but an Error with a
+ * readable message, whatever the input (other QR codes, truncated scans, binary junk).
+ */
+export function parsePairUri(input: unknown): PairInfo {
+  const fail = (msg = PAIR_ERROR): never => { throw new Error(msg); };
+  if (typeof input !== "string") fail();
+  let raw = (input as string).replace(/[\s\u0000-\u001f\u200b-\u200d\ufeff]+/g, "");
+  if (!raw || raw.length > 4096) fail();
+  // A link that was URL-encoded once more (some scanners and chat apps do this).
+  if (/^(scstudio|supercharge-studio)%3A/i.test(raw)) { try { raw = decodeURIComponent(raw); } catch { fail(); } }
+  // The link may be embedded in other text, e.g. "Pair: scstudio://pair?…".
+  const m = raw.match(/(?:scstudio|supercharge-studio):\/\/pair\/?\?[^\s"'<>]*/i);
+  if (!m) fail();
+  let q: URLSearchParams;
+  try { q = new URL(m![0].replace(/^(scstudio|supercharge-studio):\/\/pair\/?/i, "https://x/pair")).searchParams; } catch { return fail(); }
+  const url = q.get("u"), id = q.get("i"), k = q.get("k");
+  if (!url || !id || !k) fail();
+  if (!/^wss?:\/\/[^\s/]+/i.test(url!)) fail("This pairing code has an invalid address. Show a new code on your computer and scan again.");
+  try { new URL(url!); } catch { fail("This pairing code has an invalid address. Show a new code on your computer and scan again."); }
+  if (!/^[A-Za-z0-9._-]{1,128}$/.test(id!)) fail();
+  let secret: Uint8Array = new Uint8Array();
+  try { if (!/^[A-Za-z0-9_\-+/=]+$/.test(k!)) throw 0; secret = b64.decUrl(k!.replace(/=+$/, "")); } catch { fail("This pairing code is damaged. Show a new code on your computer and scan again."); }
+  if (secret.length !== 32) fail("This pairing code is damaged. Show a new code on your computer and scan again.");
+  const relay = q.get("r") || undefined;
+  if (relay) { let ok = /^wss?:\/\//i.test(relay); try { new URL(relay); } catch { ok = false; } if (!ok) fail("This pairing code has an invalid relay address."); }
+  const desktopName = (q.get("n") || "Desktop").slice(0, 80);
+  return { url: url!, pairingId: id!, secret, desktopName, relay };
 }

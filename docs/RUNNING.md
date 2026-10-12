@@ -198,7 +198,7 @@ npx tauri android build --debug --apk --target x86_64           # emulator debug
 npx tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64   # release
 ```
 
-Release builds are stripped (`strip`, LTO, `opt-level = "s"`, `panic = "abort"`) and split
+Release builds are stripped (`strip`, LTO, `opt-level = "s"`, `panic = "unwind"`) and split
 per ABI; they come out unsigned in `mobile/src-tauri/gen/android/app/build/outputs/apk/`
 — sign with `apksigner` before installing. Typical sizes: arm64 ≈ 6.0 MiB,
 armv7 ≈ 4.7 MiB, x86_64 ≈ 6.4 MiB.
