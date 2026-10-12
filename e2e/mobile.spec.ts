@@ -85,7 +85,7 @@ test("falls back to the relay when the direct route is unreachable, still end-to
   await page.getByTestId("m-send").click();
   await expect(page.locator(".bubble.agent").last()).toHaveText("Sure — working on it.");
   const stats = await (await fetch(`${GW}/relay-stats`)).json();
-  expect(stats.connections).toBeGreaterThanOrEqual(2); // pairing + session
-  expect(stats.binaryFrames).toBeGreaterThan(4);
+  expect(stats.lanes).toBeGreaterThanOrEqual(2); // pairing + session, via the reference relay
+  expect(stats.frames).toBeGreaterThan(4);
   expect(stats.plaintextSeen).toBe(false);
 });

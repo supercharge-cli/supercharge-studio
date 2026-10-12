@@ -12,6 +12,8 @@ import { createServer } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import { b64, Channel, deviceKey, hmac, random, sessionKey } from "../src/gateway/crypto";
 import { GatewayHub } from "../src/gateway/hub";
+// @ts-ignore plain JS module
+import { startRelay, stats as relayStats } from "../relay/server.mjs";
 
 const port = Number(process.argv[process.argv.indexOf("--port") + 1] || 2431);
 const pairings = new Map<string, Uint8Array>(); // pairing id -> device key
@@ -81,7 +83,7 @@ const http = createServer(async (req, res) => {
   res.end("{}");
 });
 const wss = new WebSocketServer({ server: http, path: "/gw" });
-wss.on("connection", (ws) => {
+const onConn = (ws: import("ws").WebSocket) => {
   let ch: Channel | null = null;
   let nc: Uint8Array, ns: Uint8Array, sk: Uint8Array, key: Uint8Array | undefined, id = "", pairing = false;
   let chain = Promise.resolve();
@@ -116,30 +118,28 @@ wss.on("connection", (ws) => {
     }).catch((e) => console.error(e));
   });
   ws.on("close", () => { conns.delete(id); hub.disconnected(id); });
-});
+};
+wss.on("connection", onConn);
 http.listen(port, "127.0.0.1", () => console.log(`fake gateway on ws://127.0.0.1:${port}/gw`));
 
 
-// ---- Relay double (see docs/MOBILE-PLAN.md "Relay"): blind byte pipe client <-> host. ----
-// The real relay pairs a device socket with a host lane; here the "host lane" is simply a
-// socket to the gateway above, which is exactly what the desktop would open outbound.
-const relayStats = { connections: 0, frames: 0, binaryFrames: 0, plaintextSeen: false };
-const relay = new WebSocketServer({ port: port + 1 });
-relay.on("connection", (client, req) => {
-  if (!/^\/v1\/connect\/[\w-]+$/.test(req.url ?? "")) return client.close(4404, "unknown host");
-  relayStats.connections++;
-  const host = new WebSocket(`ws://127.0.0.1:${port}/gw`);
-  const queue: [unknown, boolean][] = [];
-  const inspect = (data: any, isBinary: boolean) => {
-    relayStats.frames++;
-    if (isBinary) {
-      relayStats.binaryFrames++;
-      if (Buffer.from(data).toString("latin1").includes("jsonrpc")) relayStats.plaintextSeen = true;
-    } else if (String(data).includes("jsonrpc")) relayStats.plaintextSeen = true;
-  };
-  client.on("message", (data, isBinary) => { inspect(data, isBinary); host.readyState === WebSocket.OPEN ? host.send(data, { binary: isBinary }) : queue.push([data, isBinary]); });
-  host.on("open", () => { for (const [d, b] of queue.splice(0)) host.send(d as any, { binary: b }); });
-  host.on("message", (data, isBinary) => { inspect(data, isBinary); client.send(data, { binary: isBinary }); });
-  host.on("close", () => client.close());
-  client.on("close", () => host.close());
-});
+// ---- Relay: the reference relay (relay/server.mjs) with this gateway attached as host ----
+// Exactly what the desktop/server do: keep a control socket, open one lane per phone and
+// run the normal gateway handshake over it. The relay never sees keys or plaintext.
+const relayPort = port + 1;
+const relayToken = "f".repeat(64);
+await startRelay(relayPort, "127.0.0.1");
+function hostLoop() {
+  const ctl = new WebSocket(`ws://127.0.0.1:${relayPort}/v1/host/test-host`);
+  ctl.on("open", () => ctl.send(JSON.stringify({ t: "register", token: relayToken })));
+  ctl.on("message", (raw) => {
+    const m = JSON.parse(String(raw));
+    if (m.t === "lane") {
+      const lane = new WebSocket(`ws://127.0.0.1:${relayPort}/v1/lane/test-host/${m.lane}?token=${relayToken}`);
+      lane.on("open", () => onConn(lane as any));
+    }
+  });
+  ctl.on("close", () => setTimeout(hostLoop, 500));
+  ctl.on("error", () => {});
+}
+hostLoop();
