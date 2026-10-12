@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-agent-probe"
+description = "Enables the agent_probe command without any pre-configured scope."
+commands.allow = ["agent_probe"]
+
+[[permission]]
+identifier = "deny-agent-probe"
+description = "Denies the agent_probe command without any pre-configured scope."
+commands.deny = ["agent_probe"]

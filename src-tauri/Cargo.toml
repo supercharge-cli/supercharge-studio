@@ -1,0 +1,26 @@
+[package]
+name = "supercharge-studio"
+version = "0.1.0"
+description = "Supercharge Studio — desktop ACP client for Supercharge"
+license = "Apache-2.0"
+edition = "2021"
+
+[lib]
+name = "supercharge_studio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["unstable"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["sync", "time", "process", "io-util", "net", "rt"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

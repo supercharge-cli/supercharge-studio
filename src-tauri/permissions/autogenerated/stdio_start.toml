@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-stdio-start"
+description = "Enables the stdio_start command without any pre-configured scope."
+commands.allow = ["stdio_start"]
+
+[[permission]]
+identifier = "deny-stdio-start"
+description = "Denies the stdio_start command without any pre-configured scope."
+commands.deny = ["stdio_start"]
