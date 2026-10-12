@@ -1,6 +1,6 @@
 import { ReactNode, useState } from "react";
 import type { ApiFormat, Provider, Settings as S } from "../lib/store";
-import { uid } from "../lib/store";
+import { parseAgentUrl, uid } from "../lib/store";
 import type { ConfigOption } from "../acp/types";
 import { Icon } from "./Icon";
 import { agentInfo, agentLog, type AgentInfo } from "../lib/desktop";
@@ -76,6 +76,13 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
   const providers = s.providers ?? [];
   const setProviders = (ps: Provider[]) => set({ ...s, providers: ps });
 
+  /** A pasted ws://host:port/ws?server-key=… URL fills both the address and the key. */
+  const splitUrl = (text: string) => {
+    const p = parseAgentUrl(text);
+    if (!p.bind) return false;
+    set({ ...s, bind: p.bind, ...(p.secret ? { secret: p.secret, agentChoice: "key" as const } : {}) });
+    return true;
+  };
   return (
     <div className="screen settings-screen" role="region" aria-label="Settings" data-testid="settings-screen">
       <nav className="screen-nav">
@@ -103,8 +110,8 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
               </select>
             </label>
             <div className="grid2">
-              <label>Agent address<input value={s.bind} onChange={(e) => set({ ...s, bind: e.target.value })} /></label>
-              <label>Server key<input type="password" value={s.secret} onChange={(e) => set({ ...s, secret: e.target.value })} /></label>
+              <label>Agent address<input value={s.bind} placeholder="127.0.0.1:2419 or ws://…/ws?server-key=…" data-testid="agent-bind" onChange={(e) => set({ ...s, bind: e.target.value })} onBlur={(e) => splitUrl(e.target.value)} onPaste={(e) => { const t = e.clipboardData.getData("text"); if (splitUrl(t)) e.preventDefault(); }} /></label>
+              <label>Server key<input type="password" value={s.secret} data-testid="agent-secret" onChange={(e) => set({ ...s, secret: e.target.value, agentChoice: "key" })} onBlur={(e) => splitUrl(e.target.value)} onPaste={(e) => { const t = e.clipboardData.getData("text"); if (splitUrl(t)) e.preventDefault(); }} /></label>
             </div>
             <label className="check"><input type="checkbox" checked={s.autoStart} onChange={(e) => set({ ...s, autoStart: e.target.checked })} /> Start the agent automatically if it is not running</label>
             <label className="check"><input type="checkbox" checked={s.alwaysApprove} onChange={(e) => set({ ...s, alwaysApprove: e.target.checked })} /> Always approve tool calls</label>

@@ -75,3 +75,6 @@ export const agentInfo = () => invoke<AgentInfo>("agent_info");
 export const agentLog = () => invoke<string>("agent_log");
 export const agentInstall = () => invoke<string>("agent_install");
 export const agentProbe = (addr: string) => (isDesktop() ? invoke<boolean>("agent_probe", { addr }) : Promise.resolve(false));
+export const agentCheck = (bind: string, secret: string) => (isDesktop() ? invoke<string>("agent_check", { bind, secret }) : Promise.resolve("ok"));
+export const agentFreePort = () => invoke<string>("agent_free_port");
+export const agentLogNote = (line: string) => (isDesktop() ? invoke("agent_log_note", { line }).catch(() => {}) : Promise.resolve());

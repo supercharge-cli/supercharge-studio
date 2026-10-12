@@ -21,8 +21,8 @@ import { Sidebar } from "./components/Sidebar";
 import { ToolCard } from "./components/ToolCard";
 import { VirtualList } from "./components/VirtualList";
 import { GatewayHub } from "./gateway/hub";
-import { agentInfo, agentInstall, agentProbe, agentRestart, appConfig, ensureAgent, gateway, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
-import { AppData, applyTree, findProject, load, mapProject, Provider, save, uid, wsUrl } from "./lib/store";
+import { agentCheck, agentFreePort, agentInfo, agentInstall, agentLogNote, agentRestart, appConfig, ensureAgent, gateway, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
+import { AppData, applyTree, findProject, load, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
 
 type View = "chat" | "settings" | "usage";
@@ -60,6 +60,9 @@ export default function App() {
   const clientRef = useRef<AcpClient | null>(null);
   const secretRef = useRef("");
   const [agentMissing, setAgentMissing] = useState(false);
+  const [agentRejected, setAgentRejected] = useState("");
+  const [keyDraft, setKeyDraft] = useState("");
+  const [keyErr, setKeyErr] = useState("");
   const [installing, setInstalling] = useState("");
   const mcpRef = useRef<string | null | undefined>(undefined);
   const overrides = useRef<{ bind?: string | null; secret?: string | null } | null>(null);
@@ -171,25 +174,52 @@ export default function App() {
       const k = await keychainGet();
       if (k) base = { ...base, secret: k };
     }
-    // Per-install agent secret: replace the shipped default before we start our own agent.
-    // (If an agent is already listening, keep the configured secret so we can attach.)
-    if (isDesktop() && !o.secret && base.autoStart && base.transport === "ws" && (!base.secret || base.secret === "dev-secret") && !(await agentProbe(o.bind || base.bind))) {
-      const fresh = Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => b.toString(16).padStart(2, "0")).join("");
-      const inKc = await keychainSet(fresh);
-      update((d) => ({ ...d, settings: { ...d.settings, secret: inKc ? "" : fresh, secretInKeychain: inKc } }));
-      base = { ...base, secret: fresh };
-    }
-    secretRef.current = base.secret;
-    const s = { ...base, ...(o.bind ? { bind: o.bind } : {}), ...(o.secret ? { secret: o.secret } : {}) };
+    const freshKey = async () => {
+      const k = Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => b.toString(16).padStart(2, "0")).join("");
+      const inKc = await keychainSet(k);
+      update((d) => ({ ...d, settings: { ...d.settings, secret: inKc ? "" : k, secretInKeychain: inKc } }));
+      return k;
+    };
+    let s = { ...base, ...(o.bind ? { bind: o.bind } : {}), ...(o.secret ? { secret: o.secret } : {}) };
+    setAgentRejected("");
     try {
-      if (s.autoStart && s.transport === "ws") {
-        setStatus("Starting agent…");
-        const r = await ensureAgent(s.bind, s.secret, s.alwaysApprove);
+      if (isDesktop() && s.autoStart && s.transport === "ws") {
+        setStatus("Checking for a running agent…");
+        const useOwn = !o.bind && base.agentChoice === "own" && base.ownBind;
+        if (useOwn) s = { ...s, bind: base.ownBind! };
+        let chk = await agentCheck(s.bind, s.secret);
+        void agentLogNote(`connect: ${s.bind} -> ${chk}${useOwn ? " (own agent)" : ""}`);
+        if (chk === "unreachable") {
+          // Nothing there: start our own with a per-install key (replace the shipped default).
+          if (!o.secret && (!s.secret || s.secret === "dev-secret")) s = { ...s, secret: await freshKey() };
+          setStatus("Starting agent…");
+          const r = await ensureAgent(s.bind, s.secret, s.alwaysApprove);
+          setStatus(r === "started" ? "Agent started" : "Attached to running agent");
+        } else if (chk !== "ok") {
+          // Something is listening but rejects our key (e.g. an agent started without --secret).
+          const foreign = s.bind;
+          if (o.secret || base.agentChoice === "key") {
+            setAgentRejected(foreign);
+            setConn("closed");
+            setStatus(`An agent is running on ${foreign} but rejected the key`);
+            return;
+          }
+          const own = await agentFreePort();
+          if (!s.secret || s.secret === "dev-secret" || base.agentChoice !== "own") s = { ...s, secret: await freshKey() };
+          s = { ...s, bind: own };
+          setStatus(`Agent on ${foreign} rejected our key — starting our own on ${own}…`);
+          void agentLogNote(`agent on ${foreign} rejected the key; starting own agent on ${own}`);
+          await ensureAgent(own, s.secret, s.alwaysApprove);
+          update((d) => ({ ...d, settings: { ...d.settings, agentChoice: "own", ownBind: own } }));
+          setNotice(`The agent already running on ${foreign} rejected the key, so Supercharge Studio started its own on ${own}. To use yours instead, enter its key in Settings → Connection.`);
+        } else {
+          setStatus("Attached to running agent");
+        }
         setAgentMissing(false);
-        setStatus(r === "started" ? "Agent started" : r === "attached" ? "Attached to running agent" : "");
       }
     } catch (e: any) {
       const msg = String(e?.message ?? e);
+      void agentLogNote(`connect failed: ${msg}`);
       if (msg.includes("AGENT_NOT_FOUND")) {
         setAgentMissing(true);
         setConn("closed");
@@ -198,6 +228,7 @@ export default function App() {
       }
       setStatus(msg);
     }
+    secretRef.current = s.secret;
     const client = new AcpClient({
       ...(s.transport === "stdio" ? { transportFactory: () => new StdioTransport(s.alwaysApprove) } : { url: wsUrl(s) }),
       clientMeta: browserClientMeta(),
@@ -583,7 +614,30 @@ export default function App() {
               <p className="muted small">Already installed somewhere else? Set <code>SUPERCHARGE_BIN</code> to its path.</p>
             </div>
           )}
-          {!agentMissing && (notice || (conn !== "open" && status)) && (
+          {agentRejected && (
+            <div className="agent-setup" data-testid="agent-rejected">
+              <h3>An agent is already running on {agentRejected} but rejected the key</h3>
+              <p className="muted">It was probably started without <code>--secret</code>, so it made up a random key. Paste its key (or its full <code>ws://…?server-key=…</code> URL), or let Supercharge Studio run its own agent.</p>
+              <input value={keyDraft} placeholder="server key or ws://127.0.0.1:2419/ws?server-key=…" onChange={(e) => setKeyDraft(e.target.value)} data-testid="agent-key-input" />
+              <div className="row">
+                <button disabled={!keyDraft.trim()} data-testid="agent-key-save" onClick={async () => {
+                  const p = parseAgentUrl(keyDraft);
+                  const key = p.secret ?? keyDraft.trim();
+                  const bind = p.bind ?? agentRejected;
+                  const r = await agentCheck(bind, key);
+                  if (r !== "ok") { setKeyErr(r === "rejected" ? "That key was rejected too." : `Could not reach ${bind}.`); return; }
+                  const inKc = await keychainSet(key);
+                  update((d) => ({ ...d, settings: { ...d.settings, bind, secret: inKc ? "" : key, secretInKeychain: inKc, agentChoice: "key" } }));
+                  setKeyDraft(""); setKeyErr("");
+                  dataRef.current = { ...dataRef.current, settings: { ...dataRef.current.settings, bind, secret: inKc ? "" : key, secretInKeychain: inKc, agentChoice: "key" } };
+                  void connect();
+                }}>Use this key</button>
+                <button className="secondary" data-testid="agent-use-own" onClick={() => { update((d) => ({ ...d, settings: { ...d.settings, agentChoice: "own" } })); dataRef.current = { ...dataRef.current, settings: { ...dataRef.current.settings, agentChoice: "own" } }; void connect(); }}>Use my own agent</button>
+              </div>
+              {keyErr && <div className="error-text">{keyErr}</div>}
+            </div>
+          )}
+          {!agentMissing && !agentRejected && (notice || (conn !== "open" && status)) && (
             <div className="notice" data-testid="notice">
               <span role="status">{notice || status}</span>
               <div className="spacer" />

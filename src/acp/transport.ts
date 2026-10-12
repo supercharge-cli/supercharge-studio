@@ -27,8 +27,14 @@ export class WebSocketTransport implements Transport {
       let opened = false;
       const ws = new this.Ctor(this.url);
       this.ws = ws;
+      const timer = setTimeout(() => {
+        if (opened) return;
+        reject(new Error("Timed out connecting to the agent"));
+        try { ws.close(); } catch { /* ignore */ }
+      }, 5000);
       ws.onopen = () => {
         opened = true;
+        clearTimeout(timer);
         resolve();
       };
       ws.onerror = () => {

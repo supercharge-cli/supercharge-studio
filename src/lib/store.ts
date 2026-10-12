@@ -18,6 +18,9 @@ export type Settings = {
   activeProviderId?: string;
   theme?: Theme;
   onboarded?: boolean;
+  /** When the agent at `bind` rejects our key: "own" = run our own managed agent on `ownBind` (default), "key" = use the key the user entered. */
+  agentChoice?: "own" | "key";
+  ownBind?: string;
   gateway?: { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string; relayUrl?: string; hostId?: string };
 };
 export type AppData = { groups: Group[]; settings: Settings; activeProjectId?: string; activeChatId?: string };
@@ -110,5 +113,17 @@ export function applyTree(d: AppData, a: TreeAction): AppData {
         ...mapChats(d, (cs) => cs.filter((c) => c.id !== a.chatId)),
         ...(d.activeChatId === a.chatId ? { activeChatId: undefined } : {}),
       };
+  }
+}
+
+/** Accept "host:port" or a full agent URL like ws://127.0.0.1:2419/ws?server-key=abc. */
+export function parseAgentUrl(text: string): { bind?: string; secret?: string } {
+  const t = text.trim();
+  if (!/^wss?:\/\//i.test(t)) return {};
+  try {
+    const u = new URL(t);
+    return { bind: u.host || undefined, secret: u.searchParams.get("server-key") ?? undefined };
+  } catch {
+    return {};
   }
 }

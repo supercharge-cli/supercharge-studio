@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-agent-free-port"
+description = "Enables the agent_free_port command without any pre-configured scope."
+commands.allow = ["agent_free_port"]
+
+[[permission]]
+identifier = "deny-agent-free-port"
+description = "Denies the agent_free_port command without any pre-configured scope."
+commands.deny = ["agent_free_port"]
