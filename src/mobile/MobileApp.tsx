@@ -6,7 +6,9 @@ import type { PermissionOutcome, PermissionRequest } from "../acp/types";
 import { Icon } from "../components/Icon";
 import { Markdown } from "../components/Markdown";
 import { ToolCard } from "../components/ToolCard";
-import { GatewayTransport, type DeviceCreds } from "../gateway/transport";
+import { transition } from "../lib/motion";
+import { usePullToRefresh, useSwipeBack } from "./gestures";
+import { candidates, GatewayTransport, type DeviceCreds } from "../gateway/transport";
 import { defaultDeviceName, loadCreds, pendingCredsFromCode, saveCreds } from "./creds";
 import { canScan, scanQr } from "./scan";
 
@@ -23,7 +25,7 @@ function Pair({ onPaired }: { onPaired: (c: DeviceCreds) => void }) {
     try {
       const creds = await pendingCredsFromCode(c, name);
       setStage("connecting");
-      const t = new GatewayTransport(creds.url, creds.deviceId, creds.key, name, undefined, (s) => s === "waiting" && setStage("waiting"));
+      const t = new GatewayTransport(candidates(creds), creds.deviceId, creds.key, name, undefined, (s) => s === "waiting" && setStage("waiting"));
       await t.open();
       t.close();
       onPaired({ ...creds, deviceId: t.deviceId });
@@ -60,9 +62,13 @@ export default function MobileApp() {
   const [listed, setListed] = useState(false);
   const [loadingSess, setLoadingSess] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const [route, setRoute] = useState<"direct" | "relay">("direct");
   const client = useRef<AcpClient | null>(null);
   const loadedRef = useRef(new Set<string>());
   const scroller = useRef<HTMLDivElement>(null);
+  const threadView = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const ptr = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
     const c = client.current;
@@ -80,11 +86,21 @@ export default function MobileApp() {
 
   useEffect(() => {
     if (!creds) return;
+    const pending: { sid: string; u: any }[] = [];
+    let raf = 0;
     const c = new AcpClient({
-      transportFactory: () => new GatewayTransport(creds.url, creds.deviceId, creds.key, creds.name),
+      transportFactory: () => { const t = new GatewayTransport(candidates(creds), creds.deviceId, creds.key, creds.name); const o = t.open.bind(t); t.open = async () => { await o(); setRoute(t.route); }; return t; },
       clientName: "supercharge-studio-mobile",
       onStateChange: (s) => setConn(s),
-      onUpdate: (sid, u) => setState((all) => ({ ...all, [sid]: applyUpdate(all[sid] ?? emptySession(), u) })),
+      // Token chunks are applied in one state update per animation frame.
+      onUpdate: (sid, u) => {
+        pending.push({ sid, u });
+        if (!raf) raf = requestAnimationFrame(() => {
+          raf = 0;
+          const q = pending.splice(0);
+          setState((all) => { const next = { ...all }; for (const { sid, u } of q) next[sid] = applyUpdate(next[sid] ?? emptySession(), u); return next; });
+        });
+      },
       onNotification: (method, p: any) => {
         if (method === "_supercharge/permission/resolved") {
           setPerm((cur) => {
@@ -118,7 +134,7 @@ export default function MobileApp() {
   }, [toast]);
 
   async function openSession(sid: string) {
-    setOpen(sid);
+    transition(() => setOpen(sid));
     setHandoff(null);
     const c = client.current;
     if (!c || loadedRef.current.has(sid)) return;
@@ -171,6 +187,10 @@ export default function MobileApp() {
     return [...m.values()];
   }, [list, projects]);
 
+  const back = () => transition(() => setOpen(null));
+  useSwipeBack(threadView, !!open, back);
+  usePullToRefresh(listRef, ptr, !!creds && !open, async () => { await refresh(); setToast("Up to date"); });
+
   if (!creds) return <div className="m-app"><Pair onPaired={(c) => { saveCreds(c); setCreds(c); }} /></div>;
 
   const title = list.find((s) => s.sessionId === open)?.title ?? "Chat";
@@ -181,8 +201,9 @@ export default function MobileApp() {
   return (
     <div className="m-app">
       <header className="m-top">
-        {open ? <button className="icon" aria-label="Back" onClick={() => setOpen(null)} data-testid="m-back"><Icon name="arrowLeft" size={20} /></button> : <div className="logo"><Icon name="bolt" size={16} /></div>}
+        {open ? <button className="icon" aria-label="Back" onClick={back} data-testid="m-back"><Icon name="arrowLeft" size={20} /></button> : <div className="logo"><Icon name="bolt" size={16} /></div>}
         <div className="m-title">{open ? title : creds.desktopName ?? "Supercharge Studio"}</div>
+        {conn === "open" && route === "relay" && <span className="pill" data-testid="m-route" title="Connected through the relay (end-to-end encrypted)">relay</span>}
         <span className={`status ${conn === "open" ? "ok" : "bad"}`} data-testid="m-status"><i className="dot" />{conn}</span>
         {open && <button className="icon" title="Open on computer" onClick={() => void client.current?.ext("_supercharge/focus", { sessionId: open })}><Icon name="panelRight" size={18} /></button>}
       </header>
@@ -197,7 +218,9 @@ export default function MobileApp() {
         <button className="m-handoff" data-testid="m-handoff" onClick={() => void openSession(handoff)}><Icon name="phone" /> Continue “{list.find((s) => s.sessionId === handoff)?.title ?? "chat"}” from your computer</button>
       )}
       {!open ? (
-        <div className="m-list" data-testid="m-list">
+        <div className="m-list-wrap">
+        <div className="m-ptr" ref={ptr} aria-hidden><Icon name="refresh" size={18} /></div>
+        <div className="m-list" ref={listRef} data-testid="m-list">
           {!listed && !err && [0, 1].map((k) => (
             <section key={k} className="m-proj m-skel" aria-busy="true" data-testid="m-skeleton">
               <div className="skeleton" style={{ width: "40%", height: 16, margin: "8px" }} />
@@ -219,8 +242,9 @@ export default function MobileApp() {
           ))}
           <button className="ghost m-unpair" onClick={() => { saveCreds(null); setCreds(null); }}>Unpair this device</button>
         </div>
+        </div>
       ) : (
-        <>
+        <div className="m-view" ref={threadView}>
           <div className="m-thread" ref={scroller} data-testid="m-thread">
             <div className="thread">
               {loadingSess === open && sess.items.length === 0 && (
@@ -239,7 +263,7 @@ export default function MobileApp() {
             <textarea rows={1} value={draft} placeholder="Message Supercharge…" data-testid="m-input" onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!isBusy) void send(); } }} />
             {isBusy ? <button className="danger round" aria-label="Stop" onClick={() => client.current?.cancel(open)}><Icon name="stop" /></button> : <button className="round" aria-label="Send" disabled={!draft.trim()} onClick={() => void send()} data-testid="m-send"><Icon name="send" /></button>}
           </div>
-        </>
+        </div>
       )}
       {perm && (
         <div className="m-sheet-bg">

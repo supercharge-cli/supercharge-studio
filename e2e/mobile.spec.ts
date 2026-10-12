@@ -72,3 +72,20 @@ test("rejects a reused pairing code", async ({ page }) => {
   await page.getByTestId("m-pair-btn").click();
   await expect(page.getByTestId("m-error")).toContainText("expired pairing");
 });
+
+test("falls back to the relay when the direct route is unreachable, still end-to-end encrypted", async ({ page }) => {
+  const { uri } = await (await fetch(`${GW}/pair?relay=1`)).json();
+  await page.goto("/mobile.html");
+  await page.getByTestId("m-code").fill(uri);
+  await page.getByTestId("m-pair-btn").click();
+  await expect(page.getByTestId("m-list")).toBeVisible();
+  await expect(page.getByTestId("m-route")).toHaveText("relay");
+  await page.getByTestId("m-chat").first().click();
+  await page.getByTestId("m-input").fill("via relay");
+  await page.getByTestId("m-send").click();
+  await expect(page.locator(".bubble.agent").last()).toHaveText("Sure — working on it.");
+  const stats = await (await fetch(`${GW}/relay-stats`)).json();
+  expect(stats.connections).toBeGreaterThanOrEqual(2); // pairing + session
+  expect(stats.binaryFrames).toBeGreaterThan(4);
+  expect(stats.plaintextSeen).toBe(false);
+});
