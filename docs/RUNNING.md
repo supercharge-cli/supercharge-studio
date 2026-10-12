@@ -37,7 +37,36 @@ Manual check list:
 `SUPERCHARGE_STUDIO_AGENT=host:port` and `SUPERCHARGE_AGENT_SECRET` override the saved
 agent address / key for one run of the desktop app (they are not written to settings).
 
-## Side browser control
+## Model providers
+
+Settings → Providers stores any number of providers (name, base URL, API format —
+Responses, Chat Completions or Messages — and model IDs). Keys go to the OS keychain
+(macOS Keychain, Windows Credential Manager, Linux Secret Service); on a Linux machine
+without a Secret Service the app falls back to `~/.config/supercharge-studio/secrets.json`
+(mode 0600) and says so. **Use** writes the provider into `~/.supercharge/config.toml` as
+`[model.studio-<id>-<n>]` tables, makes its first model the default for every agent
+role (chat, titles, web search, forks) and restricts the model picker to it, then
+restarts the agent if the app started it (otherwise it asks you to restart
+`supercharge agent serve`). Override the config path with `SUPERCHARGE_STUDIO_AGENT_CONFIG`.
+
+For local testing a provider can be seeded on first desktop launch from
+`SUPERCHARGE_TEST_BASE_URL`, `SUPERCHARGE_TEST_MODEL`, `SUPERCHARGE_TEST_FORMAT` and
+`SUPERCHARGE_TEST_API_KEY` (the key is written straight to secure storage).
+
+## Side browser for the agent (MCP)
+
+The desktop app runs a local MCP server (`http://127.0.0.1:<random port>/mcp/<random token>`)
+and passes it to the agent in `session/new.mcpServers` when the agent advertises
+`mcpCapabilities.http`. The agent then gets these tools: `browser_navigate`,
+`browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_type`,
+`browser_scroll`, `browser_back`, `browser_eval`. Calls are executed in the visible
+side browser.
+
+Screenshots are native captures of the visible area: WebKitGTK snapshot (Linux),
+`WKWebView takeSnapshot` (macOS), WebView2 `CapturePreview` (Windows). If capture fails,
+`screenshot` returns `{ fallback: "snapshot", ... }` with the text snapshot.
+
+## Side browser control (ACP extensions)
 
 The app advertises client-side ACP extension methods in
 `clientCapabilities._meta.supercharge.browser.methods`. The agent can call them as
@@ -47,6 +76,7 @@ JSON-RPC requests to the app:
 |---|---|---|
 | `_supercharge/browser/navigate` | `{ url }` | `{ url }` |
 | `_supercharge/browser/snapshot` | `{}` | `{ url, title, text, elements: [{ ref, tag, text, href }] }` |
+| `_supercharge/browser/screenshot` | `{}` | `{ mimeType, data }` (base64 PNG) or snapshot fallback |
 | `_supercharge/browser/click` | `{ ref }` or `{ selector }` | `{ ok }` |
 | `_supercharge/browser/type` | `{ ref \| selector, text, submit? }` | `{ ok }` |
 | `_supercharge/browser/scroll` | `{ dy }` | `{ ok }` |
