@@ -141,3 +141,67 @@ permission, cancel). Keep prompts short; it uses real tokens.
 CI ships `.deb` and `.rpm` (~2 MB each; they depend on the system WebKitGTK).
 An AppImage is not built by default: it bundles WebKitGTK and GTK (~80 MB).
 Build one locally with `npx tauri build --bundles appimage` if needed.
+
+## Usage data source
+
+The Usage screen (sidebar → **Usage**, or `Ctrl Shift U`) is fed only by what the agent
+reports over ACP:
+
+1. **Preferred:** the agent's extension notification `_<namespace>/session/update` with
+   `sessionUpdate: "turn_completed"` and a `usage` object (`inputTokens`, `outputTokens`,
+   `cachedReadTokens`, `cacheCreationTokens`, `reasoningTokens`, optional per-model
+   `modelUsage`). Any `_*/session/update` method is accepted.
+2. **Fallback:** a `usage` object on the `session/prompt` result, used only when no
+   turn report arrived for that turn.
+
+Records (time, model, provider, token counts) are stored locally in `localStorage`
+(`supercharge-studio/usage/v1`); per-model prices (USD per 1M input/output/cached tokens)
+are stored under `supercharge-studio/pricing/v1`. Nothing is sent anywhere. Costs are
+estimates from your prices; **Clear** wipes the history.
+
+## Mobile gateway
+
+Settings → **Devices** turns on an end-to-end encrypted relay so a phone can follow and
+drive your chats.
+
+- Listens on `ws://<LAN IP>:2420/gw` (port configurable). For use outside the LAN,
+  put any TLS tunnel in front of it and paste its `wss://…/gw` address into **Public URL**;
+  the tunnel only ever sees ciphertext.
+- **Pair:** click **New code**, scan the QR in the app (or paste the `scstudio://pair?…`
+  link), then click **Allow** on the computer. Codes expire after 120 s and work once.
+- Crypto: per-device key `K = HMAC-SHA256(pairSecret, "supercharge-gw/device-key")`,
+  mutual HMAC challenge handshake, per-connection session key, AES-256-GCM frames with
+  direction-tagged counters (replays are dropped). Device keys live in the OS keychain;
+  the device list is `~/.config/supercharge-studio/devices.json`. Revoke a device from
+  the same screen.
+- Devices may call `initialize`, `session/list|load|new|prompt|cancel` and
+  `_supercharge/focus`. Permission requests go to the computer and every online device;
+  the first answer wins and the others are dismissed. "Continue on phone" (command
+  palette) sends a handoff prompt to paired devices.
+
+Tests: `npx playwright test e2e/mobile.spec.ts` drives the mobile UI against
+`scripts/fake-gateway.ts`. `scripts/live-mobile.ts <pair-uri>` pairs the mobile UI with a
+real running desktop gateway.
+
+## Mobile app builds
+
+The phone app is a separate Tauri 2 app in `mobile/` sharing the React UI
+(`mobile.html` → `src/mobile`, built into `dist-mobile`).
+
+```bash
+npm run dev:mobile          # mobile UI in a browser at http://127.0.0.1:5174/mobile.html
+npm run build:mobile        # web bundle only
+
+# Android (JDK 17+, Android SDK + NDK; set ANDROID_HOME and NDK_HOME)
+cd mobile
+npx tauri android build --debug --apk --target x86_64           # emulator debug build
+npx tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64   # release
+```
+
+Release builds are stripped (`strip`, LTO, `opt-level = "s"`, `panic = "abort"`) and split
+per ABI; they come out unsigned in `mobile/src-tauri/gen/android/app/build/outputs/apk/`
+— sign with `apksigner` before installing. Typical sizes: arm64 ≈ 6.0 MiB,
+armv7 ≈ 4.7 MiB, x86_64 ≈ 6.4 MiB.
+
+iOS (macOS + Xcode + xcodegen): `cd mobile && npx tauri ios init && TAURI_APP_PATH=$PWD/src-tauri npx tauri ios build --debug --target aarch64-sim`.
+CI builds the Android release APKs and an unsigned iOS simulator build on every push.

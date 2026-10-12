@@ -89,7 +89,7 @@ jobs:
           if-no-files-found: warn
 
   android:
-    name: Android APK (debug)
+    name: Android APKs (release, per ABI)
     needs: test
     runs-on: ubuntu-22.04
     steps:
@@ -104,16 +104,17 @@ jobs:
           java-version: 21
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: mobile/src-tauri
       - run: npm ci
-      - name: Build APK
+      - name: Build release APKs (stripped, one per ABI, unsigned)
         working-directory: mobile
         run: |
           export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
-          npx tauri android build --debug --apk --target aarch64 x86_64
+          npx tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64
+          ls -l src-tauri/gen/android/app/build/outputs/apk/*/release/*.apk
       - uses: actions/upload-artifact@v4
         with:
           name: supercharge-studio-android
