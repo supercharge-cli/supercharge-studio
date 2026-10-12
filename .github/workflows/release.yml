@@ -57,11 +57,11 @@ jobs:
       - name: Collect
         shell: bash
         run: |
-          mkdir -p dist
-          find src-tauri/target -path '*release/bundle/*' -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) -exec cp {} dist/ \;
-          ls -l dist
+          mkdir -p rel
+          find src-tauri/target -path '*release/bundle/*' -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) -exec cp {} rel/ \;
+          ls -l rel
       - uses: actions/upload-artifact@v4
-        with: { name: "rel-desktop-${{ matrix.os }}", path: "dist/*", if-no-files-found: error }
+        with: { name: "rel-desktop-${{ matrix.os }}", path: "rel/*", if-no-files-found: error }
 
   server:
     name: Server (${{ matrix.target }})
@@ -83,11 +83,11 @@ jobs:
       - name: Collect
         shell: bash
         run: |
-          mkdir -p dist
-          cp server/target/release/supercharge-studio-server${{ matrix.ext }} dist/supercharge-studio-server-${{ matrix.target }}${{ matrix.ext }}
-          if [ "${{ matrix.target }}" = x86_64-unknown-linux-gnu ]; then cp server/dist/supercharge-studio-server.service dist/; fi
+          mkdir -p rel
+          cp server/target/release/supercharge-studio-server${{ matrix.ext }} rel/supercharge-studio-server-${{ matrix.target }}${{ matrix.ext }}
+          if [ "${{ matrix.target }}" = x86_64-unknown-linux-gnu ]; then cp server/dist/supercharge-studio-server.service rel/; fi
       - uses: actions/upload-artifact@v4
-        with: { name: "rel-server-${{ matrix.target }}", path: "dist/*", if-no-files-found: error }
+        with: { name: "rel-server-${{ matrix.target }}", path: "rel/*", if-no-files-found: error }
 
   android:
     name: Android
@@ -109,15 +109,15 @@ jobs:
         run: |
           export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
           npx tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64
-          mkdir -p ../dist/unsigned
+          mkdir -p ../rel/unsigned
           for f in src-tauri/gen/android/app/build/outputs/apk/*/release/*.apk; do
             abi=$(basename "$(dirname "$(dirname "$f")")")
-            cp "$f" "../dist/unsigned/supercharge-studio-android-$abi.apk"
+            cp "$f" "../rel/unsigned/supercharge-studio-android-$abi.apk"
           done
           npx tauri android build --apk --target aarch64 armv7 x86_64
           f=$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -1)
-          cp "$f" ../dist/unsigned/supercharge-studio-android-universal.apk
-          ls -l ../dist/unsigned
+          cp "$f" ../rel/unsigned/supercharge-studio-android-universal.apk
+          ls -l ../rel/unsigned
       - name: Sign (only when the signing secrets are set)
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
@@ -125,17 +125,17 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
         run: |
-          mkdir -p dist/out
+          mkdir -p rel/out
           if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ]; then
             echo "No signing secrets: publishing unsigned APKs."
-            for f in dist/unsigned/*.apk; do cp "$f" "dist/out/$(basename "${f%.apk}")-unsigned.apk"; done
+            for f in rel/unsigned/*.apk; do cp "$f" "rel/out/$(basename "${f%.apk}")-unsigned.apk"; done
             exit 0
           fi
           export KEY_PASS="${KEY_PASS:-$KS_PASS}"
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
-          for f in dist/unsigned/*.apk; do
-            out="dist/out/$(basename "$f")"
+          for f in rel/unsigned/*.apk; do
+            out="rel/out/$(basename "$f")"
             "$BT/zipalign" -f -p 4 "$f" "$RUNNER_TEMP/aligned.apk"
             "$BT/apksigner" sign --ks "$RUNNER_TEMP/release.jks" --ks-pass env:KS_PASS \
               --ks-key-alias "${KEY_ALIAS:-supercharge-studio}" --key-pass env:KEY_PASS \
@@ -143,9 +143,9 @@ jobs:
             "$BT/apksigner" verify "$out"
           done
           rm -f "$RUNNER_TEMP/release.jks"
-          ls -l dist/out
+          ls -l rel/out
       - uses: actions/upload-artifact@v4
-        with: { name: rel-android, path: "dist/out/*.apk", if-no-files-found: error }
+        with: { name: rel-android, path: "rel/out/*.apk", if-no-files-found: error }
 
   ios:
     name: iOS simulator
@@ -168,11 +168,11 @@ jobs:
         run: npx tauri ios build --debug --target aarch64-sim --ci
       - name: Zip .app
         run: |
-          mkdir -p dist
+          mkdir -p rel
           app=$(find mobile/src-tauri/gen/apple/build -name '*.app' -type d | head -1)
-          ditto -c -k --keepParent "$app" dist/supercharge-studio-ios-simulator.zip
+          ditto -c -k --keepParent "$app" rel/supercharge-studio-ios-simulator.zip
       - uses: actions/upload-artifact@v4
-        with: { name: rel-ios, path: "dist/*", if-no-files-found: error }
+        with: { name: rel-ios, path: "rel/*", if-no-files-found: error }
 
   publish:
     name: Publish GitHub Release
