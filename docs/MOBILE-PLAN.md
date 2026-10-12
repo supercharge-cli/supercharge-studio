@@ -129,7 +129,7 @@ that no plaintext JSON-RPC ever crossed the relay.
   are reused as-is; only the shell (navigation, pairing scanner, push) is new.
 - Small binaries and native webviews, consistent with the desktop app.
 - Rust side reuses gateway/pairing crypto (Ed25519, cert pinning) from the desktop.
-- No native plugins are bundled: pairing is by pasted link, which keeps the APK small.
+- Native plugins: QR scanner (camera) and deep links (`supercharge-studio://` and `scstudio://pair?…` open the app straight into pairing). Pasting the link also works.
 
 React Native was considered: better native feel and a mature push ecosystem, but it
 would mean re-implementing the UI and duplicating the ACP client in a second runtime.

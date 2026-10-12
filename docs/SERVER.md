@@ -53,7 +53,7 @@ supercharge-studio-server devices       # list paired devices
 supercharge-studio-server revoke <id>
 ```
 
-In the mobile app, paste the link (a camera app can read the QR to copy it).
+In the mobile app, tap **Scan QR code**, or open/paste the link.
 
 ## systemd
 

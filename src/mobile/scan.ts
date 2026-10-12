@@ -10,3 +10,12 @@ export async function scanQr(): Promise<string | null> {
   const r = await scan({ windowed: false, formats: [Format.QRCode] });
   return r?.content ?? null;
 }
+
+/** Pairing links opened from outside the app (supercharge-studio://pair?… or scstudio://pair?…). */
+export async function onPairLink(cb: (uri: string) => void): Promise<void> {
+  if (!canScan()) return;
+  const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
+  const pick = (urls: string[] | null) => { const u = urls?.find((x) => /^(supercharge-studio|scstudio):\/\/pair\?/.test(x)); if (u) cb(u); };
+  pick(await getCurrent());
+  await onOpenUrl(pick);
+}

@@ -10,13 +10,43 @@
     "beforeBuildCommand": "npm --prefix .. run build:mobile"
   },
   "app": {
-    "windows": [{ "title": "Supercharge Studio", "url": "mobile.html", "width": 400, "height": 800 }],
-    "security": { "csp": null }
+    "windows": [
+      {
+        "title": "Supercharge Studio",
+        "url": "mobile.html",
+        "width": 400,
+        "height": 800
+      }
+    ],
+    "security": {
+      "csp": null
+    }
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["../../src-tauri/icons/32x32.png", "../../src-tauri/icons/128x128.png", "../../src-tauri/icons/128x128@2x.png", "../../src-tauri/icons/icon.icns", "../../src-tauri/icons/icon.ico"],
-    "android": { "minSdkVersion": 26 }
+    "icon": [
+      "../../src-tauri/icons/32x32.png",
+      "../../src-tauri/icons/128x128.png",
+      "../../src-tauri/icons/128x128@2x.png",
+      "../../src-tauri/icons/icon.icns",
+      "../../src-tauri/icons/icon.ico"
+    ],
+    "android": {
+      "minSdkVersion": 26
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "mobile": [
+        {
+          "scheme": [
+            "supercharge-studio",
+            "scstudio"
+          ],
+          "appLink": false
+        }
+      ]
+    }
   }
 }

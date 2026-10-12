@@ -76,7 +76,7 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
           <div className="pair">
             <div className="qr" dangerouslySetInnerHTML={{ __html: pair.svg }} />
             <div className="stack">
-              <p>Paste this link into Supercharge Studio on your phone (any camera app can read the QR to copy it). Expires in <b data-testid="gw-countdown">{left}s</b>, single use.</p>
+              <p>Scan with Supercharge Studio on your phone, or open/paste the link there. Expires in <b data-testid="gw-countdown">{left}s</b>, single use.</p>
               <p className="muted">No camera? Copy the code and paste it in the app.</p>
               <button className="secondary" onClick={() => void navigator.clipboard?.writeText(pair.uri)}>Copy pairing code</button>
               <input readOnly className="mono" data-testid="gw-uri" value={pair.uri} onFocus={(e) => e.target.select()} />

@@ -10,6 +10,7 @@ import { transition } from "../lib/motion";
 import { usePullToRefresh, useSwipeBack } from "./gestures";
 import { candidates, GatewayTransport, type DeviceCreds } from "../gateway/transport";
 import { defaultDeviceName, loadCreds, pendingCredsFromCode, saveCreds } from "./creds";
+import { canScan, onPairLink, scanQr } from "./scan";
 
 type Sess = { sessionId: string; title?: string; cwd?: string; _meta?: { project?: string; projectId?: string; group?: string; busy?: boolean } };
 type Project = { projectId: string; name: string; cwd: string; group: string };
@@ -19,6 +20,7 @@ function Pair({ onPaired }: { onPaired: (c: DeviceCreds) => void }) {
   const [name, setName] = useState(defaultDeviceName());
   const [stage, setStage] = useState<"" | "connecting" | "waiting">("");
   const [err, setErr] = useState("");
+  useEffect(() => { void onPairLink((c) => { setCode(c); void pair(c); }).catch(() => {}); }, []);
   async function pair(c = code) {
     setErr("");
     try {
@@ -36,6 +38,7 @@ function Pair({ onPaired }: { onPaired: (c: DeviceCreds) => void }) {
   return (
     <div className="m-pair" data-testid="m-pair">
       <div className="m-hero"><div className="logo big"><Icon name="bolt" size={26} /></div><h1>Supercharge Studio</h1><p className="muted">Pair with Supercharge Studio on your computer: Settings → Devices → Show pairing code.</p></div>
+      {canScan() && <button className="m-big" onClick={() => void scanQr().then((c) => { if (c) { setCode(c); void pair(c); } }).catch((e) => setErr(String(e?.message ?? e)))}><Icon name="qr" /> Scan QR code</button>}
       <label>Device name<input value={name} onChange={(e) => setName(e.target.value)} data-testid="m-name" /></label>
       <label>Pairing code<textarea rows={3} value={code} placeholder="scstudio://pair?…" onChange={(e) => setCode(e.target.value)} data-testid="m-code" /></label>
       <button className="m-big" disabled={!code.trim() || !!stage} onClick={() => void pair()} data-testid="m-pair-btn">{stage === "waiting" ? "Confirm on your computer…" : stage === "connecting" ? "Connecting…" : "Pair"}</button>

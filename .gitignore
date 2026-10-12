@@ -12,3 +12,4 @@ playwright-report/
 dist-mobile
 mobile/src-tauri/target
 server/target
+mobile/src-tauri/gen/android/.kotlin/

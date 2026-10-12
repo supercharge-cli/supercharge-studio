@@ -65,7 +65,7 @@ export class Channel {
 
 export type PairInfo = { url: string; pairingId: string; secret: Uint8Array; desktopName: string; relay?: string };
 export function parsePairUri(uri: string): PairInfo {
-  const q = new URL(uri.trim().replace(/^scstudio:\/\//, "https://x/"));
+  const q = new URL(uri.trim().replace(/^(scstudio|supercharge-studio):\/\//, "https://x/"));
   const url = q.searchParams.get("u"), id = q.searchParams.get("i"), k = q.searchParams.get("k");
   if (!url || !id || !k) throw new Error("Not a Supercharge Studio pairing code");
   const secret = b64.decUrl(k);
