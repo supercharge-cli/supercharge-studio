@@ -48,7 +48,8 @@ wss.on("connection", (ws: WebSocket) => {
     });
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   let sessions = 0;
-  const known = new Set<string>();
+  const flaked = new Set<string>();
+const known = new Set<string>();
 
   ws.on("message", async (raw) => {
     const m = JSON.parse(String(raw));
@@ -80,6 +81,10 @@ wss.on("connection", (ws: WebSocket) => {
         cancelled.delete(sid);
         if (/modelfail/.test(text))
           return send({ id: m.id, error: { code: -32603, message: "Internal error", data: "responses API error 400: no upstream owns model old-model" } });
+        if (/flaky/.test(text) && !flaked.has(sid)) {
+          flaked.add(sid);
+          return send({ id: m.id, error: { code: -32603, message: "Internal error", data: "upstream timed out" } });
+        }
         if (/authfail/.test(text))
           return send({ id: m.id, error: { code: -32603, message: "Internal error", data: "Unauthorized (401): Invalid or expired credentials" } });
         if (/stream/.test(text)) {
@@ -105,6 +110,7 @@ wss.on("connection", (ws: WebSocket) => {
             options: [
               { optionId: "allow", name: "Allow once", kind: "allow_once" },
               { optionId: "deny", name: "Reject", kind: "reject_once" },
+              { optionId: "deny-why", name: "No, and tell Zed what to do differently", kind: "reject_once" },
             ],
           });
           const o = r.result?.outcome;

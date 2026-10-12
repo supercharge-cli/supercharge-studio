@@ -44,6 +44,8 @@ test("permission dialog answers the agent", async ({ page }) => {
   await boot(page);
   await ask(page, "perm check");
   await expect(page.locator(".modal")).toContainText("Delete build folder");
+  await expect(page.getByTestId("perm-modal")).toContainText("No, and tell the agent what to do differently");
+  await expect(page.getByTestId("perm-modal")).not.toContainText("Zed");
   await page.getByRole("button", { name: "Allow once" }).click();
   await expect(page.locator(".bubble.agent").last()).toContainText("Permission outcome: selected:allow");
 });
@@ -124,8 +126,8 @@ test("slash menu and settings", async ({ page }) => {
 test("missing provider key shows /setup hint", async ({ page }) => {
   await boot(page);
   await ask(page, "authfail");
-  await expect(page.locator(".bubble.system").last()).toContainText("/setup");
-  await expect(page.locator(".bubble.system").last()).toContainText("401");
+  await expect(page.locator(".bubble.error").last()).toContainText("/setup");
+  await expect(page.locator(".bubble.error").last()).toContainText("401");
 });
 
 test("stale session id is replaced transparently", async ({ page }) => {
@@ -149,7 +151,7 @@ test("stale session id is replaced transparently", async ({ page }) => {
 test("unsupported model shows a clear hint", async ({ page }) => {
   await boot(page);
   await ask(page, "modelfail");
-  await expect(page.locator(".bubble.system").last()).toContainText("not available from your provider");
+  await expect(page.locator(".bubble.error").last()).toContainText("not available from your provider");
 });
 
 test("command palette: search and run commands with the keyboard", async ({ page }) => {
@@ -214,4 +216,12 @@ test("long chats are virtualized and stay pinned to the bottom", async ({ page }
   expect(await page.locator(".row-wrap").count()).toBeLessThan(150);
   const atBottom = await page.locator(".messages").evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 80);
   expect(atBottom).toBe(true);
+});
+
+test("failed turns show an error card with retry", async ({ page }) => {
+  await boot(page);
+  await ask(page, "flaky one");
+  await expect(page.getByTestId("error-item")).toContainText("The turn failed");
+  await page.getByTestId("retry").click();
+  await expect(page.locator(".bubble.agent").last()).toContainText("flaky one");
 });

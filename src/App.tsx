@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AcpClient, ConnectionState, isAuthError, isModelError } from "./acp/client";
 import { applyUpdate, ChatItem, emptySession, SessionState } from "./acp/session";
 import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionUpdate } from "./acp/types";
@@ -7,14 +7,14 @@ import { browser, browserClientMeta } from "./browser/bridge";
 import { BrowserPanel } from "./components/BrowserPanel";
 import { Command, CommandPalette } from "./components/CommandPalette";
 import { defaultGatewayPrefs, DevicesSection, gatewayBind } from "./components/Devices";
+const SettingsScreen = lazy(() => import("./components/Settings").then((m) => ({ default: m.SettingsScreen })));
+const UsageScreen = lazy(() => import("./components/Usage").then((m) => ({ default: m.UsageScreen })));
 import { Onboarding } from "./components/Onboarding";
 import { Icon } from "./components/Icon";
 import { Markdown } from "./components/Markdown";
 import { PermissionModal } from "./components/Permission";
-import { SettingsScreen } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { ToolCard } from "./components/ToolCard";
-import { UsageScreen } from "./components/Usage";
 import { VirtualList } from "./components/VirtualList";
 import { GatewayHub } from "./gateway/hub";
 import { agentRestart, appConfig, ensureAgent, gateway, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
@@ -37,6 +37,8 @@ export default function App() {
   const [sideCollapsed, setSideCollapsed] = useState(false);
   const [panel, setPanel] = useState(true);
   const [view, setView] = useState<View>("chat");
+  const retryRef = useRef<((t: string) => void) | null>(null);
+  const [loadingChats, setLoadingChats] = useState<Set<string>>(() => new Set());
   const [settingsSection, setSettingsSection] = useState<"connection" | "devices" | "providers" | undefined>();
   const [palette, setPalette] = useState(false);
   const [perm, setPerm] = useState<PermState | null>(null);
@@ -329,8 +331,10 @@ export default function App() {
       loaded.current.add(chat.sessionId);
       hub.seed(chat.sessionId, []);
       setSessions((all) => ({ ...all, [chatId]: emptySession() }));
-      await c.loadSession(chat.sessionId, findProject(dataRef.current, projectId)!.project.cwd).catch(() => {});
+      setLoadingChats((l) => new Set(l).add(chatId));
+      await c.loadSession(chat.sessionId, findProject(dataRef.current, projectId)!.project.cwd).catch((e: any) => pushItem(chatId, { kind: "system", text: `Could not load this chat's history: ${e?.message ?? e}`, error: "load" } as any));
       flush();
+      setLoadingChats((l) => { const n = new Set(l); n.delete(chatId); return n; });
     }
   }
 
@@ -371,12 +375,14 @@ export default function App() {
         : isModelError(e)
           ? "The selected model is not available from your provider. Pick another model in Settings (or set `[models] default` in ~/.supercharge/config.toml).\n\n" + msg
           : `Error: ${msg}`;
-      pushItem(chatId, { kind: "system", text: t });
+      pushItem(chatId, { kind: "system", text: t, error: isAuthError(e) || isModelError(e) ? "config" : "prompt", retry: text } as any);
       throw e;
     } finally {
       setBusy((b) => ({ ...b, [chatId]: false }));
     }
   }
+
+  retryRef.current = (text: string) => { if (active && activeChat) void runPrompt(active.project.id, activeChat.id, text).catch(() => {}); };
 
   async function send() {
     const text = draft.trim();
@@ -450,6 +456,15 @@ export default function App() {
         sess.toolCalls[m.toolCallId] ? <ToolCard tc={sess.toolCalls[m.toolCallId]} /> : null
       ) : m.kind === "agent" ? (
         <div className="bubble agent"><Markdown text={m.text} /></div>
+      ) : (m as any).error ? (
+        <div className="bubble error" role="alert" data-testid="error-item">
+          <div className="err-head"><Icon name="alert" size={14} /> {(m as any).error === "config" ? "Setup needed" : (m as any).error === "load" ? "History unavailable" : "The turn failed"}</div>
+          <div className="err-body">{m.text}</div>
+          <div className="row">
+            {(m as any).retry && <button className="secondary compact" data-testid="retry" onClick={() => retryRef.current?.((m as any).retry)}><Icon name="refresh" size={13} /> Retry</button>}
+            {(m as any).error === "config" && <button className="ghost compact" onClick={() => openSettings("providers")}>Open providers</button>}
+          </div>
+        </div>
       ) : (
         <div className={`bubble ${m.kind}`}>{(m as any).from && <span className="from"><Icon name="phone" size={11} /> {(m as any).from}</span>}{m.text}</div>
       ),
@@ -471,6 +486,7 @@ export default function App() {
         onPalette={() => setPalette(true)}
       />
       {view === "settings" && (
+        <Suspense fallback={<ScreenSkeleton />}>
         <SettingsScreen
           key={settingsSection ?? "s"}
           initial={settingsSection}
@@ -493,9 +509,12 @@ export default function App() {
             void connect();
           }}
         />
+        </Suspense>
       )}
       {view === "usage" && (
-        <UsageScreen records={usage} pricing={pricing} onPricing={(p) => { setPricing(p); savePricing(p); }} onClear={() => setUsage([])} onClose={() => setView("chat")} />
+        <Suspense fallback={<ScreenSkeleton />}>
+          <UsageScreen records={usage} pricing={pricing} onPricing={(p) => { setPricing(p); savePricing(p); }} onClear={() => setUsage([])} onClose={() => setView("chat")} />
+        </Suspense>
       )}
       {view === "chat" && (
         <main className="main">
@@ -516,7 +535,9 @@ export default function App() {
           {(notice || (conn !== "open" && status)) && (
             <div className="notice" data-testid="notice">
               <span role="status">{notice || status}</span>
-              {notice && <button className="icon sm" title="Dismiss" onClick={() => setNotice("")}><Icon name="x" size={14} /></button>}
+              <div className="spacer" />
+              {!notice && conn !== "connecting" && <><button className="secondary compact" onClick={() => void connect()}>Retry</button><button className="ghost compact" onClick={() => openSettings("connection")}>Settings</button></>}
+              {notice && <button className="icon sm" title="Dismiss" aria-label="Dismiss" onClick={() => setNotice("")}><Icon name="x" size={14} /></button>}
             </div>
           )}
           <VirtualList
@@ -527,7 +548,16 @@ export default function App() {
             render={renderItem}
             header={
               <>
-                {sess.items.length === 0 && !isBusy && !data.settings.onboarded && (
+                {activeChat && loadingChats.has(activeChat.id) && sess.items.length === 0 && (
+                  <div className="skel-chat" data-testid="chat-skeleton" aria-busy="true" aria-label="Loading chat">
+                    <div className="skeleton" style={{ width: "42%", height: 34, marginLeft: "auto" }} />
+                    <div className="skeleton" style={{ width: "78%", height: 64 }} />
+                    <div className="skeleton" style={{ width: "55%", height: 30 }} />
+                    <div className="skeleton" style={{ width: "36%", height: 34, marginLeft: "auto" }} />
+                    <div className="skeleton" style={{ width: "70%", height: 48 }} />
+                  </div>
+                )}
+                {sess.items.length === 0 && !isBusy && !(activeChat && loadingChats.has(activeChat.id)) && !data.settings.onboarded && (
                   <Onboarding
                     connected={conn === "open"}
                     connecting={conn === "connecting" || conn === "reconnecting"}
@@ -540,7 +570,7 @@ export default function App() {
                     onDismiss={() => update((d) => ({ ...d, settings: { ...d.settings, onboarded: true } }))}
                   />
                 )}
-                {sess.items.length === 0 && !isBusy && data.settings.onboarded && (
+                {sess.items.length === 0 && !isBusy && !(activeChat && loadingChats.has(activeChat.id)) && data.settings.onboarded && (
                   <div className="empty fade-in">
                     <div className="empty-icon"><Icon name="bolt" size={28} /></div>
                     <h2>{active ? `Start a chat in ${active.project.name}` : "Welcome to Supercharge Studio"}</h2>
@@ -613,5 +643,15 @@ export default function App() {
       )}
       {perm && <PermissionModal req={perm.req} onAnswer={(o) => perm.resolve(o)} />}
     </div>
+  );
+}
+
+function ScreenSkeleton() {
+  return (
+    <main className="main screen-skel" aria-busy="true" aria-label="Loading">
+      <div className="skeleton" style={{ width: 180, height: 22 }} />
+      <div className="skeleton" style={{ height: 120 }} />
+      <div className="skeleton" style={{ height: 220 }} />
+    </main>
   );
 }

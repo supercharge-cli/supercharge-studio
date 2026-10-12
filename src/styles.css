@@ -278,3 +278,8 @@ button.compact{padding:5px 11px;font-size:12.5px}
 @keyframes shimmer{to{background-position:-200% 0}}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.bubble.error{align-self:stretch;max-width:none;background:color-mix(in srgb,#e5484d 9%,var(--raise));border:1px solid color-mix(in srgb,#e5484d 35%,var(--line));color:var(--fg);border-radius:12px;padding:11px 13px;white-space:pre-wrap;animation:fadeUp .25s both}
+.err-head{display:flex;align-items:center;gap:6px;font-weight:600;color:#e5484d;margin-bottom:4px}.err-body{font-size:13px;color:var(--muted);margin-bottom:8px}
+.skel-chat{display:flex;flex-direction:column;gap:14px;padding:18px 4px}
+.notice{display:flex;align-items:center;gap:8px}
+.screen-skel{display:flex;flex-direction:column;gap:16px;padding:28px 32px}
