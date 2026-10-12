@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "allow-browser-result"
-description = "Allow the side browser to return script results."
-commands.allow = ["browser_result"]

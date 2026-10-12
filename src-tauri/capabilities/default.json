@@ -1,7 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main app window",
-  "windows": ["main"],
-  "permissions": ["core:default", "core:webview:allow-create-webview", "core:event:default", "allow-app"]
+  "description": "App UI webview (local origin only)",
+  "windows": [],
+  "permissions": [
+    "core:default",
+    "core:webview:allow-create-webview",
+    "core:event:default",
+    "allow-app"
+  ],
+  "webviews": [
+    "main-ui"
+  ]
 }

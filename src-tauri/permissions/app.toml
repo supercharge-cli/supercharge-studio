@@ -2,7 +2,7 @@
 identifier = "allow-app"
 description = "Agent process, stdio transport and side-browser control for the main window."
 commands.allow = [
-  "agent_probe", "agent_start", "agent_stop",
+  "app_config", "agent_probe", "agent_start", "agent_stop",
   "stdio_start", "stdio_send", "stdio_stop",
-  "browser_open", "browser_navigate", "browser_set_bounds", "browser_eval", "browser_close",
+  "browser_open", "browser_navigate", "browser_set_bounds", "browser_eval", "browser_close", "browser_set_visible",
 ]

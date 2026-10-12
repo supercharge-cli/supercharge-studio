@@ -3,7 +3,6 @@
 //! - Optional ACP stdio transport (`supercharge agent stdio`) bridged over Tauri events.
 //! - Side browser webview the agent can see (DOM snapshot) and control (navigate/click/type).
 
-use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -24,12 +23,21 @@ struct AppState {
     serve: Mutex<Option<Child>>,
     stdio_child: Mutex<Option<Child>>,
     stdio_in: tokio::sync::Mutex<Option<ChildStdin>>,
-    evals: Mutex<HashMap<u64, oneshot::Sender<String>>>,
     eval_seq: AtomicU64,
 }
 
 fn agent_bin() -> String {
     std::env::var("SUPERCHARGE_BIN").unwrap_or_else(|_| "supercharge".into())
+}
+
+/// Startup overrides from the environment: SUPERCHARGE_STUDIO_AGENT (host:port) and
+/// SUPERCHARGE_AGENT_SECRET. Lets launchers / tests point the app at a specific agent.
+#[tauri::command]
+fn app_config() -> serde_json::Value {
+    serde_json::json!({
+        "bind": std::env::var("SUPERCHARGE_STUDIO_AGENT").ok(),
+        "secret": std::env::var("SUPERCHARGE_AGENT_SECRET").ok(),
+    })
 }
 
 /// True if something is listening on the agent address.
@@ -152,6 +160,55 @@ async fn browser_open(app: AppHandle, url: String, bounds: Bounds) -> Result<(),
     Ok(())
 }
 
+/// Linux: GTK packs child webviews into a vertical box, so absolute placement is not
+/// available. We wrap the app UI in a gtk::Overlay and place the browser as an overlay
+/// child positioned with margins.
+#[cfg(target_os = "linux")]
+mod linux_layout {
+    use gtk::prelude::*;
+    use std::cell::RefCell;
+    use tauri::Runtime;
+
+    thread_local! {
+        static OVERLAY: RefCell<Option<gtk::Overlay>> = const { RefCell::new(None) };
+    }
+
+    pub fn wrap_main<R: Runtime>(main: &tauri::Webview<R>) {
+        let _ = main.with_webview(|pw| {
+            let w: gtk::Widget = pw.inner().upcast();
+            let Some(parent) = w.parent().and_then(|p| p.downcast::<gtk::Box>().ok()) else { return };
+            parent.remove(&w);
+            let overlay = gtk::Overlay::new();
+            overlay.add(&w);
+            parent.pack_start(&overlay, true, true, 0);
+            overlay.show_all();
+            OVERLAY.with(|o| *o.borrow_mut() = Some(overlay));
+        });
+    }
+
+    pub fn place<R: Runtime>(browser: &tauri::Webview<R>, x: f64, y: f64, w: f64, h: f64) {
+        let _ = browser.with_webview(move |pw| {
+            let bw: gtk::Widget = pw.inner().upcast();
+            OVERLAY.with(|o| {
+                let Some(overlay) = o.borrow().clone() else { return };
+                let in_overlay = bw.parent().map(|p| p == overlay.clone().upcast::<gtk::Widget>()).unwrap_or(false);
+                if !in_overlay {
+                    if let Some(p) = bw.parent().and_then(|p| p.downcast::<gtk::Container>().ok()) {
+                        p.remove(&bw);
+                    }
+                    overlay.add_overlay(&bw);
+                }
+                bw.set_halign(gtk::Align::Start);
+                bw.set_valign(gtk::Align::Start);
+                bw.set_margin_start(x.max(0.0) as i32);
+                bw.set_margin_top(y.max(0.0) as i32);
+                bw.set_size_request(w.max(1.0) as i32, h.max(1.0) as i32);
+                bw.show();
+            });
+        });
+    }
+}
+
 mod url_err {
     pub type E = <tauri::Url as std::str::FromStr>::Err;
 }
@@ -166,8 +223,32 @@ async fn browser_navigate(app: AppHandle, url: String) -> Result<(), String> {
 #[tauri::command]
 async fn browser_set_bounds(app: AppHandle, bounds: Bounds) -> Result<(), String> {
     let wv = app.get_webview(BROWSER).ok_or("browser not open")?;
+    #[cfg(target_os = "linux")]
+    {
+        linux_layout::place(&wv, bounds.x, bounds.y, bounds.width, bounds.height);
+        return Ok(());
+    }
+    #[allow(unreachable_code)]
     wv.set_position(LogicalPosition::new(bounds.x, bounds.y)).map_err(|e| e.to_string())?;
     wv.set_size(LogicalSize::new(bounds.width, bounds.height)).map_err(|e| e.to_string())
+}
+
+/// Temporarily hide/show the side browser (e.g. while a modal is open: native
+/// webviews always draw above the app UI).
+#[tauri::command]
+async fn browser_set_visible(app: AppHandle, visible: bool) -> Result<(), String> {
+    let Some(wv) = app.get_webview(BROWSER) else { return Ok(()) };
+    #[cfg(target_os = "linux")]
+    {
+        let _ = wv.with_webview(move |pw| {
+            use gtk::prelude::*;
+            let w: gtk::Widget = pw.inner().upcast();
+            if visible { w.show() } else { w.hide() }
+        });
+        return Ok(());
+    }
+    #[allow(unreachable_code)]
+    if visible { wv.show() } else { wv.hide() }.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -179,46 +260,71 @@ async fn browser_close(app: AppHandle) -> Result<(), String> {
 }
 
 /// Run a script expression in the side browser and return its JSON result.
-/// The page reports back through `browser_result` (the only command it may call).
+/// The script runs asynchronously in the page and stores its outcome on `window`;
+/// we poll it with `eval_with_callback`, so pages never get access to app IPC.
 #[tauri::command]
 async fn browser_eval(app: AppHandle, state: State<'_, AppState>, script: String, timeout_ms: Option<u64>) -> Result<String, String> {
     let wv = app.get_webview(BROWSER).ok_or("browser not open")?;
     let id = state.eval_seq.fetch_add(1, Ordering::SeqCst) + 1;
-    let (tx, rx) = oneshot::channel();
-    state.evals.lock().unwrap().insert(id, tx);
     let wrapped = format!(
         r#"(async () => {{
-  let out;
-  try {{ out = {{ ok: true, value: await (async () => ({script}))() }}; }}
-  catch (e) {{ out = {{ ok: false, error: String(e && e.message || e) }}; }}
-  window.__TAURI_INTERNALS__.invoke("browser_result", {{ id: {id}, payload: JSON.stringify(out) }});
+  const r = (window.__scResults = window.__scResults || {{}});
+  try {{ r[{id}] = JSON.stringify({{ ok: true, value: await (async () => ({script}))() }}); }}
+  catch (e) {{ r[{id}] = JSON.stringify({{ ok: false, error: String(e && e.message || e) }}); }}
 }})();"#
     );
     wv.eval(&wrapped).map_err(|e| e.to_string())?;
-    match tokio::time::timeout(Duration::from_millis(timeout_ms.unwrap_or(10_000)), rx).await {
-        Ok(Ok(v)) => Ok(v),
-        _ => {
-            state.evals.lock().unwrap().remove(&id);
-            Err("browser script timed out".into())
+    let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms.unwrap_or(10_000));
+    let probe = format!(
+        "(() => {{ const r = window.__scResults || {{}}; const v = r[{id}]; if (v !== undefined) delete r[{id}]; return v === undefined ? null : v; }})()"
+    );
+    loop {
+        let (tx, rx) = oneshot::channel::<String>();
+        let tx = Mutex::new(Some(tx));
+        wv.eval_with_callback(probe.clone(), move |res| {
+            if let Some(tx) = tx.lock().unwrap().take() {
+                let _ = tx.send(res);
+            }
+        })
+        .map_err(|e| e.to_string())?;
+        if let Ok(Ok(raw)) = tokio::time::timeout(Duration::from_millis(2000), rx).await {
+            // Callback yields the JSON encoding of the JS value: null or a JSON string.
+            if let Ok(serde_json::Value::String(payload)) = serde_json::from_str::<serde_json::Value>(&raw) {
+                return Ok(payload);
+            }
         }
-    }
-}
-
-#[tauri::command]
-fn browser_result(state: State<'_, AppState>, id: u64, payload: String) {
-    if let Some(tx) = state.evals.lock().unwrap().remove(&id) {
-        let _ = tx.send(payload);
+        if std::time::Instant::now() > deadline {
+            return Err("browser script timed out".into());
+        }
+        tokio::time::sleep(Duration::from_millis(40)).await;
     }
 }
 
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
+        .setup(|app| {
+            // One window holding two webviews: the app UI (auto-resized to the window) and,
+            // on demand, the side browser placed over the UI's browser slot.
+            let window = tauri::window::WindowBuilder::new(app, "main")
+                .title("Supercharge Studio")
+                .inner_size(1360.0, 860.0)
+                .min_inner_size(900.0, 560.0)
+                .build()?;
+            let size = window.inner_size()?.to_logical::<f64>(window.scale_factor()?);
+            let _main = window.add_child(
+                WebviewBuilder::new("main-ui", WebviewUrl::App("index.html".into())).auto_resize(),
+                LogicalPosition::new(0.0, 0.0),
+                LogicalSize::new(size.width, size.height),
+            )?;
+            #[cfg(target_os = "linux")]
+            linux_layout::wrap_main(&_main);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
-            agent_probe, agent_start, agent_stop,
+            app_config, agent_probe, agent_start, agent_stop,
             stdio_start, stdio_send, stdio_stop,
-            browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close,
-            browser_result
+            browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible
         ])
         .run(tauri::generate_context!())
         .expect("error while running Supercharge Studio");

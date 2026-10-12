@@ -18,3 +18,9 @@ export async function ensureAgent(bind: string, secret: string, alwaysApprove: b
   if (!isDesktop()) return "web";
   return invoke("agent_start", { bind, secret, alwaysApprove });
 }
+
+/** Environment overrides from the desktop shell (empty in web mode). */
+export async function appConfig(): Promise<{ bind?: string | null; secret?: string | null }> {
+  if (!isDesktop()) return {};
+  return invoke<{ bind?: string | null; secret?: string | null }>("app_config").catch(() => ({}));
+}
