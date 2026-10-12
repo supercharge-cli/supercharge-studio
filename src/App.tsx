@@ -195,7 +195,7 @@ export default function App() {
           setStatus("Starting agent…");
           const r = await ensureAgent(s.bind, s.secret, s.alwaysApprove);
           setStatus(r === "started" ? "Agent started" : "Attached to running agent");
-        } else if (chk !== "ok") {
+        } else if (chk === "rejected") {
           // Something is listening but rejects our key (e.g. an agent started without --secret).
           const foreign = s.bind;
           if (o.secret || base.agentChoice === "key") {

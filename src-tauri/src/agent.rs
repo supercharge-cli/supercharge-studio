@@ -246,7 +246,7 @@ pub async fn check(bind: &str, secret: &str) -> String {
     let r = tokio::time::timeout(Duration::from_secs(3), async {
         let mut s = tokio::net::TcpStream::connect(bind).await.map_err(|_| "unreachable".to_string())?;
         let key: String = secret.bytes().map(|b| format!("%{b:02X}")).collect();
-        let req = format!("GET /ws?server-key={key} HTTP/1.1\r\nHost: {bind}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: c3VwZXJjaGFyZ2Utc3R1ZGlv\r\n\r\n");
+        let req = format!("GET /ws?server-key={key} HTTP/1.1\r\nHost: {bind}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n");
         s.write_all(req.as_bytes()).await.map_err(|_| "unreachable".to_string())?;
         let mut buf = [0u8; 64];
         let n = s.read(&mut buf).await.map_err(|_| "unreachable".to_string())?;
