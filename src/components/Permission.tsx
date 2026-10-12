@@ -1,9 +1,11 @@
+import { cleanPermission } from "../lib/labels";
 import type { PermissionOutcome, PermissionRequest } from "../acp/types";
 
-export function PermissionModal({ req, onAnswer }: { req: PermissionRequest; onAnswer: (o: PermissionOutcome) => void }) {
+export function PermissionModal({ req: raw, onAnswer }: { req: PermissionRequest; onAnswer: (o: PermissionOutcome) => void }) {
+  const req = cleanPermission(raw);
   return (
     <div className="modal-bg">
-      <div className="modal">
+      <div className="modal" role="alertdialog" aria-modal="true" aria-label="Permission request" data-testid="perm-modal">
         <h3>Allow this tool call?</h3>
         <p>{req.toolCall.title ?? req.toolCall.toolCallId}</p>
         {req.toolCall.rawInput != null && <pre className="mono">{JSON.stringify(req.toolCall.rawInput, null, 2)}</pre>}
