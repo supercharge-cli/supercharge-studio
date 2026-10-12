@@ -76,15 +76,16 @@ handler used for LAN sockets.
 
 | Endpoint | Who | Purpose |
 |---|---|---|
-| `GET /v1/host/<hostId>` (WebSocket) | desktop | Control socket. First text frame `{"t":"register","proof":<b64>}` where proof = HMAC-SHA256(hostKey, "relay-register"\|hostId\|ts) and `ts` in seconds; relay remembers `hostId → hostKeyHash` on first use (TOFU) and rejects other keys. |
+| `GET /v1/host/<hostId>` (WebSocket) | host | Control socket. First text frame `{"t":"register","token":<hex>}` (a random 32-byte host secret kept by the host). On first use the relay binds `hostId → sha256(token)` (TOFU) and replies `{"t":"registered"}`; any other token gets an error frame and close code 4403. Lane requests arrive as `{"t":"lane","lane":<id>}`. |
 | `GET /v1/connect/<hostId>` (WebSocket) | device | Relay allocates a random `lane` id, sends `{"t":"lane","lane":<id>}` on the host control socket, and holds the device socket (max 10 s) until the host attaches. |
-| `GET /v1/lane/<hostId>/<lane>` (WebSocket) | desktop | Attaches to a pending lane; from then on the relay pipes frames both ways verbatim (text and binary preserved). |
+| `GET /v1/lane/<hostId>/<lane>?token=<hex>` (WebSocket) | host | Attaches to a pending lane; from then on the relay pipes frames both ways verbatim (text and binary preserved). |
 
 Rules:
 
 - No payload inspection, no storage, no logging of frame contents; only counters.
-- Limits: 64 KiB per frame, 1 MiB/s and 8 lanes per host, 60 s idle timeout on lanes, 30 s
-  ping on control sockets; unknown host → close code `4404`; host offline → `4503`.
+- Limits: 64 KiB per frame, 8 lanes per host, 60 s idle timeout on lanes, 30 s ping on
+  control sockets. Close codes: host offline `4503`, too many lanes `4429`, host did not
+  attach in time `4504`, bad token `4403`.
 - TLS terminates at the relay (`wss://`); end-to-end confidentiality and integrity come from
   the gateway channel, so a malicious relay can only drop or delay traffic. Replays are
   already rejected by the per-direction frame counters.
@@ -128,7 +129,7 @@ that no plaintext JSON-RPC ever crossed the relay.
   are reused as-is; only the shell (navigation, pairing scanner, push) is new.
 - Small binaries and native webviews, consistent with the desktop app.
 - Rust side reuses gateway/pairing crypto (Ed25519, cert pinning) from the desktop.
-- Plugins exist for barcode scanning, notifications, biometric unlock and deep links.
+- No native plugins are bundled: pairing is by pasted link, which keeps the APK small.
 
 React Native was considered: better native feel and a mature push ecosystem, but it
 would mean re-implementing the UI and duplicating the ACP client in a second runtime.
