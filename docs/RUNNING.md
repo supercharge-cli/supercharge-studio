@@ -167,8 +167,8 @@ drive your chats.
 - Listens on `ws://<LAN IP>:2420/gw` (port configurable). For use outside the LAN,
   put any TLS tunnel in front of it and paste its `wss://…/gw` address into **Public URL**;
   the tunnel only ever sees ciphertext.
-- **Pair:** click **New code**, scan the QR in the app (or paste the `scstudio://pair?…`
-  link), then click **Allow** on the computer. Codes expire after 120 s and work once.
+- **Pair:** click **New code**, copy the `scstudio://pair?…` link to the phone (the QR helps any camera app copy it) and paste it into the app,
+  then click **Allow** on the computer. Codes expire after 120 s and work once.
 - Crypto: per-device key `K = HMAC-SHA256(pairSecret, "supercharge-gw/device-key")`,
   mutual HMAC challenge handshake, per-connection session key, AES-256-GCM frames with
   direction-tagged counters (replays are dropped). Device keys live in the OS keychain;
