@@ -1,0 +1,194 @@
+name: Release
+
+# Builds every app and publishes them as one GitHub Release.
+# Trigger: push a tag like v0.1.0, or run manually (Actions -> Release -> Run workflow).
+#
+# Optional Android signing. Without these secrets the APKs are published unsigned:
+#   ANDROID_KEYSTORE_B64   base64 of the release keystore (.jks)
+#   ANDROID_KEYSTORE_PASS  keystore password
+#   ANDROID_KEY_ALIAS      key alias (default: supercharge-studio)
+#   ANDROID_KEY_PASS       key password (defaults to the keystore password)
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (created if missing)"
+        required: true
+        default: v0.1.0
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  desktop:
+    name: Desktop (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            args: "--bundles deb,rpm,appimage"
+          - os: macos-latest
+            args: "--target universal-apple-darwin"
+          - os: windows-latest
+            args: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - name: Linux deps
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
+      - run: npm ci
+      - run: npx tauri build ${{ matrix.args }}
+      - name: Collect
+        shell: bash
+        run: |
+          mkdir -p dist
+          find src-tauri/target -path '*release/bundle/*' -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) -exec cp {} dist/ \;
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with: { name: rel-desktop-${{ matrix.os }}, path: dist/*, if-no-files-found: error }
+
+  server:
+    name: Server (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, ext: .exe }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: server }
+      - run: cargo build --release --locked --manifest-path server/Cargo.toml
+      - name: Collect
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp server/target/release/supercharge-studio-server${{ matrix.ext }} dist/supercharge-studio-server-${{ matrix.target }}${{ matrix.ext }}
+          if [ "${{ matrix.target }}" = x86_64-unknown-linux-gnu ]; then cp server/dist/supercharge-studio-server.service dist/; fi
+      - uses: actions/upload-artifact@v4
+        with: { name: rel-server-${{ matrix.target }}, path: dist/*, if-no-files-found: error }
+
+  android:
+    name: Android
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: mobile/src-tauri }
+      - run: npm ci
+      - name: Build release APKs (per ABI + universal)
+        working-directory: mobile
+        run: |
+          export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          npx tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64
+          mkdir -p ../dist/unsigned
+          for f in src-tauri/gen/android/app/build/outputs/apk/*/release/*.apk; do
+            abi=$(basename "$(dirname "$(dirname "$f")")")
+            cp "$f" "../dist/unsigned/supercharge-studio-android-$abi.apk"
+          done
+          npx tauri android build --apk --target aarch64 armv7 x86_64
+          f=$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -1)
+          cp "$f" ../dist/unsigned/supercharge-studio-android-universal.apk
+          ls -l ../dist/unsigned
+      - name: Sign (only when the signing secrets are set)
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+        run: |
+          mkdir -p dist/out
+          if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ]; then
+            echo "No signing secrets: publishing unsigned APKs."
+            for f in dist/unsigned/*.apk; do cp "$f" "dist/out/$(basename "${f%.apk}")-unsigned.apk"; done
+            exit 0
+          fi
+          export KEY_PASS="${KEY_PASS:-$KS_PASS}"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          for f in dist/unsigned/*.apk; do
+            out="dist/out/$(basename "$f")"
+            "$BT/zipalign" -f -p 4 "$f" "$RUNNER_TEMP/aligned.apk"
+            "$BT/apksigner" sign --ks "$RUNNER_TEMP/release.jks" --ks-pass env:KS_PASS \
+              --ks-key-alias "${KEY_ALIAS:-supercharge-studio}" --key-pass env:KEY_PASS \
+              --out "$out" "$RUNNER_TEMP/aligned.apk"
+            "$BT/apksigner" verify "$out"
+          done
+          rm -f "$RUNNER_TEMP/release.jks"
+          ls -l dist/out
+      - uses: actions/upload-artifact@v4
+        with: { name: rel-android, path: dist/out/*.apk, if-no-files-found: error }
+
+  ios:
+    name: iOS simulator
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "aarch64-apple-ios-sim,aarch64-apple-ios" }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: mobile/src-tauri }
+      - run: npm ci
+      - run: brew install xcodegen || true
+      - working-directory: mobile
+        run: npx tauri ios init --ci
+      - working-directory: mobile
+        env:
+          TAURI_APP_PATH: ${{ github.workspace }}/mobile/src-tauri
+        run: npx tauri ios build --debug --target aarch64-sim --ci
+      - name: Zip .app
+        run: |
+          mkdir -p dist
+          app=$(find mobile/src-tauri/gen/apple/build -name '*.app' -type d | head -1)
+          ditto -c -k --keepParent "$app" dist/supercharge-studio-ios-simulator.zip
+      - uses: actions/upload-artifact@v4
+        with: { name: rel-ios, path: dist/*, if-no-files-found: error }
+
+  publish:
+    name: Publish GitHub Release
+    needs: [desktop, server, android, ios]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { pattern: rel-*, path: dist, merge-multiple: true }
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt && ls -l
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Supercharge Studio $TAG" --generate-notes
+          fi
+          gh release upload "$TAG" dist/* --clobber

@@ -35,6 +35,12 @@ jobs:
         with:
           node-version: 20
           cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - name: Build the headless server (for e2e/server.spec.ts)
+        run: cargo build --release --locked --manifest-path server/Cargo.toml
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
@@ -43,6 +49,33 @@ jobs:
         with:
           name: e2e-results
           path: test-results/
+
+  server:
+    name: Server (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - run: cargo test --locked --manifest-path server/Cargo.toml
+      - run: cargo build --release --locked --manifest-path server/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: supercharge-studio-server-${{ matrix.target }}
+          path: |
+            server/target/release/supercharge-studio-server
+            server/target/release/supercharge-studio-server.exe
+          if-no-files-found: error
 
   desktop:
     name: Desktop bundle (${{ matrix.os }})
