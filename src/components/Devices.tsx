@@ -25,7 +25,7 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
   async function toggle(on: boolean) {
     setErr("");
     try {
-      if (on) await gateway.start(gatewayBind(prefs));
+      if (on) { await gateway.start(gatewayBind(prefs)); if (prefs.relayUrl?.trim()) await gateway.relaySet(prefs.relayUrl.trim(), prefs.hostId); }
       else { await gateway.stop(); setPair(null); }
       onPrefs({ ...prefs, enabled: on });
     } catch (e: any) {
@@ -57,9 +57,10 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
         <label>Public URL (optional, for tunnels)
           <input placeholder="wss://my-tunnel.example.com/gw" value={prefs.publicUrl} onChange={(e) => onPrefs({ ...prefs, publicUrl: e.target.value })} />
         </label>
-        <label>Relay URL (optional, preview)
-          <input data-testid="gw-relay" placeholder="wss://relay.example.com" value={prefs.relayUrl ?? ""} onChange={(e) => onPrefs({ ...prefs, relayUrl: e.target.value, hostId: prefs.hostId || Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("") })} />
+        <label>Relay URL (optional)
+          <input data-testid="gw-relay" placeholder="wss://relay.example.com" value={prefs.relayUrl ?? ""} onBlur={() => st?.running && void gateway.relaySet(prefs.relayUrl?.trim() || undefined, prefs.hostId).then(refresh).catch((e) => setErr(String(e)))} onChange={(e) => onPrefs({ ...prefs, relayUrl: e.target.value, hostId: prefs.hostId || Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("") })} />
           <span className="muted small">Phones try the direct address first, then this relay. The relay only forwards encrypted frames.</span>
+          {st?.running && prefs.relayUrl?.trim() && <span className={`relay-status ${st.relay === "online" ? "ok" : st.relay?.startsWith("retrying") ? "bad" : ""}`} data-testid="gw-relay-status"><i className="dot" /> Relay: {st.relay ?? "off"}</span>}
         </label>
         {err && <div className="error-text">{err}</div>}
       </div>

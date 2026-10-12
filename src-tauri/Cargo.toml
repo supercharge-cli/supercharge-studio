@@ -21,7 +21,9 @@ base64 = "0.22"
 getrandom = "0.3"
 toml_edit = "0.25"
 dirs = "6"
-tokio-tungstenite = { version = "0.26", default-features = false, features = ["handshake"] }
+tokio-tungstenite = { version = "0.26", default-features = false, features = ["handshake", "connect", "rustls-tls-webpki-roots"] }
+# TLS for the outbound relay connection; ring keeps the build portable and small.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 hmac = "0.12"
 sha2 = "0.10"

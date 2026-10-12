@@ -18,7 +18,7 @@ export type Settings = {
   activeProviderId?: string;
   theme?: Theme;
   onboarded?: boolean;
-  gateway?: { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string };
+  gateway?: { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string; relayUrl?: string; hostId?: string };
 };
 export type AppData = { groups: Group[]; settings: Settings; activeProjectId?: string; activeChatId?: string };
 

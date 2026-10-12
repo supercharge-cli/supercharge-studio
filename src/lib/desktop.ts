@@ -56,7 +56,7 @@ export const agentRestart = (bind: string, secret: string, alwaysApprove: boolea
 
 // ---- Mobile gateway (see src-tauri/src/gateway.rs) ----
 export type GwDevice = { id: string; name: string; paired_at: number; last_seen: number };
-export type GwStatus = { running: boolean; url?: string | null; devices: GwDevice[]; connected: string[] };
+export type GwStatus = { running: boolean; url?: string | null; devices: GwDevice[]; connected: string[]; relay?: string };
 export type GwPairing = { uri: string; svg: string; expiresAt: number; pairingId: string };
 export const gateway = {
   status: () => invoke<GwStatus>("gateway_status"),
@@ -65,5 +65,6 @@ export const gateway = {
   pairBegin: (publicUrl?: string, desktopName?: string, relayUrl?: string) => invoke<GwPairing>("gateway_pair_begin", { publicUrl, desktopName, relayUrl }),
   pairAnswer: (pairingId: string, allow: boolean) => invoke<void>("gateway_pair_answer", { pairingId, allow }),
   revoke: (deviceId: string) => invoke<void>("gateway_revoke", { deviceId }),
+  relaySet: (relayUrl?: string, hostId?: string) => invoke<void>("gateway_relay_set", { relayUrl, hostId }),
   send: (deviceId: string, msg: unknown) => invoke<boolean>("gateway_send", { deviceId, msg }).catch(() => false),
 };

@@ -19,88 +19,19 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{Aes256Gcm, Nonce};
 use base64::engine::general_purpose::{STANDARD as B64, URL_SAFE_NO_PAD as B64URL};
 use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
-use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sha2::Sha256;
 use tauri::{AppHandle, Emitter};
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 
-type HmacSha256 = Hmac<Sha256>;
-
 pub const PAIR_TTL_SECS: u64 = 120;
 
-// ---------- crypto (pure, unit-tested) ----------
-
-pub fn hmac(key: &[u8], parts: &[&[u8]]) -> [u8; 32] {
-    let mut m = <HmacSha256 as Mac>::new_from_slice(key).expect("hmac key");
-    for p in parts {
-        m.update(p);
-    }
-    m.finalize().into_bytes().into()
-}
-
-pub fn device_key(pair_secret: &[u8]) -> [u8; 32] {
-    hmac(pair_secret, &[b"supercharge-gw/device-key"])
-}
-
-pub fn session_key(device_key: &[u8], nc: &[u8], ns: &[u8]) -> [u8; 32] {
-    hmac(device_key, &[b"supercharge-gw/session", nc, ns])
-}
-
-fn ct_eq(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
-
-pub struct Channel {
-    cipher: Aes256Gcm,
-    send_dir: u32,
-    send_ctr: u64,
-    recv_ctr: u64,
-}
-
-fn nonce(dir: u32, ctr: u64) -> [u8; 12] {
-    let mut n = [0u8; 12];
-    n[..4].copy_from_slice(&dir.to_be_bytes());
-    n[4..].copy_from_slice(&ctr.to_be_bytes());
-    n
-}
-
-impl Channel {
-    /// `server = true` seals with dir 2 and opens dir 1.
-    pub fn new(sk: &[u8; 32], server: bool) -> Self {
-        Self { cipher: Aes256Gcm::new_from_slice(sk).unwrap(), send_dir: if server { 2 } else { 1 }, send_ctr: 0, recv_ctr: 0 }
-    }
-    /// Frame = counter (8 bytes BE) | ciphertext+tag.
-    pub fn seal(&mut self, plain: &[u8]) -> Vec<u8> {
-        self.send_ctr += 1;
-        let n = nonce(self.send_dir, self.send_ctr);
-        let ct = self.cipher.encrypt(Nonce::from_slice(&n), plain).expect("encrypt");
-        let mut out = self.send_ctr.to_be_bytes().to_vec();
-        out.extend(ct);
-        out
-    }
-    pub fn open(&mut self, frame: &[u8]) -> Result<Vec<u8>, &'static str> {
-        if frame.len() < 8 + 16 {
-            return Err("short frame");
-        }
-        let ctr = u64::from_be_bytes(frame[..8].try_into().unwrap());
-        if ctr <= self.recv_ctr {
-            return Err("replayed frame");
-        }
-        let n = nonce(3 - self.send_dir, ctr);
-        let pt = self.cipher.decrypt(Nonce::from_slice(&n), &frame[8..]).map_err(|_| "bad frame")?;
-        self.recv_ctr = ctr;
-        Ok(pt)
-    }
-}
+pub use crate::gwcrypto::{ct_eq, device_key, hmac, session_key, Channel};
 
 // ---------- state ----------
 
@@ -125,6 +56,9 @@ struct State {
     pairings: HashMap<String, Pairing>,
     approvals: HashMap<String, oneshot::Sender<bool>>,
     conns: HashMap<String, mpsc::UnboundedSender<Value>>,
+    relay_stop: Option<oneshot::Sender<()>>,
+    relay_status: String,
+    relay_url: Option<String>,
 }
 
 static STATE: OnceLock<Mutex<State>> = OnceLock::new();
@@ -196,7 +130,12 @@ fn lan_ip() -> String {
 // ---------- connection ----------
 
 async fn handle(app: AppHandle, stream: tokio::net::TcpStream) -> Result<(), String> {
-    let mut ws = tokio_tungstenite::accept_async(stream).await.map_err(|e| e.to_string())?;
+    let ws = tokio_tungstenite::accept_async(stream).await.map_err(|e| e.to_string())?;
+    handle_ws(app, ws).await
+}
+
+/// One device connection (direct LAN socket or a relay lane): handshake, then encrypted frames.
+async fn handle_ws<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(app: AppHandle, mut ws: tokio_tungstenite::WebSocketStream<S>) -> Result<(), String> {
     let next_json = |m: Option<Result<Message, _>>| -> Result<Value, String> {
         match m {
             Some(Ok(Message::Text(t))) => serde_json::from_str(&t).map_err(|e| e.to_string()),
@@ -318,6 +257,8 @@ pub struct Status {
     url: Option<String>,
     devices: Vec<Device>,
     connected: Vec<String>,
+    /// "off", "connecting", "online" or "retrying in Ns: reason".
+    relay: String,
 }
 
 #[tauri::command]
@@ -328,6 +269,7 @@ pub fn gateway_status() -> Status {
         url: s.url.clone(),
         devices: load_devices(),
         connected: s.conns.iter().filter(|(_, c)| !c.is_closed()).map(|(k, _)| k.clone()).collect(),
+        relay: if s.relay_stop.is_some() { s.relay_status.clone() } else { "off".into() },
     }
 }
 
@@ -367,6 +309,9 @@ pub fn gateway_stop() {
     let mut s = st();
     s.url = None;
     if let Some(t) = s.stop.take() {
+        let _ = t.send(());
+    }
+    if let Some(t) = s.relay_stop.take() {
         let _ = t.send(());
     }
     for (_, c) in s.conns.drain() {
@@ -486,4 +431,42 @@ mod tests {
     fn pct_encodes() {
         assert_eq!(pct("ws://1.2.3.4:2420/gw"), "ws%3A%2F%2F1.2.3.4%3A2420%2Fgw");
     }
+}
+
+// ---------- outbound relay ----------
+
+/// Connect (or reconnect) this computer to a relay; `None` turns it off.
+/// The host token is generated once and kept in the OS keychain.
+#[tauri::command]
+pub async fn gateway_relay_set(app: AppHandle, relay_url: Option<String>, host_id: Option<String>) -> Result<(), String> {
+    if let Some(stop) = st().relay_stop.take() {
+        let _ = stop.send(());
+    }
+    let (Some(url), Some(host)) = (relay_url.filter(|u| u.starts_with("wss://") || u.starts_with("ws://")), host_id.filter(|h| !h.is_empty())) else {
+        st().relay_url = None;
+        return Ok(());
+    };
+    let token = match device_secret("relay-host").await {
+        Some(t) => t,
+        None => {
+            let t: [u8; 32] = rand();
+            store_device_secret("relay-host", Some(t)).await?;
+            t
+        }
+    };
+    let (tx, rx) = oneshot::channel();
+    {
+        let mut s = st();
+        s.relay_stop = Some(tx);
+        s.relay_status = "connecting".into();
+        s.relay_url = Some(crate::gwrelay::connect_url(&url, &host));
+    }
+    let status: std::sync::Arc<dyn Fn(String) + Send + Sync> = std::sync::Arc::new(|s: String| st().relay_status = s);
+    let lane_app = app.clone();
+    let on_lane: std::sync::Arc<dyn Fn(crate::gwrelay::Lane) + Send + Sync> = std::sync::Arc::new(move |lane| {
+        let app = lane_app.clone();
+        tauri::async_runtime::spawn(async move { let _ = handle_ws(app, lane).await; });
+    });
+    tauri::async_runtime::spawn(crate::gwrelay::run(url, host, hex(&token), status, on_lane, rx));
+    Ok(())
 }

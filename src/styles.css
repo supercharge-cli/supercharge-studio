@@ -306,3 +306,4 @@ button.compact{padding:5px 11px;font-size:12.5px}
 @keyframes vt-in{from{opacity:0;transform:translateY(8px)}}
 .no-vt .main,.no-vt .screen{animation:rise .26s var(--spring-soft) both}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}}
+.relay-status{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}.relay-status .dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}.relay-status.ok .dot{background:var(--c3)}.relay-status.bad .dot{background:#e5484d}

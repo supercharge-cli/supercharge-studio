@@ -265,7 +265,11 @@ export default function App() {
       listen<{ deviceId: string }>("gateway://disconnected", ({ deviceId }) => { hub.disconnected(deviceId); setDevicesOnline(hub.deviceCount); }),
       listen<{ pairingId: string; name: string }>("gateway://pair-request", (r) => setPairReq(r)),
     ];
-    if (dataRef.current.settings.gateway?.enabled) void gateway.start(gatewayBind(dataRef.current.settings.gateway)).catch((e) => setNotice(`Mobile gateway: ${e}`));
+    const gw = dataRef.current.settings.gateway;
+    if (gw?.enabled)
+      void gateway.start(gatewayBind(gw))
+        .then(() => (gw.relayUrl?.trim() ? gateway.relaySet(gw.relayUrl.trim(), gw.hostId) : undefined))
+        .catch((e) => setNotice(`Mobile gateway: ${e}`));
     return () => offs.forEach((o) => void o.then((f) => f()));
   }, []);
 
