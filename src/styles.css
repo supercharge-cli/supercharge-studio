@@ -120,8 +120,8 @@ input.inline{margin:4px 6px;width:calc(100% - 12px);padding:5px 8px;font-size:13
 .modal.wide{width:min(620px,94vw)}
 .modal-head{display:flex;align-items:center;justify-content:space-between}
 .modal h3{margin:0;font-size:16px}.modal h4{margin:6px 0 0;font-size:13px}
-.modal label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:12.5px;font-weight:500}
-.modal label.check{flex-direction:row;align-items:center;gap:8px;color:var(--fg)}.modal label.check input{width:auto}
+.modal label,.screen label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:12.5px;font-weight:500}
+.modal label.check,.screen label.check{flex-direction:row;align-items:center;gap:8px;color:var(--fg)}.modal label.check input,.screen label.check input{width:auto}
 .modal pre{background:var(--code);border-radius:10px;padding:10px;margin:0}
 .stack{display:flex;flex-direction:column;gap:12px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -209,7 +209,7 @@ kbd{font:11px ui-monospace,Menlo,Consolas,monospace;padding:1px 5px;border:1px s
 /* sidebar footer */
 .side-search{width:100%;background:var(--bg);color:var(--muted);border:1px solid var(--line);font-weight:400;margin-bottom:8px}
 .side-search:hover{background:var(--hover);color:var(--fg)}
-.side-search span{flex:1;text-align:left}
+.side-search span{flex:1;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.side-search kbd{flex:none}
 .side-foot-row{display:flex;gap:6px}.side-foot-row button{flex:1;justify-content:center}
 
 /* full-screen routes (settings / usage) */
@@ -257,3 +257,4 @@ kbd{font:11px ui-monospace,Menlo,Consolas,monospace;padding:1px 5px;border:1px s
 .qr{background:#fff;border-radius:12px;padding:8px;flex:none;line-height:0}
 .qr svg{width:220px;height:220px}
 @media (max-width:900px){.stats{grid-template-columns:repeat(2,1fr)}.screen-nav{width:160px}}
+.screen label.switch{display:inline-block;flex-direction:row}

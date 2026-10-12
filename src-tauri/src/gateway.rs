@@ -161,9 +161,27 @@ fn save_devices(d: &[Device]) {
 fn key_account(id: &str) -> String {
     format!("gateway-device-{id}")
 }
-fn device_secret(id: &str) -> Option<[u8; 32]> {
-    let (v, _) = crate::secrets::get(&key_account(id));
+/// Keychain access blocks (and some backends start their own runtime), so keep it off the async workers.
+async fn off_runtime<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.await.ok()
+}
+
+async fn device_secret(id: &str) -> Option<[u8; 32]> {
+    if !load_devices().iter().any(|d| d.id == id) {
+        return None;
+    }
+    let acct = key_account(id);
+    let (v, _) = off_runtime(move || crate::secrets::get(&acct)).await?;
     B64.decode(v?).ok()?.try_into().ok()
+}
+async fn store_device_secret(id: &str, key: Option<[u8; 32]>) -> Result<(), String> {
+    let acct = key_account(id);
+    let val = key.map(|k| B64.encode(k)).unwrap_or_default();
+    off_runtime(move || crate::secrets::set(&acct, &val).map(|_| ())).await.unwrap_or_else(|| Err("secure storage unavailable".into()))
 }
 
 /// Best-effort LAN address (no packets are sent).
@@ -204,8 +222,8 @@ async fn handle(app: AppHandle, stream: tokio::net::TcpStream) -> Result<(), Str
     };
     let (key, is_pairing) = match pairing {
         Some(sec) => (device_key(&sec), true),
-        None => match device_secret(&id) {
-            Some(k) if load_devices().iter().any(|d| d.id == id) => (k, false),
+        None => match device_secret(&id).await {
+            Some(k) => (k, false),
             _ => {
                 let _ = ws.send(Message::Text(json!({"t": "denied", "reason": "unknown device or expired pairing"}).to_string().into())).await;
                 return Err("unknown device".into());
@@ -233,7 +251,7 @@ async fn handle(app: AppHandle, stream: tokio::net::TcpStream) -> Result<(), Str
             return Err("pairing rejected".into());
         }
         let did = hex(&rand::<8>());
-        crate::secrets::set(&key_account(&did), &B64.encode(key))?;
+        store_device_secret(&did, Some(key)).await?;
         let mut ds = load_devices();
         ds.push(Device { id: did.clone(), name: name.clone(), paired_at: now(), last_seen: now() });
         save_devices(&ds);
@@ -398,11 +416,11 @@ pub fn gateway_pair_answer(pairing_id: String, allow: bool) {
 }
 
 #[tauri::command]
-pub fn gateway_revoke(device_id: String) {
+pub async fn gateway_revoke(device_id: String) {
     let mut ds = load_devices();
     ds.retain(|d| d.id != device_id);
     save_devices(&ds);
-    let _ = crate::secrets::set(&key_account(&device_id), "");
+    let _ = store_device_secret(&device_id, None).await;
     if let Some(c) = st().conns.remove(&device_id) {
         let _ = c.send(json!({"__close": true}));
     }

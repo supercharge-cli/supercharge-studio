@@ -217,6 +217,11 @@ export default function App() {
       await client.connect();
       const init = await client.initialize();
       setStatus(`Connected${init.agentInfo?.version ? ` · agent ${init.agentInfo.version}` : ""}`);
+      // Restore the open chat's history after (re)connecting.
+      const d = dataRef.current;
+      const f = findProject(d, d.activeProjectId);
+      const ch = f?.project.chats.find((x) => x.id === d.activeChatId);
+      if (f && ch?.sessionId) void selectChat(f.project.id, ch.id, false);
     } catch (e: any) {
       setStatus(String(e?.message ?? e));
     }
