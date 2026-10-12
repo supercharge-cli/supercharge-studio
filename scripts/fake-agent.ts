@@ -14,6 +14,10 @@ import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
 import { writeFileSync } from "fs";
 
+// Shared across connections (like one agent process serving several clients).
+let sessions = 0;
+const listed: { sessionId: string; cwd: string; title: string }[] = [];
+const known = new Set<string>();
 const arg = (k: string, d: string) => {
   const i = process.argv.indexOf(`--${k}`);
   return i > 0 ? process.argv[i + 1] : d;
@@ -47,9 +51,7 @@ wss.on("connection", (ws: WebSocket) => {
       send({ id, method, params });
     });
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  let sessions = 0;
   const flaked = new Set<string>();
-const known = new Set<string>();
 
   ws.on("message", async (raw) => {
     const m = JSON.parse(String(raw));
@@ -63,8 +65,12 @@ const known = new Set<string>();
           authMethods: [],
           _meta: { agentVersion: "fake-1.0", availableCommands: [{ name: "help", description: "Show help" }, { name: "setup", description: "Configure provider" }] },
         });
+      case "session/list":
+        return reply({ sessions: listed.map((x) => ({ ...x })) });
       case "session/new":
         known.add(`fake-${++sessions}`);
+        listed.splice(0, listed.length, ...listed.filter((x) => x.sessionId !== `fake-${sessions}`));
+        listed.push({ sessionId: `fake-${sessions}`, cwd: m.params?.cwd ?? "/tmp", title: "New chat" });
         return reply({
           sessionId: `fake-${sessions}`,
           configOptions: [{ id: "reasoning_effort", name: "Reasoning Effort", currentValue: "high", options: [{ value: "high", name: "High" }, { value: "low", name: "Low" }] }],
