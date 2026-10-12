@@ -410,7 +410,7 @@ async fn cli_pair(c: &Config, yes: bool) -> Result<(), String> {
     let mut stdin = BufReader::new(tokio::io::stdin()).lines();
     while let Ok(Some(l)) = lines.next_line().await {
         if let Some(uri) = l.strip_prefix("URI ") {
-            println!("{}\nScan with your phone camera, or paste this link into Supercharge Studio on the phone:\n\n  {uri}\n\nExpires in {PAIR_TTL}s, single use. Waiting for the device…", qr_text(uri));
+            println!("{}\nPaste this link into Supercharge Studio on the phone (any camera app can read the QR to copy it):\n\n  {uri}\n\nExpires in {PAIR_TTL}s, single use. Waiting for the device…", qr_text(uri));
         } else if let Some(name) = l.strip_prefix("REQUEST ") {
             let ok = if yes {
                 true

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+import { pathToFileURL } from "node:url";
 // Supercharge Studio reference relay (docs/MOBILE-PLAN.md, "Relay mode").
 // A blind pipe between phones and a host (desktop app or headless server). It never sees
 // keys or plaintext: every lane carries the gateway's own handshake and AES-GCM frames.
@@ -116,6 +116,6 @@ export function startRelay(port = PORT, host = process.env.HOST ?? "0.0.0.0") {
   return new Promise((resolve) => http.listen(port, host, () => resolve(http)));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   startRelay().then((s) => console.log(`supercharge relay listening on ${JSON.stringify(s.address())}`));
 }
