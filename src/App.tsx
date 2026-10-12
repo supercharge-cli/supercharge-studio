@@ -9,8 +9,8 @@ import { PermissionModal } from "./components/Permission";
 import { SettingsModal } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { ToolCard } from "./components/ToolCard";
-import { ensureAgent } from "./lib/desktop";
-import { AppData, findProject, load, mapProject, save, uid, wsUrl } from "./lib/store";
+import { appConfig, ensureAgent } from "./lib/desktop";
+import { AppData, applyTree, findProject, load, mapProject, save, uid, wsUrl } from "./lib/store";
 
 export default function App() {
   const [data, setData] = useState<AppData>(load);
@@ -25,11 +25,18 @@ export default function App() {
   const [perm, setPerm] = useState<{ req: PermissionRequest; resolve: (o: PermissionOutcome) => void } | null>(null);
   const [configOptions, setConfigOptions] = useState<ConfigOption[]>([]);
   const clientRef = useRef<AcpClient | null>(null);
+  const overrides = useRef<{ bind?: string | null; secret?: string | null } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const dataRef = useRef(data);
-  dataRef.current = data;
+  /** Synchronous data update: keeps dataRef current for async flows. */
+  const update = useCallback((fn: (d: AppData) => AppData) => {
+    dataRef.current = fn(dataRef.current);
+    setData(dataRef.current);
+  }, []);
 
-  useEffect(() => save(data), [data]);
+  useEffect(() => {
+    save(data);
+  }, [data]);
 
   const chatIdForSession = (sid: string) => {
     for (const g of dataRef.current.groups)
@@ -39,7 +46,10 @@ export default function App() {
 
   const connect = useCallback(async () => {
     clientRef.current?.close();
-    const s = dataRef.current.settings;
+    // Environment overrides (desktop launcher) apply to this run only; never persisted.
+    if (!overrides.current) overrides.current = await appConfig();
+    const o = overrides.current;
+    const s = { ...dataRef.current.settings, ...(o.bind ? { bind: o.bind } : {}), ...(o.secret ? { secret: o.secret } : {}) };
     try {
       if (s.autoStart && s.transport === "ws") {
         setStatus("Starting agent…");
@@ -61,7 +71,7 @@ export default function App() {
         setSessions((all) => ({ ...all, [cid]: applyUpdate(all[cid] ?? emptySession(), u) }));
         if (u.sessionUpdate === "config_option_update" && Array.isArray((u as any).configOptions)) setConfigOptions((u as any).configOptions);
         if (u.sessionUpdate === "session_info_update" && typeof (u as any).title === "string" && (u as any).title)
-          setData((d) => ({ ...d, groups: d.groups.map((g) => ({ ...g, projects: g.projects.map((p) => ({ ...p, chats: p.chats.map((c) => (c.id === cid ? { ...c, title: String((u as any).title).slice(0, 60) } : c)) })) })) }));
+          update((d) => ({ ...d, groups: d.groups.map((g) => ({ ...g, projects: g.projects.map((p) => ({ ...p, chats: p.chats.map((c) => (c.id === cid ? { ...c, title: String((u as any).title).slice(0, 60) } : c)) })) })) }));
       },
       onPermissionRequest: (req) => new Promise((resolve) => setPerm({ req, resolve })),
       onReconnected: () => setStatus("Reconnected"),
@@ -86,7 +96,10 @@ export default function App() {
   const activeChat = active?.project.chats.find((c) => c.id === data.activeChatId);
   const sess = (activeChat && sessions[activeChat.id]) || emptySession();
 
-  useEffect(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), [sess.items.length, sess]);
+  useEffect(() => {
+    const el = bottomRef.current?.parentElement;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [sess.items.length, sess]);
 
   async function ensureSession(projectId: string, chatId: string): Promise<string | null> {
     const c = clientRef.current;
@@ -96,19 +109,18 @@ export default function App() {
     if (chat.sessionId) return chat.sessionId;
     const res = await c.newSession(found.project.cwd, { yoloMode: dataRef.current.settings.alwaysApprove });
     setConfigOptions(res.configOptions ?? []);
-    setData((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, sessionId: res.sessionId } : x)) })));
-    dataRef.current = mapProject(dataRef.current, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, sessionId: res.sessionId } : x)) }));
+    update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, sessionId: res.sessionId } : x)) })));
     return res.sessionId;
   }
 
   function newChat(projectId: string) {
     const chat = { id: uid(), title: "New chat", createdAt: Date.now() };
-    setData((d) => ({ ...mapProject(d, projectId, (p) => ({ ...p, chats: [chat, ...p.chats] })), activeProjectId: projectId, activeChatId: chat.id }));
+    update((d) => ({ ...mapProject(d, projectId, (p) => ({ ...p, chats: [chat, ...p.chats] })), activeProjectId: projectId, activeChatId: chat.id }));
     return chat.id;
   }
 
   async function selectChat(projectId: string, chatId: string) {
-    setData((d) => ({ ...d, activeProjectId: projectId, activeChatId: chatId }));
+    update((d) => ({ ...d, activeProjectId: projectId, activeChatId: chatId }));
     const c = clientRef.current;
     const chat = findProject(dataRef.current, projectId)?.project.chats.find((x) => x.id === chatId);
     if (c && chat?.sessionId && !sessions[chatId] && c.initResult?.agentCapabilities?.loadSession) {
@@ -123,17 +135,26 @@ export default function App() {
     if (!text || !c || !active) return;
     let chatId = activeChat?.id;
     if (!chatId) chatId = newChat(active.project.id);
-    await new Promise((r) => setTimeout(r));
     setDraft("");
     const projectId = active.project.id;
     if (activeChat?.title === "New chat" || !activeChat)
-      setData((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, title: text.slice(0, 40) } : x)) })));
+      update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, title: text.slice(0, 40) } : x)) })));
     setSessions((all) => ({ ...all, [chatId!]: { ...(all[chatId!] ?? emptySession()), items: [...(all[chatId!]?.items ?? []), { kind: "user", text }] } }));
     setBusy((b) => ({ ...b, [chatId!]: true }));
     try {
-      const sid = await ensureSession(projectId, chatId);
+      let sid = await ensureSession(projectId, chatId);
       if (!sid) throw new Error("No session");
-      const r = await c.prompt(sid, text);
+      let r;
+      try {
+        r = await c.prompt(sid, text);
+      } catch (e: any) {
+        // Session unknown to this agent (e.g. agent restarted): start a fresh one and retry once.
+        if (!/session.*not found|unknown session|no such session/i.test(String(e?.message))) throw e;
+        update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, sessionId: undefined } : x)) })));
+        sid = await ensureSession(projectId, chatId);
+        if (!sid) throw e;
+        r = await c.prompt(sid, text);
+      }
       if (r.stopReason !== "end_turn")
         setSessions((all) => ({ ...all, [chatId!]: { ...all[chatId!], items: [...all[chatId!].items, { kind: "system", text: `stopped: ${r.stopReason}` }] } }));
     } catch (e: any) {
@@ -145,6 +166,11 @@ export default function App() {
       setBusy((b) => ({ ...b, [chatId!]: false }));
     }
   }
+
+  // Native webviews draw above the DOM: hide the side browser while a modal is open.
+  useEffect(() => {
+    void browser.setVisible(!showSettings && !perm);
+  }, [showSettings, perm]);
 
   const isBusy = !!(activeChat && busy[activeChat.id]);
   const tools = Object.values(sess.toolCalls).reverse();
@@ -158,19 +184,9 @@ export default function App() {
         collapsed={sideCollapsed}
         onToggle={() => setSideCollapsed((x) => !x)}
         onSelectChat={(p, c) => void selectChat(p, c)}
+        onSelectProject={(pid) => update((d) => ({ ...d, activeProjectId: pid, activeChatId: undefined }))}
         onNewChat={(p) => void newChat(p)}
-        onAddGroup={() => {
-          const name = prompt("Group name?");
-          if (name) setData((d) => ({ ...d, groups: [...d.groups, { id: uid(), name, projects: [] }] }));
-        }}
-        onAddProject={(gid) => {
-          const name = prompt("Project name?");
-          const cwd = name && prompt("Absolute project folder (session cwd)?");
-          if (name && cwd)
-            setData((d) => ({ ...d, groups: d.groups.map((g) => (g.id === gid ? { ...g, collapsed: false, projects: [...g.projects, { id: uid(), name, cwd, chats: [] }] } : g)) }));
-        }}
-        onToggleGroup={(gid) => setData((d) => ({ ...d, groups: d.groups.map((g) => (g.id === gid ? { ...g, collapsed: !g.collapsed } : g)) }))}
-        onRemoveProject={(pid) => confirm("Remove project from list?") && setData((d) => ({ ...d, groups: d.groups.map((g) => ({ ...g, projects: g.projects.filter((p) => p.id !== pid) })) }))}
+        onTree={(a) => update((d) => applyTree(d, a))}
         onSettings={() => setShowSettings(true)}
       />
       <main className="main">
@@ -233,8 +249,7 @@ export default function App() {
           onClose={() => setShowSettings(false)}
           onConfig={(id, v) => activeChat?.sessionId && void clientRef.current?.setConfigOption(activeChat.sessionId, id, v).then((r: any) => Array.isArray(r?.configOptions) && setConfigOptions(r.configOptions)).catch(() => {})}
           onSave={(settings) => {
-            setData((d) => ({ ...d, settings }));
-            dataRef.current = { ...dataRef.current, settings };
+            update((d) => ({ ...d, settings }));
             setShowSettings(false);
             void connect();
           }}
