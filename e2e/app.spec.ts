@@ -133,3 +133,9 @@ test("stale session id is replaced transparently", async ({ page }) => {
   await ask(page, "hello again");
   await expect(page.locator(".bubble.agent").last()).toHaveText("echo: hello again");
 });
+
+test("unsupported model shows a clear hint", async ({ page }) => {
+  await boot(page);
+  await ask(page, "modelfail");
+  await expect(page.locator(".bubble.system").last()).toContainText("not available from your provider");
+});

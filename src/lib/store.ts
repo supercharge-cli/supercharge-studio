@@ -8,6 +8,8 @@ export type Settings = {
   transport: "ws" | "stdio";
   autoStart: boolean;
   alwaysApprove: boolean;
+  /** Server key lives in the OS keychain; `secret` is then kept empty on disk. */
+  secretInKeychain?: boolean;
 };
 export type AppData = { groups: Group[]; settings: Settings; activeProjectId?: string; activeChatId?: string };
 

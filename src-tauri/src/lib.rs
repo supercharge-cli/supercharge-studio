@@ -16,6 +16,10 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::oneshot;
 
+mod mcp;
+mod screenshot;
+mod secrets;
+
 const BROWSER: &str = "browser";
 
 #[derive(Default)]
@@ -251,6 +255,15 @@ async fn browser_set_visible(app: AppHandle, visible: bool) -> Result<(), String
     if visible { wv.show() } else { wv.hide() }.map_err(|e| e.to_string())
 }
 
+/// PNG screenshot of the side browser, base64-encoded.
+#[tauri::command]
+async fn browser_screenshot(app: AppHandle) -> Result<String, String> {
+    use base64::Engine;
+    let wv = app.get_webview(BROWSER).ok_or("browser not open")?;
+    let png = screenshot::capture(&wv).await?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(png))
+}
+
 #[tauri::command]
 async fn browser_close(app: AppHandle) -> Result<(), String> {
     if let Some(wv) = app.get_webview(BROWSER) {
@@ -304,6 +317,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
         .setup(|app| {
+            mcp::start(app.handle().clone());
             // One window holding two webviews: the app UI (auto-resized to the window) and,
             // on demand, the side browser placed over the UI's browser slot.
             let window = tauri::window::WindowBuilder::new(app, "main")
@@ -324,7 +338,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_config, agent_probe, agent_start, agent_stop,
             stdio_start, stdio_send, stdio_stop,
-            browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible
+            browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible, browser_screenshot,
+            secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running Supercharge Studio");

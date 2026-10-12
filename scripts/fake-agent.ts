@@ -78,6 +78,8 @@ wss.on("connection", (ws: WebSocket) => {
         const text: string = m.params.prompt?.map((b: any) => b.text ?? "").join(" ") ?? "";
         if (!known.has(sid)) return send({ id: m.id, error: { code: -32602, message: "Invalid params: unknown session id" } });
         cancelled.delete(sid);
+        if (/modelfail/.test(text))
+          return send({ id: m.id, error: { code: -32603, message: "Internal error", data: "responses API error 400: no upstream owns model old-model" } });
         if (/authfail/.test(text))
           return send({ id: m.id, error: { code: -32603, message: "Internal error", data: "Unauthorized (401): Invalid or expired credentials" } });
         if (/stream/.test(text)) {
@@ -144,7 +146,7 @@ wss.on("connection", (ws: WebSocket) => {
           if (report) writeFileSync(report, JSON.stringify(results, null, 2));
           say(sid, "```\n" + JSON.stringify(results, null, 1).slice(0, 1500) + "\n```");
         }
-        if (!/stream|tool|perm|slow|browser/.test(text)) say(sid, `echo: ${text}`);
+        if (!/stream|tool|perm|slow|browser|modelfail/.test(text)) say(sid, `echo: ${text}`);
         return reply({ stopReason: "end_turn" });
       }
       default:

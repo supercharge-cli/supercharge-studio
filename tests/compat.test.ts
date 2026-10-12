@@ -69,3 +69,20 @@ describe("live-agent compatibility", () => {
     expect(s.title).toBe("Fix the build");
   });
 });
+
+import { isModelError } from "../src/acp/client";
+import { BROWSER_METHODS, BrowserController } from "../src/browser/bridge";
+describe("model errors and browser ops", () => {
+  it("detects unsupported-model errors", () => {
+    expect(isModelError(new Error("Internal error: 400 no upstream owns model foo-1"))).toBe(true);
+    expect(isModelError(new Error("model 'x' not found"))).toBe(true);
+    expect(isModelError(new Error("Unauthorized (401)"))).toBe(false);
+  });
+  it("advertises screenshot and falls back to snapshot outside the desktop app", async () => {
+    expect(BROWSER_METHODS).toContain("_supercharge/browser/screenshot");
+    const r: any = await new BrowserController().run("screenshot", {});
+    expect(r.fallback).toBe("snapshot");
+    expect(r.error).toMatch(/desktop/);
+    await expect(new BrowserController().run("nope", {})).rejects.toThrow(/unknown/);
+  });
+});

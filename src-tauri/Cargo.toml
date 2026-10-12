@@ -16,7 +16,10 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["unstable"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["sync", "time", "process", "io-util", "net", "rt"] }
+tokio = { version = "1", features = ["sync", "time", "process", "io-util", "net", "rt", "macros"] }
+base64 = "0.22"
+getrandom = "0.3"
+keyring = { version = "3", features = ["apple-native", "windows-native", "async-secret-service", "tokio", "crypto-rust"] }
 
 [profile.release]
 codegen-units = 1
@@ -27,3 +30,17 @@ strip = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
+webkit2gtk = "2.0"
+cairo-rs = { version = "0.18", features = ["png"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSData", "NSDictionary", "NSError", "NSString"] }
+objc2-app-kit = { version = "0.3", features = ["NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphics"] }
+objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKSnapshotConfiguration", "block2", "objc2-app-kit"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_System_Com_StructuredStorage"] }
+windows-core = "0.62"

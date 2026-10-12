@@ -422,6 +422,12 @@ export function isAuthError(e: unknown): boolean {
   return /\b401\b|unauthori[sz]ed|invalid or expired credentials|auth_required/i.test(m) || (e as any)?.code === -32000;
 }
 
+/** True when the provider rejected the model id (unknown / unsupported model). */
+export function isModelError(e: unknown): boolean {
+  const m = e instanceof Error ? e.message : String(e);
+  return /no upstream owns model|model[^\n]{0,40}(not found|not supported|does not exist|unknown)|unknown model|invalid model/i.test(m);
+}
+
 /**
  * Collect extension methods from an initialize result. Agents advertise them in
  * `_meta` blocks (on the result or under agentCapabilities) as either a

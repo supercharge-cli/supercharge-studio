@@ -24,3 +24,25 @@ export async function appConfig(): Promise<{ bind?: string | null; secret?: stri
   if (!isDesktop()) return {};
   return invoke<{ bind?: string | null; secret?: string | null }>("app_config").catch(() => ({}));
 }
+
+/** URL of the app's local MCP server exposing the side browser (desktop only). */
+export async function mcpUrl(): Promise<string | null> {
+  if (!isDesktop()) return null;
+  for (let i = 0; i < 20; i++) {
+    const u = await invoke<string | null>("mcp_info").catch(() => null);
+    if (u) return u;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return null;
+}
+
+const KEY_ACCOUNT = "agent-server-key";
+/** OS keychain (desktop). Returns undefined when unavailable. */
+export async function keychainGet(): Promise<string | null | undefined> {
+  if (!isDesktop()) return undefined;
+  return invoke<string | null>("secret_get", { account: KEY_ACCOUNT }).catch(() => undefined);
+}
+export async function keychainSet(value: string): Promise<boolean> {
+  if (!isDesktop()) return false;
+  return invoke("secret_set", { account: KEY_ACCOUNT, value }).then(() => true, () => false);
+}

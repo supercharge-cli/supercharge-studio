@@ -12,13 +12,15 @@
  *   _supercharge/browser/scroll    { dy }                  → { ok }
  *   _supercharge/browser/eval      { expression }          → { value }
  *   _supercharge/browser/back      {}                      → { ok }
+ *   _supercharge/browser/screenshot {}                     → { mimeType, data } (base64 PNG)
+ *                                    or { fallback: "snapshot", ...snapshot } if capture fails
  *
  * `elements[].ref` values come from the latest snapshot.
  */
 import type { AcpClient } from "../acp/client";
-import { invoke, isDesktop } from "../lib/desktop";
+import { invoke, isDesktop, listen } from "../lib/desktop";
 
-export const BROWSER_METHODS = ["navigate", "snapshot", "click", "type", "scroll", "eval", "back"].map(
+export const BROWSER_METHODS = ["navigate", "snapshot", "screenshot", "click", "type", "scroll", "eval", "back"].map(
   (m) => `_supercharge/browser/${m}`,
 );
 
@@ -97,26 +99,77 @@ export class BrowserController {
     return out.value;
   }
 
+  /** Native PNG capture; falls back to a text snapshot when unavailable. */
+  async screenshot(): Promise<{ mimeType: string; data: string } | { fallback: "snapshot"; error: string; [k: string]: unknown }> {
+    try {
+      if (!isDesktop()) throw new Error("Screenshots need the desktop app");
+      const data = await invoke<string>("browser_screenshot");
+      return { mimeType: "image/png", data };
+    } catch (e: any) {
+      const snap = await this.evaluate("__sc.snapshot()").catch(() => ({}));
+      return { fallback: "snapshot", error: String(e?.message ?? e), ...snap };
+    }
+  }
+
+  /** Run one browser operation by short name (shared by ACP extensions and MCP tools). */
+  async run(op: string, p: any): Promise<any> {
+    const target = JSON.stringify({ ref: p?.ref ?? null, selector: p?.selector ?? null });
+    switch (op) {
+      case "navigate":
+        return this.navigate(String(p?.url ?? ""));
+      case "snapshot":
+        return this.evaluate("__sc.snapshot()");
+      case "screenshot":
+        return this.screenshot();
+      case "click":
+        return { ok: await this.evaluate(`(__sc.find(${target}).click(), true)`) };
+      case "type": {
+        const text = JSON.stringify(String(p?.text ?? ""));
+        return {
+          ok: await this.evaluate(
+            `(() => { const el = __sc.find(${target}); el.focus();
+              const set = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set;
+              if (set) set.call(el, ${text}); else el.textContent = ${text};
+              el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
+              ${p?.submit ? "(el.form ? el.form.requestSubmit() : el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));" : ""}
+              return true; })()`,
+          ),
+        };
+      }
+      case "scroll":
+        return { ok: await this.evaluate(`(window.scrollBy(0, ${Number(p?.dy ?? 600)}), true)`) };
+      case "eval":
+        return { value: await this.evaluate(String(p?.expression ?? "undefined")) };
+      case "back":
+        return { ok: await this.evaluate("(history.back(), true)") };
+      default:
+        throw new Error(`unknown browser operation: ${op}`);
+    }
+  }
+
+  /** Serve MCP tool calls forwarded by the desktop shell (see src-tauri/src/mcp.rs). */
+  async serveMcp() {
+    return listen<{ id: number; name: string; arguments: any }>("mcp://call", async ({ id, name, arguments: args }) => {
+      let result: any;
+      try {
+        const out = await this.run(name.replace(/^browser_/, ""), args);
+        result =
+          out && typeof out.data === "string" && out.mimeType
+            ? { content: [{ type: "image", data: out.data, mimeType: out.mimeType }] }
+            : { content: [{ type: "text", text: JSON.stringify(out) }] };
+      } catch (e: any) {
+        result = { isError: true, content: [{ type: "text", text: String(e?.message ?? e) }] };
+      }
+      await invoke("mcp_result", { id, result }).catch(() => {});
+    });
+  }
+
   /** Register agent → client handlers on an ACP client. */
   attach(client: AcpClient) {
-    const h = (m: string, fn: (p: any) => unknown) => client.handle(`_supercharge/browser/${m}`, fn);
-    const target = (p: any) => JSON.stringify({ ref: p?.ref ?? null, selector: p?.selector ?? null });
-    h("navigate", (p) => this.navigate(String(p?.url ?? "")));
-    h("snapshot", () => this.evaluate("__sc.snapshot()"));
-    h("click", async (p) => ({ ok: await this.evaluate(`(__sc.find(${target(p)}).click(), true)`) }));
-    h("type", async (p) => ({
-      ok: await this.evaluate(
-        `(() => { const el = __sc.find(${target(p)}); el.focus();
-          const set = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set;
-          if (set) set.call(el, ${JSON.stringify(String(p?.text ?? ""))}); else el.textContent = ${JSON.stringify(String(p?.text ?? ""))};
-          el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
-          ${p?.submit ? "(el.form ? el.form.requestSubmit() : el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));" : ""}
-          return true; })()`,
-      ),
-    }));
-    h("scroll", async (p) => ({ ok: await this.evaluate(`(window.scrollBy(0, ${Number(p?.dy ?? 600)}), true)`) }));
-    h("eval", async (p) => ({ value: await this.evaluate(String(p?.expression ?? "undefined")) }));
-    h("back", async () => ({ ok: await this.evaluate("(history.back(), true)") }));
+    for (const m of BROWSER_METHODS) {
+      const op = m.slice("_supercharge/browser/".length);
+      client.handle(m, (p) => this.run(op, p));
+    }
   }
 }
 

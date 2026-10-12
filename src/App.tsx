@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AcpClient, ConnectionState, isAuthError } from "./acp/client";
+import { AcpClient, ConnectionState, isAuthError, isModelError } from "./acp/client";
 import { applyUpdate, emptySession, SessionState } from "./acp/session";
 import type { ConfigOption, PermissionOutcome, PermissionRequest } from "./acp/types";
 import { StdioTransport } from "./acp/tauriStdio";
@@ -9,13 +9,14 @@ import { PermissionModal } from "./components/Permission";
 import { SettingsModal } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { ToolCard } from "./components/ToolCard";
-import { appConfig, ensureAgent } from "./lib/desktop";
+import { appConfig, ensureAgent, keychainGet, keychainSet, mcpUrl } from "./lib/desktop";
 import { AppData, applyTree, findProject, load, mapProject, save, uid, wsUrl } from "./lib/store";
 
 export default function App() {
   const [data, setData] = useState<AppData>(load);
   const [conn, setConn] = useState<ConnectionState>("idle");
   const [status, setStatus] = useState("");
+  const [notice, setNotice] = useState("");
   const [sessions, setSessions] = useState<Record<string, SessionState>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState("");
@@ -25,6 +26,8 @@ export default function App() {
   const [perm, setPerm] = useState<{ req: PermissionRequest; resolve: (o: PermissionOutcome) => void } | null>(null);
   const [configOptions, setConfigOptions] = useState<ConfigOption[]>([]);
   const clientRef = useRef<AcpClient | null>(null);
+  const secretRef = useRef("");
+  const mcpRef = useRef<string | null | undefined>(undefined);
   const overrides = useRef<{ bind?: string | null; secret?: string | null } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const dataRef = useRef(data);
@@ -49,7 +52,13 @@ export default function App() {
     // Environment overrides (desktop launcher) apply to this run only; never persisted.
     if (!overrides.current) overrides.current = await appConfig();
     const o = overrides.current;
-    const s = { ...dataRef.current.settings, ...(o.bind ? { bind: o.bind } : {}), ...(o.secret ? { secret: o.secret } : {}) };
+    let base = dataRef.current.settings;
+    if (base.secretInKeychain) {
+      const k = await keychainGet();
+      if (k) base = { ...base, secret: k };
+    }
+    secretRef.current = base.secret;
+    const s = { ...base, ...(o.bind ? { bind: o.bind } : {}), ...(o.secret ? { secret: o.secret } : {}) };
     try {
       if (s.autoStart && s.transport === "ws") {
         setStatus("Starting agent…");
@@ -88,6 +97,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let off: (() => void) | undefined;
+    void browser.serveMcp().then((u) => (off = u));
+    return () => off?.();
+  }, []);
+
+  useEffect(() => {
     void connect();
     return () => clientRef.current?.close();
   }, [connect]);
@@ -107,7 +122,10 @@ export default function App() {
     const chat = found?.project.chats.find((x) => x.id === chatId);
     if (!c || !found || !chat) return null;
     if (chat.sessionId) return chat.sessionId;
-    const res = await c.newSession(found.project.cwd, { yoloMode: dataRef.current.settings.alwaysApprove });
+    if (mcpRef.current === undefined) mcpRef.current = await mcpUrl();
+    const httpMcp = !!(c.initResult?.agentCapabilities?.mcpCapabilities as any)?.http;
+    const mcpServers = mcpRef.current && httpMcp ? [{ type: "http", name: "supercharge-studio-browser", url: mcpRef.current, headers: [] }] : [];
+    const res = await c.newSession(found.project.cwd, { yoloMode: dataRef.current.settings.alwaysApprove }, mcpServers);
     setConfigOptions(res.configOptions ?? []);
     update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, sessionId: res.sessionId } : x)) })));
     return res.sessionId;
@@ -158,9 +176,12 @@ export default function App() {
       if (r.stopReason !== "end_turn")
         setSessions((all) => ({ ...all, [chatId!]: { ...all[chatId!], items: [...all[chatId!].items, { kind: "system", text: `stopped: ${r.stopReason}` }] } }));
     } catch (e: any) {
+      const msg = String(e?.message ?? e);
       const text = isAuthError(e)
-        ? "No model provider is configured for the agent. Run `supercharge` in a terminal and use /setup, or send `/setup <provider> <api_key>` here.\n\n" + (e?.message ?? e)
-        : `Error: ${e?.message ?? e}`;
+        ? "No model provider is configured for the agent. Run `supercharge` in a terminal and use /setup, or send `/setup <provider> <api_key>` here.\n\n" + msg
+        : isModelError(e)
+          ? "The selected model is not available from your provider. Pick another model in Settings (or set `[models] default` in ~/.supercharge/config.toml).\n\n" + msg
+          : `Error: ${msg}`;
       setSessions((all) => ({ ...all, [chatId!]: { ...(all[chatId!] ?? emptySession()), items: [...(all[chatId!]?.items ?? []), { kind: "system", text }] } }));
     } finally {
       setBusy((b) => ({ ...b, [chatId!]: false }));
@@ -199,6 +220,12 @@ export default function App() {
           {conn !== "open" && <button className="secondary" onClick={() => void connect()}>Connect</button>}
           <button className="secondary" onClick={() => setPanel((x) => !x)}>{panel ? "Hide panel" : "Browser / tools"}</button>
         </header>
+        {(notice || (conn !== "open" && status)) && (
+          <div className="notice" data-testid="notice">
+            <span>{notice || status}</span>
+            {notice && <button className="icon sm" onClick={() => setNotice("")}>×</button>}
+          </div>
+        )}
         <div className="messages">
           {!activeChat && <div className="empty">Pick a project, then start a chat. Status: {status || conn}</div>}
           {sess.plan.length > 0 && (
@@ -243,13 +270,17 @@ export default function App() {
       {panel && <BrowserPanel tools={tools} onClose={() => setPanel(false)} />}
       {showSettings && (
         <SettingsModal
-          value={data.settings}
+          value={{ ...data.settings, secret: secretRef.current || data.settings.secret }}
           configOptions={configOptions}
           extensions={clientRef.current ? [...clientRef.current.extensions.methods, ...clientRef.current.extensions.features, ...clientRef.current.extensions.notifications] : []}
           onClose={() => setShowSettings(false)}
-          onConfig={(id, v) => activeChat?.sessionId && void clientRef.current?.setConfigOption(activeChat.sessionId, id, v).then((r: any) => Array.isArray(r?.configOptions) && setConfigOptions(r.configOptions)).catch(() => {})}
-          onSave={(settings) => {
-            update((d) => ({ ...d, settings }));
+          onConfig={(id, v) => activeChat?.sessionId && void clientRef.current
+              ?.setConfigOption(activeChat.sessionId, id, v)
+              .then((r: any) => Array.isArray(r?.configOptions) && setConfigOptions(r.configOptions))
+              .catch((e: any) => setNotice(`Could not set ${id}: ${e?.message ?? e}`))}
+          onSave={async (settings) => {
+            const stored = (await keychainSet(settings.secret)) ? { ...settings, secret: "", secretInKeychain: true } : { ...settings, secretInKeychain: false };
+            update((d) => ({ ...d, settings: stored }));
             setShowSettings(false);
             void connect();
           }}
