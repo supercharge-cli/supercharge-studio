@@ -15,7 +15,7 @@ const driver = spawn("tauri-driver", [], { stdio: ["ignore", "inherit", "inherit
 const W = "http://127.0.0.1:4444";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function call(method, path, body) {
-  const r = await fetch(W + path, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const r = await fetch(W + path, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(45000) }).catch((e) => { throw new Error(`${method} ${path}: ${e.name === "TimeoutError" ? "WebDriver did not answer in 45s (UI thread stuck?)" : e.message}`); });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(`${method} ${path}: ${r.status} ${JSON.stringify(j.value ?? j).slice(0, 300)}`);
   return j.value;
@@ -44,6 +44,9 @@ async function check(label) {
   console.log(`ok  ${label} (${st.nodes} nodes)`);
 }
 
+// Never hang CI: fail with a clear message after 6 minutes.
+const watchdog = setTimeout(() => { console.error("app smoke FAILED: watchdog timeout"); driver.kill(); process.exit(1); }, 360000);
+watchdog.unref?.();
 try {
   for (let i = 0; i < 50; i++) { try { await fetch(W + "/status"); break; } catch { await sleep(200); } }
   const caps = { "tauri:options": { application: BIN } };

@@ -114,6 +114,7 @@ jobs:
       - run: npx tauri build ${{ matrix.args }}
       # Launch the real built app and click through every screen (fails on crash/blank window).
       - name: App smoke (Linux, WebKitGTK via WebDriver; default and no-compositing modes)
+        timeout-minutes: 12
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get install -y webkit2gtk-driver xvfb
@@ -124,6 +125,7 @@ jobs:
           SMOKE_GATEWAY=1 xvfb-run -a -s "-screen 0 1360x860x24" node scripts/app-smoke.mjs src-tauri/target/release/supercharge-studio smoke/linux
           WEBKIT_DISABLE_COMPOSITING_MODE=1 xvfb-run -a -s "-screen 0 1360x860x24" node scripts/app-smoke.mjs src-tauri/target/release/supercharge-studio smoke/linux-nocomp
       - name: App smoke (Windows, WebView2 via WebDriver)
+        timeout-minutes: 12
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
@@ -147,6 +149,7 @@ jobs:
           # Click-through via WebDriver (best effort: msedgedriver/WebView2 pairing on hosted runners is flaky).
           node scripts/app-smoke.mjs "$exe" smoke/windows || echo "::warning::WebDriver click-through did not complete on Windows"
       - name: App smoke (macOS, launch + screenshot; WebDriver is not available for WKWebView)
+        timeout-minutes: 12
         if: matrix.os == 'macos-latest'
         run: |
           app=$(find src-tauri/target -path '*release/bundle/macos/*.app' -maxdepth 6 | head -1)

@@ -576,7 +576,7 @@ export default function App() {
   }
   const nativeByName = new Map(nativeCommands.map((c) => [c.name, c]));
   const [caret, setCaret] = useState(0);
-  const [menuSel, setMenuSel] = useState(0);
+  const [menuSelState, setMenuSelState] = useState({ key: "", i: 0 });
   const [menuOff, setMenuOff] = useState<string | null>(null);
   const mstate = menuOff === draft ? null : menuState(draft, caret, (c) => !!nativeByName.get(c)?.sub);
   const menuItems: MenuItem[] = useMemo(() => {
@@ -592,7 +592,10 @@ export default function App() {
     if (mstate.kind === "sub") return filterItems(nativeByName.get(mstate.cmd)?.sub?.() ?? [], mstate.q);
     return mentionItems(mstate.q);
   }, [mstate?.kind, (mstate as any)?.q, (mstate as any)?.cmd, commands, configOptions, theme, isBusy, activeChat?.id, mentionVersion]);
-  useEffect(() => setMenuSel(0), [mstate?.kind, (mstate as any)?.q, (mstate as any)?.cmd]);
+  // Selection resets synchronously whenever the query changes (no effect lag before Enter).
+  const menuKey = mstate ? `${mstate.kind}|${(mstate as any).cmd ?? ""}|${mstate.q}` : "";
+  const menuSel = menuSelState.key === menuKey ? menuSelState.i : 0;
+  const setMenuSel = (f: number | ((i: number) => number)) => setMenuSelState({ key: menuKey, i: typeof f === "function" ? f(menuSel) : f });
   const menuOpen = !!mstate && (menuItems.length > 0 || mstate.kind === "mention");
   function setDraftCaret(text: string, pos = text.length) {
     setDraft(text);

@@ -55,6 +55,8 @@ struct State {
     /// All direct URLs (one per candidate LAN address) when bound to every interface.
     urls: Vec<String>,
     port: u16,
+    /// Firewall command computed once when the gateway starts (never on the UI thread's status poll).
+    firewall: Option<String>,
     stop: Option<oneshot::Sender<()>>,
     pairings: HashMap<String, Pairing>,
     approvals: HashMap<String, oneshot::Sender<bool>>,
@@ -384,7 +386,7 @@ pub fn gateway_status() -> Status {
         running: s.url.is_some(),
         url: s.url.clone(),
         urls: s.urls.clone(),
-        firewall: if s.url.is_some() && s.urls.iter().any(|u| !u.contains("127.0.0.1")) { firewall_hint(s.port) } else { None },
+        firewall: s.firewall.clone(),
         devices: load_devices(),
         connected: s.conns.iter().filter(|(_, c)| !c.is_closed()).map(|(k, _)| k.clone()).collect(),
         relay: if s.relay_stop.is_some() { s.relay_status.clone() } else { "off".into() },
@@ -409,7 +411,19 @@ pub async fn gateway_start(app: AppHandle, bind: Option<String>) -> Result<Strin
         s.url = Some(url.clone());
         s.urls = urls;
         s.port = addr.port();
+        s.firewall = None;
         s.stop = Some(stop_tx);
+    }
+    let lan = !addr.ip().is_loopback();
+    let port = addr.port();
+    if lan {
+        std::thread::spawn(move || {
+            let hint = firewall_hint(port);
+            let mut s = st();
+            if s.port == port && s.url.is_some() {
+                s.firewall = hint;
+            }
+        });
     }
     tauri::async_runtime::spawn(async move {
         loop {
@@ -430,6 +444,7 @@ pub fn gateway_stop() {
     let mut s = st();
     s.url = None;
     s.urls.clear();
+    s.firewall = None;
     if let Some(t) = s.stop.take() {
         let _ = t.send(());
     }
