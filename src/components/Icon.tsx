@@ -32,9 +32,9 @@ const P: Record<string, string> = {
   arrowLeft: "M19 12H5M12 19l-7-7 7-7",
 };
 
-export function Icon({ name, size = 16, title }: { name: keyof typeof P | string; size?: number; title?: string }) {
+export function Icon({ name, size = 16, title, className }: { name: keyof typeof P | string; size?: number; title?: string; className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden={title ? undefined : true} role={title ? "img" : undefined}>
+    <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden={title ? undefined : true} role={title ? "img" : undefined}>
       {title && <title>{title}</title>}
       <path d={P[name] ?? P.x} />
     </svg>

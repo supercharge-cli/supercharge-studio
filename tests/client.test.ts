@@ -189,3 +189,14 @@ describe("discoverExtensions", () => {
     expect(discoverExtensions({ protocolVersion: 1 }).methods).toEqual([]);
   });
 });
+
+import { pickConfiguredModel } from "../src/acp/client";
+describe("model_not_configured", () => {
+  it("picks a configured model, preferring ours, never an unconfigured one", () => {
+    const e = new AcpRpcError(-32050, "model_not_configured", { requested: "old", configured: [{ id: "m1" }, "m2"] });
+    expect(pickConfiguredModel(e, ["zz", "m2"])).toEqual({ pick: "m2", requested: "old" });
+    expect(pickConfiguredModel(e)).toEqual({ pick: "m1", requested: "old" });
+    expect(pickConfiguredModel(new AcpRpcError(-32603, "x"))).toBeNull();
+    expect(pickConfiguredModel(new AcpRpcError(-32050, "x", { configured: [] }))).toBeNull();
+  });
+});

@@ -1,5 +1,6 @@
 /** Local app data: groups → projects → chats. Persisted to localStorage. */
-export type Chat = { id: string; title: string; sessionId?: string; createdAt: number };
+/** `updatedAt`: last activity (ms). `cli`: discovered from the agent's session list (the CLI owns it). `cwd`: the session's own folder. */
+export type Chat = { id: string; title: string; sessionId?: string; createdAt: number; updatedAt?: number; cli?: boolean; cwd?: string };
 export type Project = { id: string; name: string; cwd: string; chats: Chat[] };
 export type Group = { id: string; name: string; collapsed?: boolean; projects: Project[] };
 export type ApiFormat = "responses" | "chat_completions" | "messages";
@@ -24,25 +25,54 @@ export type Settings = {
   ownBind?: string;
   gateway?: { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string; relayUrl?: string; hostId?: string };
 };
-export type AppData = { groups: Group[]; settings: Settings; activeProjectId?: string; activeChatId?: string };
+export type AppData = {
+  groups: Group[];
+  settings: Settings;
+  activeProjectId?: string;
+  activeChatId?: string;
+  /** Data format version (2 = synced with the CLI session list). */
+  schema?: number;
+  /** Sidebar layout: "projects" (one entry per folder, like the CLI) or "groups" (app-only groups). */
+  sidebarView?: "projects" | "groups";
+  /** CLI sessions the user removed from the sidebar (never re-added by sync). */
+  hiddenSessions?: string[];
+};
+
+/** Group that receives projects discovered from the CLI session list. */
+export const CLI_GROUP = "Supercharge CLI";
 
 const KEY = "supercharge-studio/v1";
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
 export const defaultData = (): AppData => ({
   groups: [{ id: uid(), name: "Personal", projects: [{ id: uid(), name: "workspace", cwd: "/workspace", chats: [] }] }],
+  schema: 2,
+  sidebarView: "projects",
+  hiddenSessions: [],
   settings: { bind: "127.0.0.1:2419", secret: "dev-secret", transport: "ws", autoStart: true, alwaysApprove: true, providers: [], theme: "dark" },
 });
 
 export function load(): AppData {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...defaultData(), ...JSON.parse(raw) };
+    if (raw) return migrate({ ...defaultData(), ...JSON.parse(raw) });
   } catch {
     /* ignore */
   }
   return defaultData();
 }
+/** Upgrade older saved data in place; never drops chats, projects or groups. */
+export function migrate(d: AppData): AppData {
+  if ((d.schema ?? 1) >= 2) return d;
+  return {
+    ...d,
+    schema: 2,
+    sidebarView: d.sidebarView ?? "projects",
+    hiddenSessions: d.hiddenSessions ?? [],
+    groups: (d.groups ?? []).map((g) => ({ ...g, projects: (g.projects ?? []).map((p) => ({ ...p, chats: (p.chats ?? []).map((c) => ({ ...c, updatedAt: c.updatedAt ?? c.createdAt })) })) })),
+  };
+}
+
 export const save = (d: AppData) => localStorage.setItem(KEY, JSON.stringify(d));
 export const wsUrl = (s: Settings) => `ws://${s.bind}/ws?server-key=${encodeURIComponent(s.secret)}`;
 
@@ -101,19 +131,25 @@ export function applyTree(d: AppData, a: TreeAction): AppData {
     }
     case "renameProject":
       return mapProject(d, a.projectId, (p) => ({ ...p, name: a.name }));
-    case "removeProject":
+    case "removeProject": {
+      const sids = d.groups.flatMap((g) => g.projects).filter((p) => p.id === a.projectId).flatMap((p) => p.chats.map((c) => c.sessionId).filter(Boolean) as string[]);
       return {
         ...d,
+        hiddenSessions: [...new Set([...(d.hiddenSessions ?? []), ...sids])],
         groups: d.groups.map((g) => ({ ...g, projects: g.projects.filter((p) => p.id !== a.projectId) })),
         ...(d.activeProjectId === a.projectId ? { activeProjectId: undefined, activeChatId: undefined } : {}),
       };
+    }
     case "renameChat":
       return mapChats(d, (cs) => cs.map((c) => (c.id === a.chatId ? { ...c, title: a.title } : c)));
-    case "removeChat":
+    case "removeChat": {
+      const sid = d.groups.flatMap((g) => g.projects.flatMap((p) => p.chats)).find((c) => c.id === a.chatId)?.sessionId;
       return {
         ...mapChats(d, (cs) => cs.filter((c) => c.id !== a.chatId)),
+        ...(sid ? { hiddenSessions: [...new Set([...(d.hiddenSessions ?? []), sid])] } : {}),
         ...(d.activeChatId === a.chatId ? { activeChatId: undefined } : {}),
       };
+    }
   }
 }
 
@@ -127,4 +163,93 @@ export function parseAgentUrl(text: string): { bind?: string; secret?: string } 
   } catch {
     return {};
   }
+}
+
+// ---------- CLI session sync ----------
+
+/** One entry of the agent's session/list. */
+export type CliSession = { sessionId: string; cwd?: string; title?: string | null; updatedAt?: string; createdAt?: string };
+
+export const normCwd = (c: string) => (c.length > 1 ? c.replace(/[\\/]+$/, "") : c);
+export const folderName = (cwd: string) => normCwd(cwd).split(/[\\/]/).filter(Boolean).pop() || cwd;
+const ts = (s?: string) => { const t = s ? Date.parse(s) : NaN; return Number.isFinite(t) ? t : undefined; };
+
+/**
+ * Merge the CLI's sessions into the tree (pure). Known sessions get their activity time and
+ * title refreshed; new ones are added under the project for their cwd, creating the project
+ * (in the "Supercharge CLI" group) when no project uses that folder yet. Hidden sessions are skipped.
+ */
+export function mergeCliSessions(d: AppData, list: CliSession[]): AppData {
+  const hidden = new Set(d.hiddenSessions ?? []);
+  const groups = d.groups.map((g) => ({ ...g, projects: g.projects.map((p) => ({ ...p, chats: [...p.chats] })) }));
+  const bySid = new Map<string, Chat>();
+  const byCwd = new Map<string, Project>();
+  for (const g of groups) for (const p of g.projects) {
+    if (!byCwd.has(normCwd(p.cwd))) byCwd.set(normCwd(p.cwd), p);
+    p.chats.forEach((c, i) => { if (c.sessionId) { const n = { ...c }; p.chats[i] = n; bySid.set(c.sessionId, n); } });
+  }
+  let changed = false;
+  for (const s of list) {
+    if (!s.sessionId || !s.cwd || hidden.has(s.sessionId)) continue;
+    const up = ts(s.updatedAt) ?? ts(s.createdAt) ?? Date.now();
+    const title = s.title?.trim() ? s.title.trim().slice(0, 60) : undefined;
+    const known = bySid.get(s.sessionId);
+    if (known) {
+      if (known.updatedAt !== up) { known.updatedAt = up; changed = true; }
+      if (known.cwd !== s.cwd) { known.cwd = s.cwd; changed = true; }
+      if (title && known.title !== title && (known.cli || known.title === "New chat")) { known.title = title; changed = true; }
+      continue;
+    }
+    let proj = byCwd.get(normCwd(s.cwd));
+    if (!proj) {
+      let g = groups.find((x) => x.name === CLI_GROUP);
+      if (!g) { g = { id: uid(), name: CLI_GROUP, projects: [] }; groups.push(g); }
+      proj = { id: uid(), name: folderName(s.cwd), cwd: normCwd(s.cwd), chats: [] };
+      g.projects.push(proj);
+      byCwd.set(normCwd(s.cwd), proj);
+    }
+    const chat: Chat = { id: uid(), title: title ?? "Untitled chat", sessionId: s.sessionId, createdAt: ts(s.createdAt) ?? up, updatedAt: up, cli: true, cwd: s.cwd };
+    proj.chats.push(chat);
+    bySid.set(s.sessionId, chat);
+    changed = true;
+  }
+  if (!changed) return d;
+  for (const g of groups) for (const p of g.projects) p.chats.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+  return { ...d, groups };
+}
+
+/** One sidebar entry per folder (the CLI's view): chats from every project with that cwd, newest first. */
+export type FolderView = { cwd: string; name: string; projectId: string; chats: { projectId: string; chat: Chat }[]; updatedAt: number };
+export function projectsByCwd(d: AppData): FolderView[] {
+  const m = new Map<string, FolderView>();
+  for (const g of d.groups) for (const p of g.projects) {
+    const k = normCwd(p.cwd);
+    let f = m.get(k);
+    if (!f) { f = { cwd: k, name: p.name || folderName(k), projectId: p.id, chats: [], updatedAt: 0 }; m.set(k, f); }
+    for (const c of p.chats) { f.chats.push({ projectId: p.id, chat: c }); f.updatedAt = Math.max(f.updatedAt, c.updatedAt ?? c.createdAt); }
+  }
+  const out = [...m.values()];
+  for (const f of out) f.chats.sort((a, b) => (b.chat.updatedAt ?? b.chat.createdAt) - (a.chat.updatedAt ?? a.chat.createdAt));
+  return out.sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name));
+}
+
+/** "now", "5m", "3h", "2d", "4w", then a date. */
+export function relTime(ms: number, now = Date.now()): string {
+  const s = Math.max(0, (now - ms) / 1000);
+  if (s < 60) return "now";
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  if (s < 86400 * 7) return `${Math.floor(s / 86400)}d`;
+  if (s < 86400 * 35) return `${Math.floor(s / 86400 / 7)}w`;
+  return new Date(ms).toLocaleDateString();
+}
+
+/** Find the project for a folder, or add one (in the CLI group) and return its id. */
+export function ensureFolderProject(d: AppData, cwd: string): { data: AppData; projectId: string } {
+  const k = normCwd(cwd.trim());
+  for (const g of d.groups) for (const p of g.projects) if (normCwd(p.cwd) === k) return { data: d, projectId: p.id };
+  const proj: Project = { id: uid(), name: folderName(k), cwd: k, chats: [] };
+  const has = d.groups.some((g) => g.name === CLI_GROUP);
+  const groups = has ? d.groups.map((g) => (g.name === CLI_GROUP ? { ...g, projects: [...g.projects, proj] } : g)) : [...d.groups, { id: uid(), name: CLI_GROUP, projects: [proj] }];
+  return { data: { ...d, groups }, projectId: proj.id };
 }

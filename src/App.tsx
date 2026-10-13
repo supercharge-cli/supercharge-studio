@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AcpClient, ConnectionState, isAuthError, isModelError } from "./acp/client";
+import { AcpClient, ConnectionState, isAuthError, isModelError, pickConfiguredModel } from "./acp/client";
 import { applyUpdate, ChatItem, emptySession, SessionState } from "./acp/session";
 import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionUpdate } from "./acp/types";
 import { StdioTransport } from "./acp/tauriStdio";
@@ -27,7 +27,7 @@ import { VirtualList } from "./components/VirtualList";
 import { GatewayHub } from "./gateway/hub";
 import { FileEntry, projectFiles, projectReadText } from "./lib/desktop";
 import { agentCheck, agentFreePort, agentInfo, agentInstall, agentLogNote, agentRestart, appConfig, ensureAgent, gateway, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
-import { AppData, applyTree, findProject, load, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
+import { AppData, applyTree, ensureFolderProject, findProject, load, mergeCliSessions, normCwd, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
 
 type View = "chat" | "settings" | "usage";
@@ -257,6 +257,7 @@ export default function App() {
         }
       },
       onNotification: (method, params: any) => {
+        if (method === "_supercharge/sessions/changed") { scheduleSync(); return; }
         const n = usageFromNotification(method, params);
         if (n) recordUsage(n.sessionId, n.usage, `${n.sessionId}:${params?.update?.prompt_id ?? params?._meta?.eventId ?? Date.now()}`);
       },
@@ -287,6 +288,7 @@ export default function App() {
       const f = findProject(d, d.activeProjectId);
       const ch = f?.project.chats.find((x) => x.id === d.activeChatId);
       if (f && ch?.sessionId) void selectChat(f.project.id, ch.id, false);
+      void syncCli();
     } catch (e: any) {
       setStatus(String(e?.message ?? e));
     }
@@ -382,16 +384,66 @@ export default function App() {
   const activeChat = active?.project.chats.find((c) => c.id === data.activeChatId);
   const sess = (activeChat && sessions[activeChat.id]) || emptySession();
 
+  /** The in-app browser's MCP server, attached to every session/new and session/load. */
+  async function browserMcp(c: AcpClient): Promise<unknown[]> {
+    if (mcpRef.current === undefined) mcpRef.current = await mcpUrl();
+    const httpMcp = !!(c.initResult?.agentCapabilities?.mcpCapabilities as any)?.http;
+    return mcpRef.current && httpMcp ? [{ type: "http", name: "supercharge-studio-browser", url: mcpRef.current, headers: [] }] : [];
+  }
+
+  /** On model_not_configured, switch the session to a configured model and tell the user. */
+  async function recoverModel(c: AcpClient, sid: string, chatId: string, e: unknown): Promise<boolean> {
+    const prov = dataRef.current.settings.providers?.find((p) => p.id === dataRef.current.settings.activeProviderId);
+    const r = pickConfiguredModel(e, [...((c.initResult?._meta as any)?.modelState?.currentModelId ? [(c.initResult?._meta as any).modelState.currentModelId] : []), ...(prov?.models ?? [])]);
+    if (!r) return false;
+    await c.request("session/set_model", { sessionId: sid, modelId: r.pick }).catch(() => c.setConfigOption(sid, modelOption?.id ?? "model", r.pick).catch(() => {}));
+    pushItem(chatId, { kind: "system", text: `This chat was last used with ${r.requested ? `"${r.requested}"` : "a model"}, which isn't configured now. Switched it to "${r.pick}".` });
+    return true;
+  }
+
+  // ---- CLI session sync: every CLI session, grouped by folder ----
+  const syncing = useRef(false);
+  const [syncBusy, setSyncBusy] = useState(false);
+  async function syncCli() {
+    const c = clientRef.current;
+    if (!c || syncing.current || !c.sessionCapability("list")) return;
+    syncing.current = true; setSyncBusy(true);
+    try {
+      const all: any[] = [];
+      let cursor: string | undefined;
+      for (let i = 0; i < 50; i++) {
+        const r: any = await c.listSessions(cursor ? { cursor } : {});
+        all.push(...(r?.sessions ?? []));
+        cursor = r?.nextCursor ?? undefined;
+        if (!cursor) break;
+      }
+      update((d) => mergeCliSessions(d, all));
+    } catch { /* agent busy or restarting: next tick retries */ }
+    finally { syncing.current = false; setSyncBusy(false); }
+  }
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  function scheduleSync() { clearTimeout(syncTimer.current); syncTimer.current = setTimeout(() => void syncCli(), 300); }
+  useEffect(() => {
+    const onFocus = () => scheduleSync();
+    window.addEventListener("focus", onFocus);
+    const t = setInterval(() => document.visibilityState !== "hidden" && void syncCli(), 30000);
+    return () => { window.removeEventListener("focus", onFocus); clearInterval(t); };
+  }, []);
+
+  function openFolder(cwd: string) {
+    let pid = "";
+    update((d) => { const r = ensureFolderProject(d, cwd); pid = r.projectId; return r.data; });
+    if (pid) newChat(pid);
+  }
+
   async function ensureSession(projectId: string, chatId: string): Promise<string | null> {
     const c = clientRef.current;
     const found = findProject(dataRef.current, projectId);
     const chat = found?.project.chats.find((x) => x.id === chatId);
     if (!c || !found || !chat) return null;
     if (chat.sessionId) return chat.sessionId;
-    if (mcpRef.current === undefined) mcpRef.current = await mcpUrl();
-    const httpMcp = !!(c.initResult?.agentCapabilities?.mcpCapabilities as any)?.http;
-    const mcpServers = mcpRef.current && httpMcp ? [{ type: "http", name: "supercharge-studio-browser", url: mcpRef.current, headers: [] }] : [];
-    const res = await c.newSession(found.project.cwd, { yoloMode: dataRef.current.settings.alwaysApprove }, mcpServers);
+    const mcpServers = await browserMcp(c);
+    const res = await c.newSession(normCwd(found.project.cwd), { yoloMode: dataRef.current.settings.alwaysApprove }, mcpServers);
     setConfigOptions(res.configOptions ?? []);
     loaded.current.add(res.sessionId);
     update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, sessionId: res.sessionId } : x)) })));
@@ -400,7 +452,7 @@ export default function App() {
   }
 
   function newChat(projectId: string, focus = true) {
-    const chat = { id: uid(), title: "New chat", createdAt: Date.now() };
+    const chat = { id: uid(), title: "New chat", createdAt: Date.now(), updatedAt: Date.now() };
     update((d) => ({ ...mapProject(d, projectId, (p) => ({ ...p, chats: [chat, ...p.chats] })), ...(focus ? { activeProjectId: projectId, activeChatId: chat.id } : {}) }));
     if (focus) {
       setView("chat");
@@ -421,7 +473,14 @@ export default function App() {
       hub.seed(chat.sessionId, []);
       setSessions((all) => ({ ...all, [chatId]: emptySession() }));
       setLoadingChats((l) => new Set(l).add(chatId));
-      await c.loadSession(chat.sessionId, findProject(dataRef.current, projectId)!.project.cwd).catch((e: any) => pushItem(chatId, { kind: "system", text: `Could not load this chat's history: ${e?.message ?? e}`, error: "load" } as any));
+      // The session's own folder (as the CLI recorded it), else the project's.
+      const cwd = chat.cwd ?? normCwd(findProject(dataRef.current, projectId)!.project.cwd);
+      const mcp = await browserMcp(c);
+      const sid = chat.sessionId;
+      await c.loadSession(sid, cwd, mcp)
+        .catch(async (e: any) => { if (await recoverModel(c, sid, chatId, e)) return c.loadSession(sid, cwd, mcp); throw e; })
+        .then((r: any) => { if (Array.isArray(r?.configOptions)) setConfigOptions(r.configOptions); })
+        .catch((e: any) => pushItem(chatId, { kind: "system", text: `Could not load this chat's history: ${e?.message ?? e}`, error: "load" } as any));
       flush();
       setLoadingChats((l) => { const n = new Set(l); n.delete(chatId); return n; });
     }
@@ -434,6 +493,7 @@ export default function App() {
     const chat = findProject(dataRef.current, projectId)?.project.chats.find((x) => x.id === chatId);
     if (chat?.title === "New chat")
       update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, title: text.slice(0, 40) } : x)) })));
+    update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, updatedAt: Date.now() } : x)) })));
     pushItem(chatId, { kind: "user", text: from ? `${text}` : text, ...(from ? { from } : {}) } as ChatItem);
     setBusy((b) => ({ ...b, [chatId]: true }));
     try {
@@ -443,7 +503,7 @@ export default function App() {
       let r;
       turnUsage.current.delete(sid);
       try {
-        r = await c.prompt(sid, text, extra);
+        r = await c.prompt(sid, text, extra).catch(async (e: any) => { if (await recoverModel(c, sid!, chatId, e)) return c.prompt(sid!, text, extra); throw e; });
       } catch (e: any) {
         // Session unknown to this agent (e.g. agent restarted): start a fresh one and retry once.
         if (!/session.*not found|unknown session|no such session/i.test(String(e?.message))) throw e;
@@ -718,6 +778,10 @@ export default function App() {
         onSelectProject={(pid) => { update((d) => ({ ...d, activeProjectId: pid, activeChatId: undefined })); setView("chat"); }}
         onNewChat={(p) => void newChat(p)}
         onTree={(a) => update((d) => applyTree(d, a))}
+        onOpenFolder={openFolder}
+        onSidebarView={(v) => update((d) => ({ ...d, sidebarView: v }))}
+        onSync={() => void syncCli()}
+        syncing={syncBusy}
         onSettings={() => openSettings()}
         onUsage={() => setView("usage")}
         onPalette={() => setPalette(true)}

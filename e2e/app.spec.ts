@@ -62,6 +62,7 @@ test("stop cancels a running turn", async ({ page }) => {
 
 test("sidebar groups/projects/chats create, rename, delete and persist", async ({ page }) => {
   await boot(page);
+  await page.getByTestId("view-groups").click();
   await page.getByTestId("add-group").click();
   await page.getByTestId("inline-input").fill("Work");
   await page.getByTestId("inline-input").press("Enter");

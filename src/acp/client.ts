@@ -463,3 +463,22 @@ export function discoverExtensions(init: InitializeResult | null | undefined): E
   }
   return { methods: [...methods].sort(), features: [...features].sort(), notifications: [], meta };
 }
+
+/** JSON-RPC error the CLI returns when a session's saved model is not configured. */
+export const MODEL_NOT_CONFIGURED = -32050;
+
+/**
+ * For a model_not_configured error, the configured model to switch to: the first preferred id
+ * that is configured, else the first configured one. Never returns an unconfigured id.
+ */
+export function pickConfiguredModel(e: unknown, preferred: string[] = []): { pick: string; requested?: string } | null {
+  if ((e as any)?.code !== MODEL_NOT_CONFIGURED) return null;
+  const d = (e as any)?.data ?? {};
+  const ids: string[] = (Array.isArray(d.configured) ? d.configured : [])
+    .map((x: any) => (typeof x === "string" ? x : x?.id ?? x?.modelId ?? x?.model_id))
+    .filter((x: unknown): x is string => typeof x === "string" && !!x);
+  if (!ids.length) return null;
+  const pick = preferred.find((m) => ids.includes(m)) ?? ids[0];
+  const requested = d.requested ?? d.model ?? d.modelId ?? d.model_id;
+  return { pick, ...(typeof requested === "string" ? { requested } : {}) };
+}

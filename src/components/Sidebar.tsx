@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { AppData, TreeAction } from "../lib/store";
+import { projectsByCwd, relTime, type AppData, type TreeAction } from "../lib/store";
 import { Icon } from "./Icon";
 
 type Props = {
@@ -13,6 +13,12 @@ type Props = {
   onSettings: () => void;
   onUsage?: () => void;
   onPalette?: () => void;
+  /** Open a folder as a project (Projects view). */
+  onOpenFolder?: (cwd: string) => void;
+  onSidebarView?: (v: "projects" | "groups") => void;
+  /** Refresh the CLI session list now. */
+  onSync?: () => void;
+  syncing?: boolean;
 };
 
 /** Inline text input: Enter commits, Escape / blur cancels. */
@@ -57,10 +63,12 @@ type Editing =
   | { kind: "newProjectCwd"; groupId: string; name: string }
   | { kind: "renameProject"; id: string }
   | { kind: "renameChat"; id: string }
+  | { kind: "openFolder" }
   | null;
 
 export function Sidebar(p: Props) {
   const [ed, setEd] = useState<Editing>(null);
+  const byFolder = (p.data.sidebarView ?? "projects") === "projects";
   if (p.collapsed)
     return (
       <aside className="sidebar collapsed">
@@ -74,9 +82,18 @@ export function Sidebar(p: Props) {
       <div className="side-head">
         <span className="logo"><Icon name="bolt" size={16} /></span><strong>Supercharge Studio</strong>
         <div style={{ flex: 1 }} />
-        <button className="icon" title="New group" data-testid="add-group" onClick={() => setEd({ kind: "newGroup" })}><Icon name="plus" /></button>
+        {byFolder
+          ? <button className="icon" title="Open a project folder" data-testid="open-folder" onClick={() => setEd({ kind: "openFolder" })}><Icon name="plus" /></button>
+          : <button className="icon" title="New group" data-testid="add-group" onClick={() => setEd({ kind: "newGroup" })}><Icon name="plus" /></button>}
         <button className="icon" title="Collapse sidebar" data-testid="collapse-sidebar" onClick={p.onToggle}><Icon name="panelLeft" /></button>
       </div>
+      <div className="side-views" role="tablist">
+        <button role="tab" data-testid="view-projects" className={byFolder ? "on" : ""} onClick={() => p.onSidebarView?.("projects")}>Projects</button>
+        <button role="tab" data-testid="view-groups" className={!byFolder ? "on" : ""} onClick={() => p.onSidebarView?.("groups")}>Groups</button>
+        <div style={{ flex: 1 }} />
+        {p.onSync && <button className="icon sm" title="Refresh sessions from the Supercharge CLI" data-testid="sync-sessions" onClick={p.onSync}><Icon name="refresh" size={13} className={p.syncing ? "spin" : ""} /></button>}
+      </div>
+      {byFolder ? <FolderTree p={p} ed={ed} setEd={setEd} /> : (
       <nav className="tree">
         {p.data.groups.map((g) => (
           <section key={g.id} className="group" data-testid="group">
@@ -135,6 +152,7 @@ export function Sidebar(p: Props) {
         {p.data.groups.length === 0 && !ed && <div className="side-empty">No groups yet. Use <Icon name="plus" size={12} /> to create one.</div>}
         {ed?.kind === "newGroup" && <Inline key={"ng"} placeholder="Group name" onDone={(v) => (v && p.onTree({ type: "addGroup", name: v }), setEd(null))} />}
       </nav>
+      )}
       <div className="side-foot">
         <button className="side-search" data-testid="open-palette" onClick={p.onPalette} title="Command palette"><Icon name="search" size={14} /><span>Search & commands</span><kbd>Ctrl K</kbd></button>
         <div className="side-foot-row">
@@ -143,5 +161,52 @@ export function Sidebar(p: Props) {
         </div>
       </div>
     </aside>
+  );
+}
+
+/** The CLI's own layout: one project per folder, its chats newest first with relative time. */
+function FolderTree({ p, ed, setEd }: { p: Props; ed: Editing; setEd: (e: Editing) => void }) {
+  const folders = projectsByCwd(p.data);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [more, setMore] = useState<Record<string, boolean>>({});
+  const now = Date.now();
+  return (
+    <nav className="tree" data-testid="folder-tree">
+      {ed?.kind === "openFolder" && <Inline key="of" placeholder="Project folder, e.g. /home/me/code/app" onDone={(v) => (v && p.onOpenFolder?.(v), setEd(null))} />}
+      {folders.map((f) => {
+        const activeHere = f.chats.some((c) => c.chat.id === p.data.activeChatId) || f.projectId === p.data.activeProjectId;
+        const isOpen = open[f.cwd] ?? (activeHere || folders.indexOf(f) < 6);
+        const shown = more[f.cwd] ? f.chats : f.chats.slice(0, 8);
+        return (
+          <div key={f.cwd} data-testid="project" data-cwd={f.cwd} className={`project ${activeHere ? "active" : ""}`}>
+            <div className="project-head">
+              <button className="link grow" title={f.cwd} data-testid="project-name" onClick={() => { setOpen((o) => ({ ...o, [f.cwd]: !isOpen })); p.onSelectProject(f.projectId); }}>
+                <Icon name={isOpen ? "chevronDown" : "chevronRight"} size={12} /> <Icon name="folder" size={14} /> {f.name}
+              </button>
+              <div className="acts">
+                <button className="icon sm" title="New chat in this folder" data-testid="new-chat" onClick={() => p.onNewChat(f.projectId)}><Icon name="plus" size={13} /></button>
+              </div>
+            </div>
+            {isOpen && shown.map(({ projectId, chat: c }) => (
+              <div key={c.id} className={`chat ${c.id === p.data.activeChatId ? "active" : ""}`} data-testid="chat" data-session={c.sessionId ?? ""}>
+                {ed?.kind === "renameChat" && ed.id === c.id ? (
+                  <Inline key={`rc-${c.id}`} initial={c.title} onDone={(v) => (v && p.onTree({ type: "renameChat", chatId: c.id, title: v }), setEd(null))} />
+                ) : (
+                  <button className="link grow" data-testid="chat-open" title={c.title} onClick={() => p.onSelectChat(projectId, c.id)} onDoubleClick={() => setEd({ kind: "renameChat", id: c.id })}>
+                    <span className="chat-t" data-testid="chat-title">{c.title}</span><span className="muted small chat-time" data-testid="chat-time">{relTime(c.updatedAt ?? c.createdAt, now)}</span>
+                  </button>
+                )}
+                <div className="acts">
+                  <button className="icon sm" title="Rename chat" data-testid="rename-chat" onClick={() => setEd({ kind: "renameChat", id: c.id })}><Icon name="edit" size={13} /></button>
+                  <Del title="Remove from sidebar" onConfirm={() => p.onTree({ type: "removeChat", chatId: c.id })} />
+                </div>
+              </div>
+            ))}
+            {isOpen && f.chats.length > shown.length && <button className="link small muted more" onClick={() => setMore((m) => ({ ...m, [f.cwd]: true }))}>Show {f.chats.length - shown.length} more</button>}
+          </div>
+        );
+      })}
+      {folders.length === 0 && !ed && <div className="side-empty">No projects yet. Use <Icon name="plus" size={12} /> to open a folder.</div>}
+    </nav>
   );
 }

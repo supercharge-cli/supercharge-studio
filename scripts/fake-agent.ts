@@ -9,6 +9,11 @@
  *   "slow"    streams slowly until session/cancel → stopReason "cancelled"
  *   "browser" calls every _supercharge/browser/* method on the client and reports results
  *             (also written to $FAKE_AGENT_REPORT if set)
+ *   "addcli"  (FAKE_AGENT_CLI=1) adds a session in /srv/delta and sends _supercharge/sessions/changed
+ *
+ * FAKE_AGENT_CLI=1 behaves like the Supercharge CLI's session store: session/list across every
+ * folder (paginated, 2 per page), session/load replays history, and one old session fails to
+ * load with -32050 model_not_configured until session/set_model picks a configured model.
  */
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
@@ -16,8 +21,17 @@ import { writeFileSync } from "fs";
 
 // Session state is per connection, unless FAKE_AGENT_SHARED=1 (one agent serving several
 // clients, as the headless server e2e needs).
-type St = { n: number; listed: { sessionId: string; cwd: string; title: string }[]; known: Set<string> };
-const fresh = (): St => ({ n: 0, listed: [], known: new Set() });
+type Listed = { sessionId: string; cwd: string; title?: string; updatedAt?: string };
+type St = { n: number; listed: Listed[]; known: Set<string>; modelFixed?: boolean; loads: { sessionId: string; cwd: string; mcp: string[] }[] };
+const CLI = process.env.FAKE_AGENT_CLI === "1";
+const ago = (m: number) => new Date(Date.now() - m * 60000).toISOString();
+const cliSeed = (): Listed[] => [
+  { sessionId: "cli-a1", cwd: "/srv/alpha", title: "Fix login bug", updatedAt: ago(5) },
+  { sessionId: "cli-b1", cwd: "/srv/beta", title: "Write docs", updatedAt: ago(90) },
+  { sessionId: "cli-a2", cwd: "/srv/alpha", title: "Refactor auth", updatedAt: ago(60 * 26) },
+  { sessionId: "cli-old", cwd: "/home/u/gamma", updatedAt: ago(60 * 24 * 9) },
+];
+const fresh = (): St => { const listed = CLI ? cliSeed() : []; return { n: 0, listed, known: new Set(listed.map((x) => x.sessionId)), loads: [] }; };
 const shared = fresh();
 const arg = (k: string, d: string) => {
   const i = process.argv.indexOf(`--${k}`);
@@ -64,16 +78,39 @@ wss.on("connection", (ws: WebSocket) => {
       case "initialize":
         return reply({
           protocolVersion: 1,
-          agentCapabilities: { loadSession: false, _meta: { "supercharge/demo": true } },
+          agentCapabilities: CLI
+            ? { loadSession: true, sessionCapabilities: { list: {} }, mcpCapabilities: { http: true } }
+            : { loadSession: false, _meta: { "supercharge/demo": true } },
           authMethods: [],
           _meta: { agentVersion: "fake-1.0", availableCommands: [{ name: "help", description: "Show help" }, { name: "setup", description: "Configure provider" }] },
         });
-      case "session/list":
-        return reply({ sessions: listed.map((x) => ({ ...x })) });
+      case "session/list": {
+        if (!CLI) return reply({ sessions: listed.map((x) => ({ ...x })) });
+        const all = listed.filter((x) => !m.params?.cwd || x.cwd === m.params.cwd);
+        const at = Number(m.params?.cursor ?? 0);
+        return reply({ sessions: all.slice(at, at + 2), ...(at + 2 < all.length ? { nextCursor: String(at + 2) } : {}) });
+      }
+      case "session/load": {
+        if (!CLI) return send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });
+        const sid = m.params?.sessionId;
+        st.loads.push({ sessionId: sid, cwd: m.params?.cwd, mcp: (m.params?.mcpServers ?? []).map((x: any) => x.name) });
+        if (report) writeFileSync(report, JSON.stringify({ loads: st.loads }, null, 2));
+        if (!known.has(sid)) return send({ id: m.id, error: { code: -32602, message: "unknown session id" } });
+        if (sid === "cli-old" && !st.modelFixed)
+          return send({ id: m.id, error: { code: -32050, message: "model_not_configured", data: { requested: "retired-model", configured: ["model-a", "model-b"] } } });
+        update(sid, { sessionUpdate: "user_message_chunk", content: { type: "text", text: `earlier question in ${sid}` } });
+        say(sid, `History of ${sid} in ${m.params?.cwd}`);
+        return reply({});
+      }
+      case "session/set_model":
+        if (!CLI) return send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });
+        st.modelFixed = m.params?.modelId === "model-a" || m.params?.modelId === "model-b";
+        return reply({});
       case "session/new":
         known.add(`fake-${++st.n}`);
         listed.splice(0, listed.length, ...listed.filter((x) => x.sessionId !== `fake-${st.n}`));
-        listed.push({ sessionId: `fake-${st.n}`, cwd: m.params?.cwd ?? "/tmp", title: "New chat" });
+        listed.push({ sessionId: `fake-${st.n}`, cwd: m.params?.cwd ?? "/tmp", title: "New chat", ...(CLI ? { updatedAt: new Date().toISOString() } : {}) });
+        if (CLI) setTimeout(() => send({ method: "_supercharge/sessions/changed", params: {} }), 20);
         return reply({
           sessionId: `fake-${st.n}`,
           configOptions: [{ id: "reasoning_effort", name: "Reasoning Effort", currentValue: "high", options: [{ value: "high", name: "High" }, { value: "low", name: "Low" }] }],
@@ -88,6 +125,11 @@ wss.on("connection", (ws: WebSocket) => {
         const text: string = m.params.prompt?.map((b: any) => b.text ?? "").join(" ") ?? "";
         if (!known.has(sid)) return send({ id: m.id, error: { code: -32602, message: "Invalid params: unknown session id" } });
         cancelled.delete(sid);
+        if (CLI && /addcli/.test(text)) {
+          listed.unshift({ sessionId: "cli-d1", cwd: "/srv/delta", title: "Started in the terminal", updatedAt: new Date().toISOString() });
+          known.add("cli-d1");
+          send({ method: "_supercharge/sessions/changed", params: {} });
+        }
         if (/modelfail/.test(text))
           return send({ id: m.id, error: { code: -32603, message: "Internal error", data: "responses API error 400: no upstream owns model old-model" } });
         if (/flaky/.test(text) && !flaked.has(sid)) {
