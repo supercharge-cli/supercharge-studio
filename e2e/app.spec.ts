@@ -103,8 +103,9 @@ test("sidebar groups/projects/chats create, rename, delete and persist", async (
 test("slash menu and settings", async ({ page }) => {
   await boot(page);
   await page.locator(".composer textarea").fill("/se");
-  await expect(page.locator(".slash")).toContainText("/setup");
-  await page.locator(".slash button", { hasText: "/setup" }).click();
+  await expect(page.getByTestId("composer-menu")).toContainText("/setup");
+  // The agent's own /setup (takes arguments) is inserted; the app's /setup opens settings.
+  await page.getByTestId("composer-menu-item").filter({ hasText: "Configure provider" }).click();
   await expect(page.locator(".composer textarea")).toHaveValue("/setup ");
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-agent").click();

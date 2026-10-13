@@ -6,6 +6,9 @@ import { StdioTransport } from "./acp/tauriStdio";
 import { browser, browserClientMeta } from "./browser/bridge";
 import { BrowserPanel } from "./components/BrowserPanel";
 import { Command, CommandPalette } from "./components/CommandPalette";
+import { ComposerMenu } from "./components/ComposerMenu";
+import { filterItems, MenuItem, menuState, parseSlash } from "./lib/composer";
+import { themeList } from "./lib/themes";
 import { defaultGatewayPrefs, DevicesSection, gatewayBind } from "./components/Devices";
 const SettingsScreen = lazy(() => import("./components/Settings").then((m) => ({ default: m.SettingsScreen })));
 // Warm the lazy screens once the app is idle so the first open is instant.
@@ -49,7 +52,7 @@ export default function App() {
   }, []);
   const retryRef = useRef<((t: string) => void) | null>(null);
   const [loadingChats, setLoadingChats] = useState<Set<string>>(() => new Set());
-  const [settingsSection, setSettingsSection] = useState<"connection" | "devices" | "providers" | undefined>();
+  const [settingsSection, setSettingsSection] = useState<"connection" | "devices" | "providers" | "agent" | "appearance" | undefined>();
   const [palette, setPalette] = useState(false);
   const [perm, setPerm] = useState<PermState | null>(null);
   const [pairReq, setPairReq] = useState<{ pairingId: string; name: string } | null>(null);
@@ -453,6 +456,13 @@ export default function App() {
 
   async function send() {
     const text = draft.trim();
+    const sl = parseSlash(text);
+    if (sl && nativeByName.has(sl.name)) {
+      const agentHas = commands.some((c) => c.name === sl.name);
+      // Plain "/setup", "/models", … open the app's own screens; with arguments the agent's command wins.
+      if (!(agentHas && sl.args && !nativeByName.get(sl.name)!.sub) && runNative(sl.name, sl.args)) { setDraftCaret(""); return; }
+      if (!agentHas) { setNotice(`/${sl.name}: unknown option “${sl.args}”`); return; }
+    }
     if (!text || !clientRef.current || !active) return;
     const chatId = activeChat?.id ?? newChat(active.project.id);
     setDraft("");
@@ -474,7 +484,113 @@ export default function App() {
     sess.commands.length > 0 ? sess.commands : ((clientRef.current?.initResult?._meta as any)?.availableCommands ?? []);
 
   const setTheme = (t: "dark" | "light") => update((d) => ({ ...d, settings: { ...d.settings, theme: t } }));
-  const openSettings = (section?: "connection" | "devices" | "providers") => { setSettingsSection(section); setView("settings"); };
+  const openSettings = (section?: "connection" | "devices" | "providers" | "agent" | "appearance") => { setSettingsSection(section); setView("settings"); };
+
+  // ---- Composer: slash commands ----
+  const modelOption = configOptions.find((o) => /model/i.test(`${o.id} ${o.name ?? ""} ${String((o as any).category ?? "")}`));
+  const setModel = (v: string) => {
+    if (!modelOption || !activeChat?.sessionId) return false;
+    const opt = modelOption.options?.find((o) => o.value === v || (o.name ?? "").toLowerCase() === v.toLowerCase());
+    if (!opt) return false;
+    void clientRef.current?.setConfigOption(activeChat.sessionId, modelOption.id, opt.value)
+      .then((r: any) => { if (Array.isArray(r?.configOptions)) setConfigOptions(r.configOptions); setNotice(`Model: ${opt.name ?? opt.value}`); })
+      .catch((e: any) => setNotice(`Could not switch model: ${e?.message ?? e}`));
+    return true;
+  };
+  function clearChat() {
+    if (!active || !activeChat) return;
+    if (activeChat.sessionId) loaded.current.delete(activeChat.sessionId);
+    update((d) => mapProject(d, active.project.id, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === activeChat.id ? { ...x, sessionId: undefined } : x)) })));
+    setSessions((all) => ({ ...all, [activeChat.id]: emptySession() }));
+  }
+  type Native = { name: string; detail: string; icon: string; run: (args: string) => boolean | void; sub?: () => MenuItem[] };
+  const nativeCommands: Native[] = [
+    { name: "new", detail: "Start a new chat in this project", icon: "plus", run: () => { if (active) newChat(active.project.id); } },
+    { name: "clear", detail: "Clear this chat and start a fresh session", icon: "trash", run: () => clearChat() },
+    { name: "setup", detail: "Set up model providers and API keys", icon: "plug", run: () => openSettings("providers") },
+    {
+      name: "models", detail: modelOption?.currentValue ? `Switch model (now ${modelOption.options?.find((o) => o.value === modelOption.currentValue)?.name ?? modelOption.currentValue})` : "Switch model", icon: "bolt",
+      run: (a) => { if (a) return setModel(a); if (modelOption?.options?.length) setTimeout(() => setDraftCaret("/models ")); else openSettings("agent"); },
+      sub: modelOption?.options?.length ? () => modelOption!.options!.map((o) => ({ id: `m-${o.value}`, label: o.name ?? o.value, detail: o.value === modelOption!.currentValue ? "current" : o.name && o.name !== o.value ? o.value : undefined, value: o.value, icon: o.value === modelOption!.currentValue ? "check" : undefined })) : undefined,
+    },
+    { name: "theme", detail: "Change the color theme", icon: theme === "light" ? "sun" : "moon", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/theme ")); return; } const t = themeList.find((x) => x.id === a.toLowerCase() || x.name.toLowerCase() === a.toLowerCase()); if (!t) return false; setTheme(t.id as any); }, sub: () => themeList.map((t) => ({ id: `t-${t.id}`, label: t.name, detail: t.id === theme ? "current" : t.dark ? "dark" : "light", value: t.id, icon: t.id === theme ? "check" : undefined })) },
+    { name: "help", detail: "Show commands and shortcuts", icon: "command", run: () => {
+      const lines = [...nativeCommands.map((c) => `- \`/${c.name}\` ${c.detail}`), ...commands.map((c) => `- \`/${c.name}\` ${c.description ?? ""} (agent)`)];
+      const cid = activeChat?.id ?? (active ? newChat(active.project.id) : undefined);
+      if (cid) pushItem(cid, { kind: "system", text: `**Commands**\n${lines.join("\n")}\n\nType \`@\` to attach a file or folder. Ctrl K opens the command palette.` } as ChatItem);
+      else setNotice("Open a chat to see the command list");
+    } },
+    { name: "settings", detail: "Open settings", icon: "settings", run: () => openSettings() },
+    { name: "usage", detail: "Token usage and costs", icon: "chart", run: () => setView("usage") },
+    { name: "pair", detail: "Pair a phone", icon: "phone", run: () => openSettings("devices") },
+    { name: "reconnect", detail: "Reconnect to the agent", icon: "refresh", run: () => void connect() },
+    ...(isBusy ? [{ name: "stop", detail: "Stop the running turn", icon: "stop", run: () => { stop(); } }] : []),
+  ];
+  // @ mentions (files and folders) are wired up separately.
+  const mentionVersion = 0;
+  const mentionTitle = "Files";
+  const mentionEmpty = "No matching files";
+  const mentionItems = (_q: string): MenuItem[] => [];
+  const pickMention = (_it: MenuItem, _m: unknown) => {};
+  const nativeByName = new Map(nativeCommands.map((c) => [c.name, c]));
+  const [caret, setCaret] = useState(0);
+  const [menuSel, setMenuSel] = useState(0);
+  const [menuOff, setMenuOff] = useState<string | null>(null);
+  const mstate = menuOff === draft ? null : menuState(draft, caret, (c) => !!nativeByName.get(c)?.sub);
+  const menuItems: MenuItem[] = useMemo(() => {
+    if (!mstate) return [];
+    if (mstate.kind === "slash") {
+      const all: MenuItem[] = [
+        ...nativeCommands.map((c) => ({ id: `n-${c.name}`, label: `/${c.name}`, detail: c.detail, icon: c.icon, group: "App", value: `n:${c.name}` })),
+        ...commands.map((c) => ({ id: `a-${c.name}`, label: `/${c.name}`, detail: c.description, icon: "tool", group: "Agent", value: `a:${c.name}` })),
+      ];
+      const q = mstate.q.toLowerCase();
+      return filterItems(all.map((x) => ({ ...x, label: x.label.slice(1) })), q).map((x) => ({ ...x, label: `/${x.label}` }));
+    }
+    if (mstate.kind === "sub") return filterItems(nativeByName.get(mstate.cmd)?.sub?.() ?? [], mstate.q);
+    return mentionItems(mstate.q);
+  }, [mstate?.kind, (mstate as any)?.q, (mstate as any)?.cmd, commands, configOptions, theme, isBusy, activeChat?.id, mentionVersion]);
+  useEffect(() => setMenuSel(0), [mstate?.kind, (mstate as any)?.q, (mstate as any)?.cmd]);
+  const menuOpen = !!mstate && (menuItems.length > 0 || mstate.kind === "mention");
+  function setDraftCaret(text: string, pos = text.length) {
+    setDraft(text);
+    setCaret(pos);
+    requestAnimationFrame(() => { const t = composerRef.current; if (t) { t.focus(); t.setSelectionRange(pos, pos); t.style.height = "auto"; t.style.height = `${Math.min(t.scrollHeight, 220)}px`; } });
+  }
+  function runNative(name: string, args = ""): boolean {
+    const c = nativeByName.get(name);
+    if (!c) return false;
+    const r = c.run(args);
+    return r !== false;
+  }
+  function pickMenu(it: MenuItem) {
+    if (!mstate) return;
+    if (mstate.kind === "slash") {
+      const [kind, name] = it.value.split(":");
+      if (kind === "n") {
+        const c = nativeByName.get(name)!;
+        if (c.sub) return setDraftCaret(`/${name} `);
+        setDraftCaret("");
+        runNative(name);
+      } else setDraftCaret(`/${name} `);
+      return;
+    }
+    if (mstate.kind === "sub") {
+      setDraftCaret("");
+      if (!runNative(mstate.cmd, it.value)) setNotice(`/${mstate.cmd}: could not use “${it.label}”`);
+      return;
+    }
+    pickMention(it, mstate);
+  }
+  function onMenuKey(e: React.KeyboardEvent<HTMLTextAreaElement>): boolean {
+    if (!menuOpen) return false;
+    const n = menuItems.length;
+    if (e.key === "ArrowDown" || (e.key === "n" && e.ctrlKey)) { e.preventDefault(); if (n) setMenuSel((i) => (i + 1) % n); return true; }
+    if (e.key === "ArrowUp" || (e.key === "p" && e.ctrlKey)) { e.preventDefault(); if (n) setMenuSel((i) => (i - 1 + n) % n); return true; }
+    if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") { if (!n) return false; e.preventDefault(); pickMenu(menuItems[Math.min(menuSel, n - 1)]); return true; }
+    if (e.key === "Escape") { e.preventDefault(); setMenuOff(draft); return true; }
+    return false;
+  }
 
   // ---- Command palette + keyboard shortcuts ----
   const paletteCommands: Command[] = useMemo(() => {
@@ -695,12 +811,15 @@ export default function App() {
             footer={isBusy && <div className="typing" aria-label="Agent is working"><i /><i /><i /></div>}
           />
           <div className="composer-wrap">
-            {draft.startsWith("/") && commands.length > 0 && (
-              <div className="slash">
-                {commands.filter((c) => c.name.startsWith(draft.slice(1).split(" ")[0])).map((c) => (
-                  <button key={c.name} className="chip" title={c.description} onClick={() => setDraft(`/${c.name} `)}><b>/{c.name}</b> <span>{c.description}</span></button>
-                ))}
-              </div>
+            {menuOpen && (
+              <ComposerMenu
+                items={menuItems}
+                sel={menuSel}
+                title={mstate!.kind === "slash" ? "Commands" : mstate!.kind === "sub" ? `/${mstate!.cmd}` : mentionTitle}
+                empty={mstate!.kind === "mention" ? mentionEmpty : undefined}
+                onHover={setMenuSel}
+                onPick={pickMenu}
+              />
             )}
             <div className="composer">
               <textarea
@@ -708,13 +827,16 @@ export default function App() {
                 value={draft}
                 rows={1}
                 placeholder={conn === "open" ? (active ? `Message Supercharge…` : "Select a project") : "Agent not connected"}
+                onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
                 onChange={(e) => {
                   setDraft(e.target.value);
+                  setCaret(e.target.selectionStart ?? e.target.value.length);
                   const t = e.target;
                   t.style.height = "auto";
                   t.style.height = `${Math.min(t.scrollHeight, 220)}px`;
                 }}
                 onKeyDown={(e) => {
+                  if (onMenuKey(e)) return;
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     if (!isBusy) void send();

@@ -318,6 +318,16 @@ button.compact{padding:5px 11px;font-size:12.5px}
 .wk-safe .skeleton::after{will-change:auto}
 .gw-diag{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 .gw-diag ul{margin:0;padding-left:18px}
-.fw-hint{border:1px solid var(--border);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px}
+.fw-hint{border:1px solid var(--line);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px}
 .fw-hint code{overflow-wrap:anywhere}
 .error-text{white-space:pre-line}
+.cmenu{display:flex;flex-direction:column;gap:1px;background:var(--raise);border:1px solid var(--line);border-radius:12px;padding:6px;margin-bottom:6px;box-shadow:var(--shadow);max-height:300px;overflow:auto;transform-origin:bottom left;animation:cmenu-in .14s var(--ease) both}
+.cmenu-title{font-size:11.5px;color:var(--muted);padding:2px 8px 4px}
+.cmenu-group{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding:6px 8px 2px}
+.cmenu-empty{padding:8px 10px;font-size:13px}
+.cmenu-item{display:flex;align-items:center;gap:8px;background:none;color:var(--fg);justify-content:flex-start;padding:6px 10px;border-radius:8px;font-weight:400;text-align:left;min-height:30px;transition:background-color .1s}
+.cmenu-item.sel{background:var(--acc-bg)}
+.cmenu-item b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60%}
+.cmenu-item span{color:var(--muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+@keyframes cmenu-in{from{opacity:0;transform:translateY(4px) scale(.985)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.cmenu{animation:none}}
