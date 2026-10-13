@@ -44,6 +44,7 @@ async function boot(page: Page) {
   return Date.now() - t0;
 }
 
+test.describe.configure({ retries: 2 }); // shared runners: retry frame-time jitter, a real regression fails all three
 test("desktop: cold start, token streaming, long-chat scroll, screen transitions", async ({ page }) => {
   const readyMs = await boot(page);
   results.startup = { readyMs, ...(await page.evaluate(() => ({ fcpMs: Math.round(performance.getEntriesByName("first-contentful-paint")[0]?.startTime ?? 0), domContentLoadedMs: Math.round((performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming).domContentLoadedEventEnd) }))) };

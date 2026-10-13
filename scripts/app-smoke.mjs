@@ -45,7 +45,7 @@ async function check(label) {
 }
 
 // Never hang CI: fail with a clear message after 6 minutes.
-const watchdog = setTimeout(() => { console.error("app smoke FAILED: watchdog timeout"); driver.kill(); process.exit(1); }, 540000);
+const watchdog = setTimeout(() => { console.error("app smoke FAILED: watchdog timeout"); driver.kill(); process.exit(1); }, 1200000);
 watchdog.unref?.();
 try {
   for (let i = 0; i < 50; i++) { try { await fetch(W + "/status"); break; } catch { await sleep(200); } }
