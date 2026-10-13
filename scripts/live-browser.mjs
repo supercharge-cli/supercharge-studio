@@ -13,11 +13,12 @@ import { join } from "node:path";
 const BIN = process.argv[2];
 if (!BIN) throw new Error("usage: live-browser.mjs <binary>");
 const secret = "kiwi-" + Math.random().toString(36).slice(2, 8);
+let secret2 = "";
 const seen = [];
 const page = `<!doctype html><title>Live browser check</title><h1>Agent browser check</h1>
-<p>Press the button to reveal the code.</p><button id="reveal" onclick="fetch('/clicked');document.getElementById('out').textContent=atob('${Buffer.from(secret).toString("base64")}')">Reveal code</button>
+<p>Press the button to reveal the code.</p><button id="reveal" onclick="fetch('/clicked');document.getElementById('out').textContent=atob(location.search?'%S2%':'%S1%')">Reveal code</button>
 <p id="out">hidden</p>`;
-const http = createServer((req, res) => { seen.push(req.url); res.writeHead(200, { "content-type": "text/html" }); res.end(req.url === "/clicked" ? "ok" : page); });
+const http = createServer((req, res) => { seen.push(req.url); res.writeHead(200, { "content-type": "text/html" }); res.end(req.url === "/clicked" ? "ok" : page.replace("%S1%", Buffer.from(secret).toString("base64")).replace("%S2%", Buffer.from(secret2 || "x").toString("base64"))); });
 await new Promise((r) => http.listen(0, "127.0.0.1", r));
 const url = `http://127.0.0.1:${http.address().port}/`;
 
@@ -47,31 +48,45 @@ try {
     await sleep(500);
   }
   console.log("app state:", st);
-  const prompt = `Use the side browser tools: open ${url} , click the "Reveal code" button, then tell me exactly the code shown in the paragraph below the button.`;
+  async function round(label, secret, url) {
+    seen.length = 0;
+    const prompt = `Use the side browser tools: open ${url} , click the "Reveal code" button, then tell me exactly the code shown in the paragraph below the button.`;
+    await exec("const t=document.querySelector('.composer textarea');const set=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;set.call(t,arguments[0]);t.dispatchEvent(new Event('input',{bubbles:true}));return true", [prompt]);
+    await sleep(300);
+    await exec("const b=document.querySelector('.composer button[aria-label=Send]')||[...document.querySelectorAll('.composer button')].pop();b.click();return true", []);
+    const t0 = Date.now();
+    let reply = "";
+    while (Date.now() - t0 < 240000) {
+      await sleep(2000);
+      const r = await exec("return { busy: !!document.querySelector('.composer button[aria-label=Stop]'), reply: [...document.querySelectorAll('.bubble.agent')].map(e=>e.innerText).pop()||'', tools: [...document.querySelectorAll('.toolcard')].map(e=>e.innerText.split('\\n')[0]).slice(-8), sys: [...document.querySelectorAll('.bubble.system')].map(e=>e.innerText).slice(-2) }");
+      reply = r.reply;
+      if (reply.includes(secret) || (!r.busy && Date.now() - t0 > 15000)) { console.log(`[${label}] tools:`, JSON.stringify(r.tools), r.sys.length ? "system: " + JSON.stringify(r.sys) : ""); break; }
+    }
+    const png = await call("GET", s("/screenshot")).catch(() => null);
+    if (png) writeFileSync(`/tmp/live-browser-${label}.png`, Buffer.from(png, "base64"));
+    const pass = seen.includes("/clicked") && reply.includes(secret);
+    console.log(`[${label}] page requests: ${JSON.stringify(seen)} | reply: ${reply.slice(0, 160).replace(/\n/g, " ")} | ${pass ? "PASS" : "FAIL"}`);
+    return pass;
+  }
   // LIVE_CLOSE_PANEL=1: start with the browser panel closed; the agent's first browser call must reopen it.
   if (process.env.LIVE_CLOSE_PANEL === "1") { await exec("document.querySelector('.rpanel .tabs button[title=\"Close panel\"]')?.click();return true"); await sleep(500); console.log("panel open before prompt:", await exec("return !!document.querySelector('.rpanel')")); }
   // Fresh profile: start a chat in the first project (the default workspace or a CLI folder).
   await exec("document.querySelector('[data-testid=new-chat]')?.click();return true");
   await sleep(600);
-  await exec("const t=document.querySelector('.composer textarea');const set=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;set.call(t,arguments[0]);t.dispatchEvent(new Event('input',{bubbles:true}));return true", [prompt]);
-  await sleep(300);
-  await exec("const b=document.querySelector('.composer button[title=Send], .composer button[aria-label=Send], .composer .send')||[...document.querySelectorAll('.composer button')].pop();b.click();return b.outerHTML.slice(0,80)", []);
-  const t0 = Date.now();
-  let reply = "", tools = [];
-  while (Date.now() - t0 < 240000) {
-    await sleep(2000);
-    const r = await exec("return { busy: !!document.querySelector('.composer .stop, [title=\"Stop\"]'), reply: [...document.querySelectorAll('.bubble.agent')].map(e=>e.innerText).pop()||'', tools: [...document.querySelectorAll('.toolcard summary, .tool-title')].map(e=>e.innerText.split('\\n')[0]).slice(-12), errs: [...document.querySelectorAll('.error-text, .bubble.system')].map(e=>e.innerText).slice(-2) }");
-    reply = r.reply; tools = r.tools;
-    if (reply.includes(secret) || (!r.busy && Date.now() - t0 > 20000 && reply)) { if (r.errs?.length) console.log("system:", r.errs); break; }
+  ok = await round("first", secret, url);
+  console.log("panel open after first round:", await exec("return !!document.querySelector('.rpanel')").catch(() => "?"));
+  if (ok && process.env.LIVE_RESTART_AGENT === "1") {
+    // Kill the agent mid-session; the app restarts/reconnects it. The browser tools must keep working
+    // in the SAME chat without the user reconnecting anything.
+    const { execSync } = await import("node:child_process");
+    console.log("killing agent:", execSync("pkill -f 'supercharge[ ]agent.*serve' && echo killed || echo none").toString().trim());
+    let back = "";
+    for (let i = 0; i < 120; i++) { await sleep(500); back = await exec("return document.querySelector('.status')?.textContent||''").catch(() => ""); if (i > 4 && back === "open") break; }
+    console.log("after restart, status:", back);
+    secret2 = "plum-" + Math.random().toString(36).slice(2, 8);
+    ok = await round("after-restart", secret2, url + "?v=2");
   }
-  const png = await call("GET", s("/screenshot")).catch(() => null);
-  if (png) writeFileSync("/tmp/live-browser.png", Buffer.from(png, "base64"));
-  console.log("tool calls:", JSON.stringify(tools));
-  console.log("page requests:", JSON.stringify(seen));
-  console.log("agent reply:", reply.slice(0, 400));
-  console.log("panel open after:", await exec("return !!document.querySelector('.rpanel')").catch(() => "?"));
-  ok = seen.includes("/clicked") && reply.includes(secret);
-  console.log(ok ? `PASS: the agent opened the page, clicked, and read ${secret}` : "FAIL");
+  console.log(ok ? "PASS" : "FAIL");
 } catch (e) {
   console.error("live browser FAILED:", e.message);
 } finally {
