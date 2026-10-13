@@ -16,6 +16,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::oneshot;
 
+mod files;
 mod gateway;
 mod gwcrypto;
 mod gwrelay;
@@ -350,7 +351,8 @@ pub fn run() {
             browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible, browser_screenshot,
             secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info,
             providers::provider_set_key, providers::provider_has_key, providers::provider_seed_from_env, providers::provider_apply, agent_restart,
-            gateway::gateway_status, gateway::gateway_start, gateway::gateway_stop, gateway::gateway_pair_begin, gateway::gateway_pair_answer, gateway::gateway_revoke, gateway::gateway_send, gateway::gateway_relay_set
+            gateway::gateway_status, gateway::gateway_start, gateway::gateway_stop, gateway::gateway_pair_begin, gateway::gateway_pair_answer, gateway::gateway_revoke, gateway::gateway_send, gateway::gateway_relay_set,
+            files::fs_list, files::fs_read_text
         ])
         .build(tauri::generate_context!())
         .expect("error while running Supercharge Studio")

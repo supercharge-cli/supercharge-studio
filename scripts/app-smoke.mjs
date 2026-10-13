@@ -76,6 +76,27 @@ try {
     console.log(`ok  pasted-url: address now ${bind}`);
     await key(["\uE00C"]);
   }
+  if (process.env.SMOKE_COMPOSER) {
+    // Real file listing through the desktop backend: "@" opens the project picker.
+    const ta = await find(".composer textarea");
+    await call("POST", s(`/element/${ta}/value`), { text: "/" });
+    await find('[data-testid="composer-menu"]');
+    const cmds = await exec("return document.querySelector('[data-testid=composer-menu]').innerText");
+    for (const c of ["/new", "/setup", "/models", "/theme", "/help"]) if (!cmds.includes(c)) throw new Error(`slash menu is missing ${c}`);
+    console.log("ok  slash menu:", cmds.split("\n").filter((l) => l.startsWith("/")).length, "commands");
+    await call("POST", s(`/element/${ta}/clear`), {});
+    await call("POST", s(`/element/${ta}/value`), { text: `look at @${process.env.SMOKE_COMPOSER}` });
+    for (let i = 0; i < 40 && !(await exec("return !!document.querySelector('[data-testid=composer-menu-item]')")); i++) await sleep(250);
+    const first = await exec("return document.querySelector('[data-testid=composer-menu-item]')?.innerText || document.querySelector('[data-testid=composer-menu]')?.innerText || 'no menu'");
+    console.log("mention picker first row:", first.replace(/\n/g, " "));
+    await call("POST", s(`/element/${ta}/value`), { text: "\uE007" });
+    await sleep(300);
+    const val = await exec("return document.querySelector('.composer textarea').value");
+    if (!/^look at @\S+ $/.test(val)) throw new Error(`mention not inserted: ${val}`);
+    console.log(`ok  mention inserted: "${val}"`);
+    await check("composer-mention");
+    await call("POST", s(`/element/${ta}/clear`), {});
+  }
   await click('[data-testid="open-palette"]'); await check("palette"); await key(["\uE00C"]);
   await click('[data-testid="new-chat"]').catch(() => {}); await check("new-chat");
   await click('[data-testid="add-project"]').catch(() => {}); await key(["\uE00C"]); await check("add-project");

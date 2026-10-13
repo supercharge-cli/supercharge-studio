@@ -78,3 +78,8 @@ export const agentProbe = (addr: string) => (isDesktop() ? invoke<boolean>("agen
 export const agentCheck = (bind: string, secret: string) => (isDesktop() ? invoke<string>("agent_check", { bind, secret }) : Promise.resolve("ok"));
 export const agentFreePort = () => invoke<string>("agent_free_port");
 export const agentLogNote = (line: string) => (isDesktop() ? invoke("agent_log_note", { line }).catch(() => {}) : Promise.resolve());
+
+/** Files and folders in a project for `@` mentions (desktop only; the browser build has no file access). */
+export type FileEntry = { path: string; dir: boolean };
+export const projectFiles = (root: string): Promise<FileEntry[]> => (isDesktop() ? invoke<FileEntry[]>("fs_list", { root }) : Promise.resolve([]));
+export const projectReadText = (root: string, rel: string, max?: number): Promise<string> => invoke<string>("fs_read_text", { root, rel, max });

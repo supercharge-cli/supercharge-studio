@@ -7,8 +7,9 @@ import { browser, browserClientMeta } from "./browser/bridge";
 import { BrowserPanel } from "./components/BrowserPanel";
 import { Command, CommandPalette } from "./components/CommandPalette";
 import { ComposerMenu } from "./components/ComposerMenu";
-import { filterItems, MenuItem, menuState, parseSlash } from "./lib/composer";
+import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./lib/composer";
 import { themeList } from "./lib/themes";
+import { extractMentions, fileItems, mentionBlocks } from "./lib/mentions";
 import { defaultGatewayPrefs, DevicesSection, gatewayBind } from "./components/Devices";
 const SettingsScreen = lazy(() => import("./components/Settings").then((m) => ({ default: m.SettingsScreen })));
 // Warm the lazy screens once the app is idle so the first open is instant.
@@ -24,6 +25,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ToolCard } from "./components/ToolCard";
 import { VirtualList } from "./components/VirtualList";
 import { GatewayHub } from "./gateway/hub";
+import { FileEntry, projectFiles, projectReadText } from "./lib/desktop";
 import { agentCheck, agentFreePort, agentInfo, agentInstall, agentLogNote, agentRestart, appConfig, ensureAgent, gateway, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
 import { AppData, applyTree, findProject, load, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
@@ -409,7 +411,7 @@ export default function App() {
   }
 
   /** Run one prompt in a chat (from the desktop composer or a paired device). */
-  async function runPrompt(projectId: string, chatId: string, text: string, from?: string): Promise<{ stopReason: string; usage?: unknown }> {
+  async function runPrompt(projectId: string, chatId: string, text: string, from?: string, extra: unknown[] = []): Promise<{ stopReason: string; usage?: unknown }> {
     const c = clientRef.current;
     if (!c) throw new Error("Agent not connected");
     const chat = findProject(dataRef.current, projectId)?.project.chats.find((x) => x.id === chatId);
@@ -424,14 +426,14 @@ export default function App() {
       let r;
       turnUsage.current.delete(sid);
       try {
-        r = await c.prompt(sid, text);
+        r = await c.prompt(sid, text, extra);
       } catch (e: any) {
         // Session unknown to this agent (e.g. agent restarted): start a fresh one and retry once.
         if (!/session.*not found|unknown session|no such session/i.test(String(e?.message))) throw e;
         update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, sessionId: undefined } : x)) })));
         sid = await ensureSession(projectId, chatId);
         if (!sid) throw e;
-        r = await c.prompt(sid, text);
+        r = await c.prompt(sid, text, extra);
       }
       flush();
       // Prefer the agent's turn report; fall back to `usage` on the prompt result.
@@ -467,7 +469,14 @@ export default function App() {
     const chatId = activeChat?.id ?? newChat(active.project.id);
     setDraft("");
     if (composerRef.current) composerRef.current.style.height = "auto";
-    await runPrompt(active.project.id, chatId, text).catch(() => {});
+    let extra: unknown[] = [];
+    if (/(^|\s)@\S/.test(text) && isDesktop()) {
+      const root = active.project.cwd;
+      const files = await loadFiles(root);
+      const embed = !!(clientRef.current.initResult?.agentCapabilities as any)?.promptCapabilities?.embeddedContext;
+      extra = await mentionBlocks(root, extractMentions(text, files), embed, (rel) => projectReadText(root, rel));
+    }
+    await runPrompt(active.project.id, chatId, text, undefined, extra).catch(() => {});
   }
 
   const stop = () => activeChat?.sessionId && clientRef.current?.cancel(activeChat.sessionId);
@@ -526,12 +535,35 @@ export default function App() {
     { name: "reconnect", detail: "Reconnect to the agent", icon: "refresh", run: () => void connect() },
     ...(isBusy ? [{ name: "stop", detail: "Stop the running turn", icon: "stop", run: () => { stop(); } }] : []),
   ];
-  // @ mentions (files and folders) are wired up separately.
-  const mentionVersion = 0;
-  const mentionTitle = "Files";
-  const mentionEmpty = "No matching files";
-  const mentionItems = (_q: string): MenuItem[] => [];
-  const pickMention = (_it: MenuItem, _m: unknown) => {};
+  // ---- Composer: @ mentions of project files and folders ----
+  const filesRef = useRef<{ cwd: string; at: number; files: FileEntry[]; loading?: Promise<FileEntry[]> } | null>(null);
+  const [mentionVersion, setMentionVersion] = useState(0);
+  const [filesErr, setFilesErr] = useState("");
+  function loadFiles(cwd: string, force = false): Promise<FileEntry[]> {
+    const c = filesRef.current;
+    if (c && c.cwd === cwd && !force && Date.now() - c.at < 20000) return c.loading ?? Promise.resolve(c.files);
+    const loading = projectFiles(cwd)
+      .then((files) => { filesRef.current = { cwd, at: Date.now(), files }; setFilesErr(""); setMentionVersion((v) => v + 1); return files; })
+      .catch((e) => { filesRef.current = { cwd, at: Date.now(), files: [] }; setFilesErr(String(e?.message ?? e)); setMentionVersion((v) => v + 1); return [] as FileEntry[]; });
+    filesRef.current = { cwd, at: c?.cwd === cwd ? c.at : 0, files: c?.cwd === cwd ? c.files : [], loading };
+    return loading;
+  }
+  const mentionTitle = active ? `Files in ${active.project.name}` : "Files";
+  const mentionEmpty = !isDesktop() ? "File mentions need the desktop app" : filesErr ? `Can't list files: ${filesErr}` : filesRef.current?.loading && !filesRef.current.files.length ? "Loading files…" : "No matching files or folders";
+  const mentionItems = (q: string): MenuItem[] => {
+    if (!active) return [];
+    void loadFiles(active.project.cwd);
+    const c = filesRef.current;
+    return c && c.cwd === active.project.cwd ? fileItems(c.files, q) : [];
+  };
+  function pickMention(it: MenuItem, m: { start: number; end: number }, drill = false) {
+    if (drill && it.value.endsWith("/")) {
+      const ins = `@${it.value}`;
+      return setDraftCaret(draft.slice(0, m.start) + ins + draft.slice(m.end), m.start + ins.length);
+    }
+    const r = insertMention(draft, m.start, m.end, it.value);
+    setDraftCaret(r.draft, r.caret);
+  }
   const nativeByName = new Map(nativeCommands.map((c) => [c.name, c]));
   const [caret, setCaret] = useState(0);
   const [menuSel, setMenuSel] = useState(0);
@@ -580,13 +612,14 @@ export default function App() {
       if (!runNative(mstate.cmd, it.value)) setNotice(`/${mstate.cmd}: could not use “${it.label}”`);
       return;
     }
-    pickMention(it, mstate);
+    pickMention(it, mstate as { start: number; end: number });
   }
   function onMenuKey(e: React.KeyboardEvent<HTMLTextAreaElement>): boolean {
     if (!menuOpen) return false;
     const n = menuItems.length;
     if (e.key === "ArrowDown" || (e.key === "n" && e.ctrlKey)) { e.preventDefault(); if (n) setMenuSel((i) => (i + 1) % n); return true; }
     if (e.key === "ArrowUp" || (e.key === "p" && e.ctrlKey)) { e.preventDefault(); if (n) setMenuSel((i) => (i - 1 + n) % n); return true; }
+    if (e.key === "Tab" && mstate?.kind === "mention" && n && menuItems[Math.min(menuSel, n - 1)].value.endsWith("/")) { e.preventDefault(); pickMention(menuItems[Math.min(menuSel, n - 1)], mstate, true); return true; }
     if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") { if (!n) return false; e.preventDefault(); pickMenu(menuItems[Math.min(menuSel, n - 1)]); return true; }
     if (e.key === "Escape") { e.preventDefault(); setMenuOff(draft); return true; }
     return false;
@@ -850,7 +883,7 @@ export default function App() {
                 <button className="round" aria-label="Send" title="Send (Enter)" onClick={() => void send()} disabled={conn !== "open" || !active || !draft.trim()}><Icon name="send" /><span className="sr">Send</span></button>
               )}
             </div>
-            <div className="hint">{active ? <>cwd <code>{active.project.cwd}</code> · Enter to send, Shift+Enter for a new line · Ctrl K for commands</> : " "}</div>
+            <div className="hint">{active ? <>cwd <code>{active.project.cwd}</code> · Enter to send, Shift+Enter for a new line · / commands · @ files</> : " "}</div>
           </div>
         </main>
       )}

@@ -380,8 +380,9 @@ export class AcpClient {
     return this.request("session/load", { sessionId, cwd, mcpServers });
   }
 
-  async prompt(sessionId: string, text: string): Promise<{ stopReason: StopReason }> {
-    return this.request("session/prompt", { sessionId, prompt: [{ type: "text", text }] });
+  /** Send a prompt. `extra` carries resource links / embedded files from @ mentions. */
+  async prompt(sessionId: string, text: string, extra: unknown[] = []): Promise<{ stopReason: StopReason }> {
+    return this.request("session/prompt", { sessionId, prompt: [{ type: "text", text }, ...extra] });
   }
 
   cancel(sessionId: string) {
