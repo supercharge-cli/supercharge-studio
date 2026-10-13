@@ -3,6 +3,7 @@ import type { ApiFormat, Provider, Settings as S } from "../lib/store";
 import { parseAgentUrl, uid } from "../lib/store";
 import type { ConfigOption } from "../acp/types";
 import { Icon } from "./Icon";
+import { themeList } from "../lib/themes";
 import { agentInfo, agentLog, type AgentInfo } from "../lib/desktop";
 
 type Props = {
@@ -167,13 +168,15 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
 
         {tab === "appearance" && (
           <div className="stack">
-            <div className="seg" role="radiogroup">
-              {(["dark", "light", "system"] as const).map((t) => (
-                <button key={t} className={(s.theme ?? "dark") === t ? "on" : ""} data-testid={`theme-${t}`} onClick={() => set({ ...s, theme: t })}>
-                  <Icon name={t === "light" ? "sun" : t === "dark" ? "moon" : "panelLeft"} /> {t[0].toUpperCase() + t.slice(1)}
+            <div className="theme-grid" role="radiogroup" aria-label="Theme">
+              {themeList.map((t) => (
+                <button key={t.id} role="radio" aria-checked={(s.theme ?? "dark") === t.id} className={`theme-card ${(s.theme ?? "dark") === t.id ? "on" : ""}`} data-testid={`theme-${t.id}`} onClick={() => set({ ...s, theme: t.id })}>
+                  <span className="sw">{t.swatch.map((c, i) => <i key={i} style={{ background: c }} />)}</span>
+                  <span className="row"><Icon name={t.id === "system" ? "panelLeft" : t.dark ? "moon" : "sun"} size={14} /> {t.name}</span>
                 </button>
               ))}
             </div>
+            <p className="muted small">The theme preview applies when you save. Animations follow your system's reduced-motion setting.</p>
           </div>
         )}
 

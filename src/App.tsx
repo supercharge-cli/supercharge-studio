@@ -8,7 +8,7 @@ import { BrowserPanel } from "./components/BrowserPanel";
 import { Command, CommandPalette } from "./components/CommandPalette";
 import { ComposerMenu } from "./components/ComposerMenu";
 import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./lib/composer";
-import { themeList } from "./lib/themes";
+import { resolveTheme, themeList } from "./lib/themes";
 import { extractMentions, fileItems, mentionBlocks } from "./lib/mentions";
 import { defaultGatewayPrefs, DevicesSection, gatewayBind } from "./components/Devices";
 const SettingsScreen = lazy(() => import("./components/Settings").then((m) => ({ default: m.SettingsScreen })));
@@ -296,7 +296,17 @@ export default function App() {
   const theme = data.settings.theme ?? "dark";
   useEffect(() => {
     const mq = window.matchMedia?.("(prefers-color-scheme: light)");
-    const apply = () => (document.documentElement.dataset.theme = theme === "system" ? (mq?.matches ? "light" : "dark") : theme);
+    const apply = () => {
+      const root = document.documentElement;
+      const next = resolveTheme(theme, !!mq?.matches);
+      if (root.dataset.theme && root.dataset.theme !== next) {
+        // Ease colours for one switch only (no permanent transitions on every element).
+        root.classList.add("theme-anim");
+        clearTimeout((apply as any).t);
+        (apply as any).t = setTimeout(() => root.classList.remove("theme-anim"), 360);
+      }
+      root.dataset.theme = next;
+    };
     apply();
     mq?.addEventListener?.("change", apply);
     return () => mq?.removeEventListener?.("change", apply);
@@ -492,7 +502,7 @@ export default function App() {
   const commands: { name: string; description?: string }[] =
     sess.commands.length > 0 ? sess.commands : ((clientRef.current?.initResult?._meta as any)?.availableCommands ?? []);
 
-  const setTheme = (t: "dark" | "light") => update((d) => ({ ...d, settings: { ...d.settings, theme: t } }));
+  const setTheme = (t: string) => update((d) => ({ ...d, settings: { ...d.settings, theme: t } }));
   const openSettings = (section?: "connection" | "devices" | "providers" | "agent" | "appearance") => { setSettingsSection(section); setView("settings"); };
 
   // ---- Composer: slash commands ----
@@ -522,7 +532,7 @@ export default function App() {
       run: (a) => { if (a) return setModel(a); if (modelOption?.options?.length) setTimeout(() => setDraftCaret("/models ")); else openSettings("agent"); },
       sub: modelOption?.options?.length ? () => modelOption!.options!.map((o) => ({ id: `m-${o.value}`, label: o.name ?? o.value, detail: o.value === modelOption!.currentValue ? "current" : o.name && o.name !== o.value ? o.value : undefined, value: o.value, icon: o.value === modelOption!.currentValue ? "check" : undefined })) : undefined,
     },
-    { name: "theme", detail: "Change the color theme", icon: theme === "light" ? "sun" : "moon", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/theme ")); return; } const t = themeList.find((x) => x.id === a.toLowerCase() || x.name.toLowerCase() === a.toLowerCase()); if (!t) return false; setTheme(t.id as any); }, sub: () => themeList.map((t) => ({ id: `t-${t.id}`, label: t.name, detail: t.id === theme ? "current" : t.dark ? "dark" : "light", value: t.id, icon: t.id === theme ? "check" : undefined })) },
+    { name: "theme", detail: "Change the color theme", icon: theme === "light" ? "sun" : "moon", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/theme ")); return; } const t = themeList.find((x) => x.id === a.toLowerCase() || x.name.toLowerCase() === a.toLowerCase()); if (!t) return false; setTheme(t.id); }, sub: () => themeList.map((t) => ({ id: `t-${t.id}`, label: t.name, detail: t.id === theme ? "current" : t.dark ? "dark" : "light", value: t.id, icon: t.id === theme ? "check" : undefined })) },
     { name: "help", detail: "Show commands and shortcuts", icon: "command", run: () => {
       const lines = [...nativeCommands.map((c) => `- \`/${c.name}\` ${c.detail}`), ...commands.map((c) => `- \`/${c.name}\` ${c.description ?? ""} (agent)`)];
       const cid = activeChat?.id ?? (active ? newChat(active.project.id) : undefined);
@@ -632,6 +642,7 @@ export default function App() {
       { id: "settings", title: "Open settings", hint: "Ctrl ,", icon: "settings", run: () => openSettings() },
       { id: "usage", title: "Open usage & costs", hint: "Ctrl Shift U", icon: "chart", run: () => setView("usage") },
       { id: "theme", title: `Switch to ${theme === "light" ? "dark" : "light"} theme`, icon: theme === "light" ? "moon" : "sun", run: () => setTheme(theme === "light" ? "dark" : "light") },
+      ...themeList.map((t) => ({ id: `theme-${t.id}`, title: `Theme: ${t.name}`, group: "Themes", icon: t.dark ? "moon" : "sun", run: () => setTheme(t.id) })),
       { id: "sidebar", title: "Toggle sidebar", hint: "Ctrl B", icon: "panelLeft", run: () => setSideCollapsed((x) => !x) },
       { id: "panel", title: "Toggle browser & tools panel", hint: "Ctrl \\", icon: "panelRight", run: () => setPanel((x) => !x) },
       { id: "focus", title: "Focus message box", hint: "Ctrl L", icon: "chat", run: () => composerRef.current?.focus() },

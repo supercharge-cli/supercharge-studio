@@ -331,3 +331,54 @@ button.compact{padding:5px 11px;font-size:12.5px}
 .cmenu-item span{color:var(--muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 @keyframes cmenu-in{from{opacity:0;transform:translateY(4px) scale(.985)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.cmenu{animation:none}}
+/* ---- extra themes ---- */
+[data-theme="midnight"]{color-scheme:dark;
+  --bg:#0a0f1c;--bg2:#0d1424;--panel:#111a2e;--raise:#15203a;--hover:#1c2947;--line:#1f2b47;
+  --fg:#e6ecf8;--muted:#8796b4;--acc:#4c8dff;--acc2:#79a8ff;--acc-bg:rgba(76,141,255,.15);
+  --ok:#35c58a;--bad:#ff5c69;--warn:#f0b43c;--user:#1a2a4d;--code:#070b15;--shadow:0 10px 40px rgba(0,0,0,.5)}
+[data-theme="forest"]{color-scheme:dark;
+  --bg:#0c1210;--bg2:#0f1714;--panel:#121b17;--raise:#16221d;--hover:#1d2c26;--line:#21312a;
+  --fg:#e3eee8;--muted:#86a094;--acc:#3ccf8e;--acc2:#6be0aa;--acc-bg:rgba(60,207,142,.14);
+  --ok:#3ccf8e;--bad:#f0605d;--warn:#e9b44c;--user:#1a3027;--code:#080d0b;--shadow:0 10px 40px rgba(0,0,0,.5)}
+[data-theme="ember"]{color-scheme:dark;
+  --bg:#140f0d;--bg2:#181210;--panel:#1d1613;--raise:#241b17;--hover:#2e231d;--line:#33271f;
+  --fg:#f3e9e3;--muted:#a8928a;--acc:#ff7a45;--acc2:#ff9a6e;--acc-bg:rgba(255,122,69,.14);
+  --ok:#48c78e;--bad:#ff5a5a;--warn:#ffb547;--user:#35231b;--code:#0e0a08;--shadow:0 10px 40px rgba(0,0,0,.55)}
+[data-theme="contrast"]{color-scheme:dark;
+  --bg:#000;--bg2:#050505;--panel:#0b0b0b;--raise:#111;--hover:#1f1f1f;--line:#5c5c5c;
+  --fg:#fff;--muted:#c8c8c8;--acc:#1f7cff;--acc2:#5aa2ff;--acc-bg:rgba(31,124,255,.25);
+  --ok:#3dff9a;--bad:#ff6b6b;--warn:#ffd60a;--user:#1c1c1c;--code:#000;--shadow:0 0 0 1px #5c5c5c}
+[data-theme="paper"]{color-scheme:light;
+  --bg:#fbf8f1;--bg2:#f7f3ea;--panel:#f2ede1;--raise:#fffdf8;--hover:#ebe4d4;--line:#e2d9c6;
+  --fg:#2b2620;--muted:#7b7063;--acc:#b4572e;--acc2:#9c4824;--acc-bg:rgba(180,87,46,.10);
+  --ok:#3d8b4f;--bad:#c23a32;--warn:#a8741a;--user:#f1e6d3;--code:#f4efe4;--shadow:0 10px 40px rgba(60,40,20,.12)}
+[data-theme="sky"]{color-scheme:light;
+  --bg:#f6f9fe;--bg2:#f0f5fd;--panel:#eaf1fb;--raise:#fff;--hover:#dde8f8;--line:#d5e1f2;
+  --fg:#14203a;--muted:#5d6f8e;--acc:#1e6ef0;--acc2:#165ad0;--acc-bg:rgba(30,110,240,.10);
+  --ok:#119a5c;--bad:#d7353f;--warn:#b7791f;--user:#e1ecff;--code:#eef3fb;--shadow:0 10px 40px rgba(20,40,90,.12)}
+[data-theme="rose"]{color-scheme:light;
+  --bg:#fdf7f8;--bg2:#fbf1f3;--panel:#f8ebee;--raise:#fff;--hover:#f2dde3;--line:#ecd5dc;
+  --fg:#2c1a20;--muted:#866470;--acc:#d6336c;--acc2:#bd2a5d;--acc-bg:rgba(214,51,108,.10);
+  --ok:#2b9a5f;--bad:#d03a3a;--warn:#b7791f;--user:#fbe4ec;--code:#faf0f3;--shadow:0 10px 40px rgba(80,20,40,.12)}
+/* theme switch: colours ease instead of snapping */
+html.theme-anim *,html.theme-anim *::before,html.theme-anim *::after{transition:background-color .28s ease,border-color .28s ease,color .2s ease,fill .2s ease!important}
+.theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.theme-card{display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:8px;border-radius:12px;background:var(--raise);border:1px solid var(--line);color:var(--fg);font-weight:500;transition:transform .16s var(--ease),border-color .16s,box-shadow .16s}
+.theme-card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.theme-card.on{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc-bg)}
+.theme-card .sw{display:flex;height:46px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+.theme-card .sw i{flex:1}.theme-card .sw i:last-child{flex:.45}
+/* ---- motion (transform/opacity only) ---- */
+.sidebar{transition:width .22s var(--ease)}
+.tree .link,.prov-row{transition:background-color .12s ease,transform .12s var(--ease)}
+button{transition:background-color .12s ease,border-color .12s ease,color .12s ease,transform .1s var(--ease),opacity .12s}
+button:active:not(:disabled){transform:scale(.97)}
+.notice,.toast{animation:toast-in .26s var(--spring,var(--ease)) both}
+@keyframes toast-in{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+.bubble.user{transform-origin:bottom right}.bubble.agent{transform-origin:bottom left}
+.row-wrap .bubble.user{animation:bubble-in .24s var(--spring-soft,var(--ease)) both}
+@keyframes bubble-in{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}
+.toolcard{animation:rise .22s var(--ease) both}
+.cmenu-item{transition:background-color .1s ease,transform .1s var(--ease)}.cmenu-item.sel{transform:translateX(2px)}
+.settings-body>*,.tab-body{animation:rise .2s var(--ease) both}
+@media (prefers-reduced-motion:reduce){html.theme-anim *{transition:none!important}.sidebar,button{transition:none}button:active:not(:disabled){transform:none}}

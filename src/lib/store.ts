@@ -4,7 +4,8 @@ export type Project = { id: string; name: string; cwd: string; chats: Chat[] };
 export type Group = { id: string; name: string; collapsed?: boolean; projects: Project[] };
 export type ApiFormat = "responses" | "chat_completions" | "messages";
 export type Provider = { id: string; name: string; baseUrl: string; format: ApiFormat; models: string[] };
-export type Theme = "dark" | "light" | "system";
+/** A theme id from lib/themes (or "system"). */
+export type Theme = string;
 
 export type Settings = {
   bind: string;
