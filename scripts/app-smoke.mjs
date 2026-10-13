@@ -45,11 +45,13 @@ async function check(label) {
 }
 
 // Never hang CI: fail with a clear message after 6 minutes.
-const watchdog = setTimeout(() => { console.error("app smoke FAILED: watchdog timeout"); driver.kill(); process.exit(1); }, 360000);
+const watchdog = setTimeout(() => { console.error("app smoke FAILED: watchdog timeout"); driver.kill(); process.exit(1); }, 540000);
 watchdog.unref?.();
 try {
   for (let i = 0; i < 50; i++) { try { await fetch(W + "/status"); break; } catch { await sleep(200); } }
-  const caps = { "tauri:options": { application: BIN } };
+  // pageLoadStrategy "none": older WebKitWebDriver otherwise waits its 300 s page-load timeout after
+  // clicks/keys in the single-page app (seen on Ubuntu 22.04 CI: every step took exactly 5 minutes).
+  const caps = { "tauri:options": { application: BIN }, pageLoadStrategy: "none", timeouts: { pageLoad: 10000, script: 30000, implicit: 0 } };
   sid = (await call("POST", "/session", { capabilities: { alwaysMatch: caps } })).sessionId;
   await find('[data-testid="sidebar"]', 20000);
   await exec("window.__smoke = 1");
