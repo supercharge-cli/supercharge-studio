@@ -25,6 +25,17 @@ Settings → Secrets and variables → Actions to get signed APKs (zipalign + `a
 | `ANDROID_KEY_ALIAS` | key alias (default `supercharge-studio`) |
 | `ANDROID_KEY_PASS` | key password (defaults to the keystore password) |
 
+Set them from the machine that holds the keystore (nothing is printed):
+
+```sh
+base64 -w0 ~/.supercharge-studio-keys/release.jks | gh secret set ANDROID_KEYSTORE_B64
+gh secret set ANDROID_KEYSTORE_PASS < ~/.supercharge-studio-keys/password.txt
+gh secret set ANDROID_KEY_ALIAS --body supercharge-studio
+```
+
+Until then, sign a published release's APKs locally and upload the signed copies to it with
+`scripts/sign-release.sh v0.1.2` (uses the keystore in `~/.supercharge-studio-keys/`).
+
 Keep the keystore out of the repository. Losing it means existing installs cannot be updated.
 
 Local signing works the same way:

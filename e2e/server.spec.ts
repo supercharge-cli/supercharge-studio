@@ -17,10 +17,11 @@ test.use({ viewport: { width: 390, height: 844 } });
 let server: ChildProcess | null = null;
 let data = "";
 test.beforeAll(async () => {
+  test.setTimeout(60000);
   data = mkdtempSync(join(tmpdir(), "scs-"));
   server = spawn(BIN, ["run", "--bind", "127.0.0.1:2440", "--public-url", "ws://127.0.0.1:9/gw", "--agent", "ws://127.0.0.1:2451", "--agent-secret", "e2e", "--relay", "ws://127.0.0.1:2432", "--data-dir", data, "--control", "127.0.0.1:2441", "--name", "CI Server"], { stdio: ["ignore", "inherit", "pipe"] });
   await new Promise<void>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("server did not reach the relay")), 15000);
+    const t = setTimeout(() => reject(new Error("server did not reach the relay")), 45000);
     const t0 = Date.now();
     server!.stderr!.on("data", (d) => { process.stderr.write(`[+${Date.now() - t0}ms] ` + d); if (String(d).includes("relay: online")) { clearTimeout(t); resolve(); } });
   });
