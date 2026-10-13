@@ -8,6 +8,8 @@
 
 #[path = "../../src-tauri/src/gwcrypto.rs"]
 mod gwcrypto;
+#[path = "../../src-tauri/src/lanaddr.rs"]
+mod lanaddr;
 #[path = "../../src-tauri/src/portbind.rs"]
 mod portbind;
 #[path = "../../src-tauri/src/gwrelay.rs"]
@@ -211,20 +213,7 @@ fn lan_ip() -> String {
     lan_ips().into_iter().next().unwrap_or_else(|| "127.0.0.1".into())
 }
 
-/// Every non-loopback IPv4 address, default-route first, container/VPN bridges last.
-fn lan_ips() -> Vec<String> {
-    let route = std::net::UdpSocket::bind("0.0.0.0:0").and_then(|s| { s.connect("192.0.2.1:9")?; s.local_addr() }).ok().map(|a| a.ip().to_string());
-    let virt = |n: &str| ["docker", "br-", "veth", "virbr", "vmnet", "vboxnet", "tun", "tap", "wg", "zt", "tailscale", "cni", "podman", "lxc"].iter().any(|p| n.starts_with(p));
-    let mut v: Vec<(u8, String)> = if_addrs::get_if_addrs().unwrap_or_default().into_iter().filter_map(|i| match i.ip() {
-        std::net::IpAddr::V4(ip) if !ip.is_loopback() => { let s = ip.to_string(); Some((if Some(&s) == route.as_ref() { 0 } else if virt(&i.name) { 2 } else { 1 }, s)) }
-        _ => None,
-    }).collect();
-    if let Some(r) = route.filter(|r| r != "0.0.0.0" && !v.iter().any(|(_, s)| s == r)) { v.push((0, r)); }
-    v.sort_by_key(|x| x.0);
-    let mut out: Vec<String> = Vec::new();
-    for (_, s) in v { if !out.contains(&s) { out.push(s); } }
-    out
-}
+use lanaddr::lan_ips;
 
 /// Plain `GET /` (a phone browser) answers "reachable", so users can test the network path.
 async fn http_probe(stream: &mut TcpStream) -> bool {
@@ -245,7 +234,7 @@ fn alt_urls(c: &Config) -> Vec<String> {
     if c.public_url.is_some() { return vec![]; }
     let (host, port) = c.bind.rsplit_once(':').unwrap_or((&c.bind, "2420"));
     if host != "0.0.0.0" && host != "[::]" { return vec![]; }
-    lan_ips().into_iter().skip(1).take(4).map(|h| format!("ws://{h}:{port}/gw")).collect()
+    lan_ips().into_iter().skip(1).map(|h| format!("ws://{h}:{port}/gw")).collect()
 }
 
 fn direct_url(c: &Config) -> String {

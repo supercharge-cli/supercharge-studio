@@ -58,7 +58,7 @@ struct State {
     /// Set when the preferred port was busy and another one was chosen.
     port_note: Option<String>,
     /// Firewall command computed once when the gateway starts (never on the UI thread's status poll).
-    firewall: Option<String>,
+    firewall: Option<crate::firewall::Firewall>,
     stop: Option<oneshot::Sender<()>>,
     pairings: HashMap<String, Pairing>,
     approvals: HashMap<String, oneshot::Sender<bool>>,
@@ -129,94 +129,7 @@ async fn store_device_secret(id: &str, key: Option<[u8; 32]>) -> Result<(), Stri
     off_runtime(move || crate::secrets::set(&acct, &val).map(|_| ())).await.unwrap_or_else(|| Err("secure storage unavailable".into()))
 }
 
-/// Address of the default-route interface (no packets are sent).
-fn route_ip() -> Option<std::net::IpAddr> {
-    std::net::UdpSocket::bind("0.0.0.0:0")
-        .and_then(|s| s.connect("192.0.2.1:9").map(|_| s))
-        .and_then(|s| s.local_addr())
-        .map(|a| a.ip())
-        .ok()
-        .filter(|ip| !ip.is_loopback() && !ip.is_unspecified())
-}
-
-/// Interfaces that are almost never the phone's network (containers, VMs, VPN tunnels).
-fn is_virtual(name: &str) -> bool {
-    let n = name.to_ascii_lowercase();
-    ["docker", "br-", "veth", "virbr", "vmnet", "vboxnet", "tun", "tap", "wg", "utun", "zt", "tailscale", "cni", "flannel", "podman", "lxc", "vethernet"].iter().any(|p| n.starts_with(p) || n.contains("virtual"))
-}
-
-fn is_private(ip: &std::net::Ipv4Addr) -> bool {
-    ip.is_private() || ip.is_link_local()
-}
-
-/// Every IPv4 address a phone on the same network might reach, best first:
-/// the default-route address, then private Wi-Fi/Ethernet addresses, then the rest.
-pub fn lan_ips() -> Vec<String> {
-    let mut scored: Vec<(u8, String)> = Vec::new();
-    let route = route_ip();
-    if let Ok(ifs) = if_addrs::get_if_addrs() {
-        for i in ifs {
-            let std::net::IpAddr::V4(v4) = i.ip() else { continue };
-            if v4.is_loopback() || v4.is_unspecified() {
-                continue;
-            }
-            let score = if Some(i.ip()) == route { 0 } else if is_virtual(&i.name) { 3 } else if v4.is_link_local() { 2 } else if is_private(&v4) { 1 } else { 2 };
-            scored.push((score, v4.to_string()));
-        }
-    }
-    if let Some(r) = route {
-        if !scored.iter().any(|(_, s)| *s == r.to_string()) {
-            scored.push((0, r.to_string()));
-        }
-    }
-    scored.sort_by_key(|(s, _)| *s);
-    let mut out: Vec<String> = Vec::new();
-    for (_, ip) in scored {
-        if !out.contains(&ip) {
-            out.push(ip);
-        }
-    }
-    if out.is_empty() {
-        out.push("127.0.0.1".into());
-    }
-    out
-}
-
-/// A command the user can run to let phones through the local firewall, if one is likely blocking.
-pub fn firewall_hint(port: u16) -> Option<String> {
-    #[cfg(target_os = "linux")]
-    {
-        let ok = |cmd: &str, args: &[&str], want: &str| {
-            std::process::Command::new(cmd)
-                .args(args)
-                .stdin(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .output()
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim() == want)
-                .unwrap_or(false)
-        };
-        if ok("systemctl", &["is-active", "firewalld"], "active") || ok("firewall-cmd", &["--state"], "running") {
-            return Some(format!("sudo firewall-cmd --permanent --add-port={port}/tcp && sudo firewall-cmd --reload"));
-        }
-        if ok("systemctl", &["is-active", "ufw"], "active") {
-            return Some(format!("sudo ufw allow {port}/tcp"));
-        }
-        None
-    }
-    #[cfg(target_os = "windows")]
-    {
-        Some(format!("netsh advfirewall firewall add rule name=\"Supercharge Studio gateway\" dir=in action=allow protocol=TCP localport={port}  (run in an administrator terminal, or click Allow on the Windows Firewall prompt and tick Private networks)"))
-    }
-    #[cfg(target_os = "macos")]
-    {
-        Some("If the macOS firewall is on: System Settings → Network → Firewall → Options → allow Supercharge Studio to accept incoming connections.".into())
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-    {
-        let _ = port;
-        None
-    }
-}
+pub use crate::lanaddr::lan_ips;
 
 /// A plain HTTP request (e.g. a phone browser opening http://<ip>:<port>/) gets a short
 /// "reachable" page, so users can test the network path without the app.
@@ -377,8 +290,8 @@ pub struct Status {
     port: Option<u16>,
     /// Why the preferred port was not used, if it wasn't.
     port_note: Option<String>,
-    /// Command to open the port in the local firewall when one is active.
-    firewall: Option<String>,
+    /// Active local firewall and whether the gateway port is open in it.
+    firewall: Option<crate::firewall::Firewall>,
     devices: Vec<Device>,
     connected: Vec<String>,
     /// "off", "connecting", "online" or "retrying in Ns: reason".
@@ -402,6 +315,17 @@ pub fn gateway_status() -> Status {
 }
 
 /// Start listening. `bind` defaults to 0.0.0.0:2420 (LAN); use 127.0.0.1:<port> behind a tunnel.
+/// Open the gateway port in the local firewall (the OS asks for the admin password).
+#[tauri::command]
+pub async fn gateway_firewall_allow() -> Result<String, String> {
+    let port = { let s = st(); if s.url.is_none() { return Err("Start the gateway first.".into()); } s.port };
+    let r = tauri::async_runtime::spawn_blocking(move || crate::firewall::allow(port)).await.map_err(|e| e.to_string())?;
+    let fw = tauri::async_runtime::spawn_blocking(move || crate::firewall::detect(port)).await.ok().flatten();
+    { let mut s = st(); if s.port == port { s.firewall = fw; } }
+    crate::agent::log_line(&format!("firewall allow {port}: {r:?}"));
+    r
+}
+
 #[tauri::command]
 pub async fn gateway_start(app: AppHandle, bind: Option<String>) -> Result<String, String> {
     if let Some(u) = st().url.clone() {
@@ -431,7 +355,7 @@ pub async fn gateway_start(app: AppHandle, bind: Option<String>) -> Result<Strin
     let port = addr.port();
     if lan {
         std::thread::spawn(move || {
-            let hint = firewall_hint(port);
+            let hint = crate::firewall::detect(port);
             let mut s = st();
             if s.port == port && s.url.is_some() {
                 s.firewall = hint;
@@ -592,7 +516,7 @@ mod tests {
         if ips.len() > 1 {
             assert_ne!(ips[0], "127.0.0.1");
         }
-        assert!(is_virtual("docker0") && is_virtual("virbr0") && !is_virtual("wlp2s0") && !is_virtual("eth0"));
+        assert!(crate::lanaddr::is_virtual("docker0") && crate::lanaddr::is_virtual("virbr0") && !crate::lanaddr::is_virtual("wlp2s0") && !crate::lanaddr::is_virtual("eth0"));
     }
 
     #[test]
