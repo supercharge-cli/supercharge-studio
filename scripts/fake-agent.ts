@@ -34,7 +34,7 @@ const cliSeed = (): Listed[] => [
 const fresh = (): St => { const listed = CLI ? cliSeed() : []; return { n: 0, listed, known: new Set(listed.map((x) => x.sessionId)), loads: [] }; };
 const shared = fresh();
 // CLI mode: sessions live in the agent's store, so they survive a dropped connection ("restart").
-const cliStore = CLI ? fresh() : null;
+const cliStore: St | null = CLI ? { n: 0, listed: [], known: new Set(), loads: [] } : null;
 const arg = (k: string, d: string) => {
   const i = process.argv.indexOf(`--${k}`);
   return i > 0 ? process.argv[i + 1] : d;
@@ -55,9 +55,13 @@ const wss = new WebSocketServer({
 });
 
 wss.on("connection", (ws: WebSocket) => {
-  const st = cliStore ?? (process.env.FAKE_AGENT_SHARED === "1" ? shared : fresh());
+  // CLI mode: seeded sessions and their flags are per connection (tests stay independent);
+  // sessions created with session/new persist in cliStore across reconnects.
+  const st = cliStore ? { ...fresh(), n: cliStore.n } : process.env.FAKE_AGENT_SHARED === "1" ? shared : fresh();
+  if (cliStore) for (const x of cliStore.listed) { st.listed.push(x); st.known.add(x.sessionId); }
   // MCP servers attached per session on THIS connection (lost on restart until new/load/resume).
   const attached = new Map<string, string[]>();
+  const steers = new Map<string, string[]>();
   const attach = (sid: string) => attached.set(sid, (m0().params?.mcpServers ?? []).map((x: any) => x.name));
   let cur: any = null;
   const m0 = () => cur;
@@ -111,6 +115,12 @@ wss.on("connection", (ws: WebSocket) => {
         say(sid, `History of ${sid} in ${m.params?.cwd}`);
         return reply({});
       }
+      case "_supercharge/session/steer": {
+        if (process.env.FAKE_AGENT_STEER !== "1") return send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });
+        const sid = m.params?.sessionId;
+        steers.set(sid, [...(steers.get(sid) ?? []), (m.params?.prompt ?? []).map((b: any) => b.text ?? "").join(" ")]);
+        return reply({ status: "queued" });
+      }
       case "session/resume": {
         if (!CLI) return send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });
         if (!known.has(m.params?.sessionId)) return send({ id: m.id, error: { code: -32602, message: "unknown session id" } });
@@ -123,9 +133,11 @@ wss.on("connection", (ws: WebSocket) => {
         return reply({});
       case "session/new":
         known.add(`fake-${++st.n}`);
+        if (cliStore) { cliStore.n = st.n; }
         attach(`fake-${st.n}`);
         listed.splice(0, listed.length, ...listed.filter((x) => x.sessionId !== `fake-${st.n}`));
         listed.push({ sessionId: `fake-${st.n}`, cwd: m.params?.cwd ?? "/tmp", title: "New chat", ...(CLI ? { updatedAt: new Date().toISOString() } : {}) });
+        if (cliStore) cliStore.listed.push(listed[listed.length - 1]);
         if (CLI) setTimeout(() => send({ method: "_supercharge/sessions/changed", params: {} }), 20);
         return reply({
           sessionId: `fake-${st.n}`,
@@ -185,8 +197,10 @@ wss.on("connection", (ws: WebSocket) => {
           const o = r.result?.outcome;
           say(sid, `Permission outcome: ${o?.outcome}${o?.optionId ? `:${o.optionId}` : ""}`);
         }
-        if (/slow/.test(text)) {
+        if (/slow/.test(text) && !/no-slow/.test(text)) {
           for (let i = 0; i < 200 && !cancelled.has(sid); i++) {
+            const st2 = steers.get(sid);
+            if (st2?.length) { say(sid, `steered: ${st2.splice(0).join(" + ")} `); if (/finish/.test(text)) break; }
             say(sid, `tick${i} `);
             await sleep(100);
           }

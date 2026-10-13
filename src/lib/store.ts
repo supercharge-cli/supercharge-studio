@@ -14,6 +14,8 @@ export type Settings = {
   transport: "ws" | "stdio";
   autoStart: boolean;
   alwaysApprove: boolean;
+  /** Messages sent while the agent works steer the running turn instead of waiting in the queue. */
+  steerByDefault?: boolean;
   /** Server key lives in the OS keychain; `secret` is then kept empty on disk. */
   secretInKeychain?: boolean;
   providers?: Provider[];

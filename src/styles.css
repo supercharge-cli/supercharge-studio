@@ -396,3 +396,9 @@ button:active:not(:disabled){transform:scale(.97)}
 .project .more{padding-left:28px}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin{animation:spin .8s linear infinite}
+.queue{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 6px}
+.qchip{display:flex;align-items:center;gap:4px;max-width:100%;border:1px solid var(--line);border-radius:14px;padding:2px 4px 2px 10px;background:var(--panel,transparent);animation:fadein .15s ease-out}
+.qchip .qtext{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.qchip .qedit{min-width:260px;font-size:13px}
+.qchip button.sm{padding:1px 8px;font-size:12px}
+@keyframes fadein{from{opacity:0;transform:translateY(3px)}to{opacity:1}}

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { combineSteer, makeSteerer, type Queued } from "./acp/steer";
 import { AcpClient, ConnectionState, isAuthError, isModelError, pickConfiguredModel } from "./acp/client";
 import { applyUpdate, ChatItem, emptySession, SessionState } from "./acp/session";
 import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionUpdate } from "./acp/types";
@@ -522,14 +523,15 @@ export default function App() {
   }
 
   /** Run one prompt in a chat (from the desktop composer or a paired device). */
-  async function runPrompt(projectId: string, chatId: string, text: string, from?: string, extra: unknown[] = []): Promise<{ stopReason: string; usage?: unknown }> {
+  async function runPrompt(projectId: string, chatId: string, text: string, from?: string, extra: unknown[] = [], resend = false): Promise<{ stopReason: string; usage?: unknown }> {
     const c = clientRef.current;
     if (!c) throw new Error("Agent not connected");
     const chat = findProject(dataRef.current, projectId)?.project.chats.find((x) => x.id === chatId);
     if (chat?.title === "New chat")
       update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, title: text.slice(0, 40) } : x)) })));
     update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, updatedAt: Date.now() } : x)) })));
-    pushItem(chatId, { kind: "user", text: from ? `${text}` : text, ...(from ? { from } : {}) } as ChatItem);
+    turnText.current[chatId] = text;
+    if (!resend) pushItem(chatId, { kind: "user", text: from ? `${text}` : text, ...(from ? { from } : {}) } as ChatItem);
     setBusy((b) => ({ ...b, [chatId]: true }));
     try {
       let sid = await ensureSession(projectId, chatId);
@@ -570,6 +572,43 @@ export default function App() {
 
   retryRef.current = (text: string) => { if (active && activeChat) void runPrompt(active.project.id, activeChat.id, text).catch(() => {}); };
 
+  // ---- Sending while the agent works: pq (default) or steer ----
+  const [pq, setPq] = useState<Record<string, Queued[]>>({});
+  const [editingQ, setEditingQ] = useState<string | null>(null);
+  const turnText = useRef<Record<string, string>>({});
+  const pendingResend = useRef<Record<string, string>>({});
+  const pqRef = useRef(pq);
+  pqRef.current = pq;
+  const enqueue_ = (chatId: string, text: string) => setPq((q) => ({ ...q, [chatId]: [...(q[chatId] ?? []), { id: uid(), text }] }));
+  const dequeue = (chatId: string, id: string) => setPq((q) => ({ ...q, [chatId]: (q[chatId] ?? []).filter((x) => x.id !== id) }));
+  async function steer(projectId: string, chatId: string, text: string) {
+    const c = clientRef.current;
+    const sid = findProject(dataRef.current, projectId)?.project.chats.find((x) => x.id === chatId)?.sessionId;
+    if (!c || !sid || !busyRef.current[chatId]) return void runPrompt(projectId, chatId, text).catch(() => {});
+    const s = makeSteerer(c, (x) => c.cancel(x), () => { pendingResend.current[chatId] = combineSteer(turnText.current[chatId] ?? "", text); });
+    pushItem(chatId, { kind: "user", text, steer: true } as any);
+    try {
+      await s.steer(sid, text);
+      setNotice(s.mode === "native" ? "Steering the current turn" : "Restarting the turn with your message");
+    } catch (e: any) {
+      setNotice(`Could not steer: ${e?.message ?? e}. Queued instead.`);
+      enqueue_(chatId, text);
+    }
+  }
+  // When a turn ends: a cancel-and-resend steer goes first, then the next queued message.
+  useEffect(() => {
+    for (const [chatId, b] of Object.entries(busy)) {
+      if (b) continue;
+      const f = dataRef.current.groups.flatMap((g) => g.projects).find((p) => p.chats.some((c) => c.id === chatId));
+      if (!f) continue;
+      const re = pendingResend.current[chatId];
+      if (re != null) { delete pendingResend.current[chatId]; void runPrompt(f.id, chatId, re, undefined, [], true).catch(() => {}); continue; }
+      const next = (pqRef.current[chatId] ?? []).find((x) => x.id !== editingQ);
+      if (next) { dequeue(chatId, next.id); void runPrompt(f.id, chatId, next.text).catch(() => {}); }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, editingQ]);
+
   async function send() {
     const text = draft.trim();
     const sl = parseSlash(text);
@@ -580,6 +619,12 @@ export default function App() {
       if (!agentHas) { setNotice(`/${sl.name}: unknown option “${sl.args}”`); return; }
     }
     if (!text || !clientRef.current || !active) return;
+    if (activeChat && busyRef.current[activeChat.id]) {
+      setDraft("");
+      if (data.settings.steerByDefault) void steer(active.project.id, activeChat.id, text);
+      else enqueue_(activeChat.id, text);
+      return;
+    }
     const chatId = activeChat?.id ?? newChat(active.project.id);
     setDraft("");
     if (composerRef.current) composerRef.current.style.height = "auto";
@@ -976,6 +1021,24 @@ export default function App() {
                 onPick={pickMenu}
               />
             )}
+            {activeChat && active && (pq[activeChat.id] ?? []).length > 0 && (
+              <div className="queue" data-testid="queue">
+                {(pq[activeChat.id] ?? []).map((q) => (
+                  <div key={q.id} className="qchip" data-testid="queued">
+                    {editingQ === q.id ? (
+                      <input autoFocus className="qedit" data-testid="queued-edit" defaultValue={q.text}
+                        onBlur={(e) => { const v = e.target.value.trim(); setPq((all) => ({ ...all, [activeChat.id]: (all[activeChat.id] ?? []).flatMap((x) => (x.id === q.id ? (v ? [{ ...x, text: v }] : []) : [x])) })); setEditingQ(null); }}
+                        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { (e.target as HTMLInputElement).value = q.text; (e.target as HTMLInputElement).blur(); } }} />
+                    ) : (
+                      <button className="link qtext" data-testid="queued-text" title="Edit" onClick={() => setEditingQ(q.id)}>{q.text}</button>
+                    )}
+                    <button className="ghost sm" data-testid="queued-steer" title="Send now into the running turn" onClick={() => { dequeue(activeChat.id, q.id); void steer(active.project.id, activeChat.id, q.text); }}>Steer</button>
+                    <button className="icon sm" data-testid="queued-remove" title="Remove" onClick={() => dequeue(activeChat.id, q.id)}><Icon name="x" size={12} /></button>
+                  </div>
+                ))}
+                <span className="muted small">{isBusy ? "Sent when the agent finishes" : "Sending…"}</span>
+              </div>
+            )}
             <div className="composer">
               <textarea
                 ref={composerRef}
@@ -994,13 +1057,16 @@ export default function App() {
                   if (onMenuKey(e)) return;
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    if (!isBusy) void send();
+                    void send();
                   }
                 }}
                 disabled={conn !== "open" || !active}
               />
               {isBusy ? (
-                <button className="danger round" aria-label="Stop" title="Stop (Ctrl .)" onClick={stop}><Icon name="stop" /><span className="sr">Stop</span></button>
+                <>
+                  {draft.trim() && <button className="round secondary" data-testid="queue-send" aria-label={data.settings.steerByDefault ? "Steer" : "Queue"} title={data.settings.steerByDefault ? "Steer the current turn (Enter)" : "Send when the agent finishes (Enter)"} onClick={() => void send()}><Icon name="send" /><span className="sr">{data.settings.steerByDefault ? "Steer" : "Queue"}</span></button>}
+                  <button className="danger round" aria-label="Stop" title="Stop (Ctrl .)" onClick={stop}><Icon name="stop" /><span className="sr">Stop</span></button>
+                </>
               ) : (
                 <button className="round" aria-label="Send" title="Send (Enter)" onClick={() => void send()} disabled={conn !== "open" || !active || !draft.trim()}><Icon name="send" /><span className="sr">Send</span></button>
               )}

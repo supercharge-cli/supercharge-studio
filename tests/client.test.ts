@@ -200,3 +200,21 @@ describe("model_not_configured", () => {
     expect(pickConfiguredModel(new AcpRpcError(-32050, "x", { configured: [] }))).toBeNull();
   });
 });
+
+import { combineSteer, hasNativeSteer, makeSteerer } from "../src/acp/steer";
+describe("steer", () => {
+  it("uses the native method only when advertised, else cancel-and-resend", async () => {
+    const calls: any[] = [];
+    const native = { initResult: { agentCapabilities: { _meta: { supercharge: { steer: true } } } }, request: async (m: string, p: any) => calls.push([m, p]) } as any;
+    expect(hasNativeSteer(native)).toBe(true);
+    await makeSteerer(native, () => calls.push("cancel"), () => calls.push("resend")).steer("s1", "hi");
+    expect(calls).toEqual([["_supercharge/session/steer", { sessionId: "s1", prompt: [{ type: "text", text: "hi" }] }]]);
+    calls.length = 0;
+    const plain = { initResult: { agentCapabilities: {} }, request: async () => calls.push("req") } as any;
+    const s = makeSteerer(plain, (sid) => calls.push(`cancel ${sid}`), (sid, t) => calls.push(`resend ${sid} ${t}`));
+    expect(s.mode).toBe("resend");
+    await s.steer("s2", "more");
+    expect(calls).toEqual(["cancel s2", "resend s2 more"]);
+    expect(combineSteer("fix it ", " and add tests")).toBe("fix it\n\nand add tests");
+  });
+});

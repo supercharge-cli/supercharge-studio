@@ -7,7 +7,7 @@ export default defineConfig({
     { command: "npx vite-node scripts/fake-agent.ts -- --port 2421 --secret e2e", port: 2421, reuseExistingServer: false },
     // One agent shared by several clients (headless server e2e).
     { command: "npx vite-node scripts/fake-agent.ts -- --port 2451 --secret e2e", port: 2451, reuseExistingServer: false, env: { FAKE_AGENT_SHARED: "1" } },
-    { command: "npx vite-node scripts/fake-agent.ts -- --port 2452 --secret e2e", port: 2452, reuseExistingServer: false, env: { FAKE_AGENT_CLI: "1", FAKE_AGENT_REPORT: "/tmp/scs-cli-agent.json" } },
+    { command: "npx vite-node scripts/fake-agent.ts -- --port 2452 --secret e2e", port: 2452, reuseExistingServer: false, env: { FAKE_AGENT_CLI: "1", FAKE_AGENT_STEER: "1", FAKE_AGENT_REPORT: "/tmp/scs-cli-agent.json" } },
     { command: "npx vite-node scripts/fake-gateway.ts -- --port 2431", env: { RELAY_AUDIT: "1" }, port: 2431, reuseExistingServer: false },
     { command: "npx vite --port 5174 --strictPort", port: 5174, reuseExistingServer: false },
   ],
