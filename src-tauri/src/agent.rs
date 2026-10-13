@@ -10,7 +10,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::process::{Child, Command};
 
-static BIN: Mutex<Option<PathBuf>> = Mutex::new(None);
+pub(crate) static BIN: Mutex<Option<PathBuf>> = Mutex::new(None);
 static CHILD: Mutex<Option<Child>> = Mutex::new(None);
 /// Bumped on every start/stop so stale supervisors exit.
 static GEN: AtomicU64 = AtomicU64::new(0);
@@ -31,6 +31,9 @@ pub fn candidate_dirs() -> Vec<PathBuf> {
         v.push(h.join("bin"));
     }
     if cfg!(windows) {
+        if let Some(h) = dirs::home_dir() {
+            v.push(h.join(".local").join("bin"));
+        }
         if let Some(d) = dirs::data_local_dir() {
             v.push(d.join("supercharge").join("bin"));
             v.push(d.join("Programs").join("supercharge"));

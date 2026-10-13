@@ -137,12 +137,15 @@ pub async fn provider_apply(provider: Provider) -> Result<Vec<String>, String> {
         if let Some(d) = path.parent() {
             std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
         }
-        std::fs::write(&path, doc.to_string()).map_err(|e| e.to_string())?;
+        // Atomic: write a private temp file next to it, then rename over the old config.
+        let tmp = path.with_extension("toml.tmp");
+        std::fs::write(&tmp, doc.to_string()).map_err(|e| e.to_string())?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+            let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
         }
+        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
         Ok(keys)
     })
     .await

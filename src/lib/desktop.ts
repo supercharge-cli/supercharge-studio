@@ -73,6 +73,9 @@ export const gateway = {
 
 // ---- Managed agent (see src-tauri/src/agent.rs) ----
 export type AgentInfo = { bin: string | null; managed: boolean; log: string };
+export type CliStatus = { bin: string | null; version: string | null; latest: string | null; min: string; too_old: boolean; update_available: boolean; fallback: string; install_dir: string };
+export const cliStatus = (checkLatest = true) => invoke<CliStatus>("cli_status", { checkLatest });
+export const cliInstall = (version?: string) => invoke<string>("cli_install", { version });
 export const agentInfo = () => invoke<AgentInfo>("agent_info");
 export const agentLog = () => invoke<string>("agent_log");
 export const agentInstall = () => invoke<string>("agent_install");

@@ -6,6 +6,7 @@ import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionUpdate 
 import { StdioTransport } from "./acp/tauriStdio";
 import { browser, browserClientMeta } from "./browser/bridge";
 import { BrowserPanel } from "./components/BrowserPanel";
+import { CliSetup } from "./components/CliSetup";
 import { Command, CommandPalette } from "./components/CommandPalette";
 import { ComposerMenu } from "./components/ComposerMenu";
 import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./lib/composer";
@@ -27,7 +28,7 @@ import { ToolCard } from "./components/ToolCard";
 import { VirtualList } from "./components/VirtualList";
 import { GatewayHub } from "./gateway/hub";
 import { FileEntry, projectFiles, projectReadText } from "./lib/desktop";
-import { agentCheck, agentFreePort, agentInfo, agentInstall, agentLogNote, agentRestart, appConfig, ensureAgent, gateway, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
+import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type CliStatus, agentLogNote, agentRestart, appConfig, ensureAgent, gateway, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
 import { AppData, applyTree, ensureFolderProject, findProject, load, mergeCliSessions, normCwd, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
 
@@ -66,6 +67,18 @@ export default function App() {
   const clientRef = useRef<AcpClient | null>(null);
   const secretRef = useRef("");
   const [agentMissing, setAgentMissing] = useState(false);
+  // First-run CLI setup: missing or too old -> full-screen installer; newer release -> offer an update.
+  const [cli, setCli] = useState<CliStatus | null>(null);
+  const [cliSetup, setCliSetup] = useState<"missing" | "outdated" | "update" | null>(null);
+  useEffect(() => {
+    if (!isDesktop()) return;
+    void cliStatus(true).then((st) => {
+      setCli(st);
+      if (!st.bin) setCliSetup("missing");
+      else if (st.too_old) setCliSetup("outdated");
+      else if (st.update_available) setNotice(`Supercharge CLI ${st.latest} is available (you have ${st.version}).`);
+    }).catch(() => {});
+  }, []);
   const [agentRejected, setAgentRejected] = useState("");
   const [keyDraft, setKeyDraft] = useState("");
   const [keyErr, setKeyErr] = useState("");
@@ -228,6 +241,8 @@ export default function App() {
       void agentLogNote(`connect failed: ${msg}`);
       if (msg.includes("AGENT_NOT_FOUND")) {
         setAgentMissing(true);
+        setCliSetup("missing");
+        void cliStatus(true).then(setCli).catch(() => {});
         setConn("closed");
         setStatus("Supercharge CLI not found");
         return; // nothing to connect to: show the setup card instead of a retry loop
@@ -852,6 +867,14 @@ export default function App() {
 
   return (
     <div className={`app ${panel && view === "chat" ? "with-panel" : ""} view-${view}`}>
+      {cliSetup && (
+        <CliSetup
+          status={cli}
+          mode={cliSetup}
+          onDone={() => { setCliSetup(null); setAgentMissing(false); void cliStatus(false).then(setCli); void connect(); }}
+          onSkip={cliSetup === "update" ? () => setCliSetup(null) : () => setCliSetup(null)}
+        />
+      )}
       <Sidebar
         data={data}
         collapsed={sideCollapsed}
@@ -958,6 +981,7 @@ export default function App() {
               <span role="status">{notice || status}</span>
               <div className="spacer" />
               {!notice && conn !== "connecting" && <><button className="secondary compact" onClick={() => void connect()}>Retry</button><button className="ghost compact" onClick={() => openSettings("connection")}>Settings</button></>}
+              {cli?.update_available && /CLI .* is available/.test(notice) && <button className="secondary sm" data-testid="cli-update" onClick={() => { setNotice(""); setCliSetup("update"); }}>Update</button>}
               {notice && <button className="icon sm" title="Dismiss" aria-label="Dismiss" onClick={() => setNotice("")}><Icon name="x" size={14} /></button>}
             </div>
           )}

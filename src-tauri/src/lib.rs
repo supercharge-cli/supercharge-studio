@@ -20,6 +20,7 @@ mod files;
 mod portbind;
 mod lanaddr;
 mod firewall;
+mod cliinstall;
 mod gateway;
 mod gwcrypto;
 mod gwrelay;
@@ -349,7 +350,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            app_config, agent_probe, agent_start, agent_stop, agent::agent_info, agent::agent_log, agent::agent_install, agent::agent_check, agent::agent_free_port, agent::agent_log_note,
+            app_config, agent_probe, agent_start, agent_stop, agent::agent_info, agent::agent_log, agent::agent_install, cliinstall::cli_status, cliinstall::cli_install, agent::agent_check, agent::agent_free_port, agent::agent_log_note,
             stdio_start, stdio_send, stdio_stop,
             browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible, browser_screenshot,
             secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info,
