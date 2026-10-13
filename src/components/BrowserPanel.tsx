@@ -12,6 +12,12 @@ export function BrowserPanel({ tools, onClose }: { tools: ToolCall[]; onClose: (
   const [tab, setTab] = useState<"browser" | "tools">("browser");
 
   useEffect(() => {
+    // The agent used a browser tool while the Tools tab was showing: switch to the browser.
+    browser.showBrowserTab = () => setTab("browser");
+    return () => { browser.showBrowserTab = undefined; };
+  }, []);
+
+  useEffect(() => {
     const l = (u: string) => setUrl(u);
     browser.listeners.add(l);
     return () => void browser.listeners.delete(l);

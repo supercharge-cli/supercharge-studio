@@ -27,27 +27,45 @@ fn pending() -> &'static Mutex<HashMap<u64, oneshot::Sender<Value>>> {
 
 pub fn tools() -> Value {
     let obj = |props: Value, req: &[&str]| json!({ "type": "object", "properties": props, "required": req });
-    let target = json!({
-        "ref": { "type": "integer", "description": "Element ref from browser_snapshot" },
-        "selector": { "type": "string", "description": "CSS selector (alternative to ref)" }
-    });
-    let mut type_props = target.clone();
-    type_props["text"] = json!({ "type": "string" });
-    type_props["submit"] = json!({ "type": "boolean", "description": "Submit the form / press Enter after typing" });
+    let target = || {
+        json!({
+            "ref": { "type": "integer", "description": "Element ref from the latest browser_snapshot (preferred)" },
+            "selector": { "type": "string", "description": "CSS selector (alternative to ref)" },
+            "element_text": { "type": "string", "description": "Visible text or label of the element (alternative to ref)" }
+        })
+    };
+    let with = |extra: Value| {
+        let mut t = target();
+        for (k, v) in extra.as_object().unwrap() {
+            t[k] = v.clone();
+        }
+        t
+    };
     json!([
-        { "name": "browser_navigate", "description": "Open a URL in the Supercharge Studio side browser the user can see.",
+        { "name": "browser_navigate", "description": "Open a URL in the side browser the user sees in Supercharge Studio (opens the panel if needed). Waits for the page to load and returns its URL and title.",
           "inputSchema": obj(json!({ "url": { "type": "string" } }), &["url"]) },
-        { "name": "browser_snapshot", "description": "Read the current page: URL, title, visible text and interactive elements with numeric refs.",
+        { "name": "browser_snapshot", "description": "Accessibility snapshot of the current page: a role/name tree where every interactive element has [ref=N], plus URL, title and scroll position. Call it before clicking or typing and after the page changes; refs from older snapshots stop working.",
           "inputSchema": obj(json!({}), &[]) },
-        { "name": "browser_screenshot", "description": "Screenshot (image) of the visible side browser, max 1280px. Use it to check visual details such as colors, layout and images.",
+        { "name": "browser_screenshot", "description": "Screenshot (image) of the visible side browser, max 1280px. Use it to check visual details such as colors, layout and images; use browser_snapshot to find elements.",
           "inputSchema": obj(json!({}), &[]) },
-        { "name": "browser_click", "description": "Click an element by ref (from browser_snapshot) or CSS selector.",
-          "inputSchema": obj(target.clone(), &[]) },
-        { "name": "browser_type", "description": "Type text into an input by ref or CSS selector.",
-          "inputSchema": obj(type_props, &["text"]) },
-        { "name": "browser_scroll", "description": "Scroll the page vertically by dy pixels.",
-          "inputSchema": obj(json!({ "dy": { "type": "number" } }), &[]) },
+        { "name": "browser_click", "description": "Click an element (by ref from browser_snapshot, CSS selector or visible text). Waits for any navigation and returns the resulting URL and title.",
+          "inputSchema": obj(target(), &[]) },
+        { "name": "browser_type", "description": "Type text into an input, textarea or editable element (replaces its value unless append is true).",
+          "inputSchema": obj(with(json!({ "text": { "type": "string" }, "submit": { "type": "boolean", "description": "Press Enter afterwards (submits the form)" }, "append": { "type": "boolean" } })), &["text"]) },
+        { "name": "browser_press_key", "description": "Press a key (e.g. Enter, Escape, Tab, ArrowDown, a) on the focused element, or on the given element.",
+          "inputSchema": obj(with(json!({ "key": { "type": "string" } })), &["key"]) },
+        { "name": "browser_select_option", "description": "Choose option(s) in a <select> by value or visible text.",
+          "inputSchema": obj(with(json!({ "values": { "type": "array", "items": { "type": "string" } } })), &["values"]) },
+        { "name": "browser_hover", "description": "Hover over an element (shows menus/tooltips).", "inputSchema": obj(target(), &[]) },
+        { "name": "browser_scroll", "description": "Scroll the page by dy pixels (negative = up), or scroll an element (ref/selector/element_text) into view.",
+          "inputSchema": obj(with(json!({ "dy": { "type": "number" } })), &[]) },
+        { "name": "browser_wait_for", "description": "Wait until text appears, text disappears or a CSS selector matches (timeout_ms, default 10000, max 30000), or just wait `time` seconds.",
+          "inputSchema": obj(json!({ "text": { "type": "string" }, "text_gone": { "type": "string" }, "selector": { "type": "string" }, "time": { "type": "number" }, "timeout_ms": { "type": "number" } }), &[]) },
+        { "name": "browser_tabs", "description": "List, open (with optional url), select or close tabs of the side browser. action: list | new | select | close; index for select/close.",
+          "inputSchema": obj(json!({ "action": { "type": "string", "enum": ["list", "new", "select", "close"] }, "url": { "type": "string" }, "index": { "type": "integer" } }), &[]) },
         { "name": "browser_back", "description": "Go back in history.", "inputSchema": obj(json!({}), &[]) },
+        { "name": "browser_forward", "description": "Go forward in history.", "inputSchema": obj(json!({}), &[]) },
+        { "name": "browser_reload", "description": "Reload the page.", "inputSchema": obj(json!({}), &[]) },
         { "name": "browser_eval", "description": "Evaluate a JavaScript expression in the page and return its JSON value.",
           "inputSchema": obj(json!({ "expression": { "type": "string" } }), &["expression"]) }
     ])
@@ -91,7 +109,7 @@ async fn handle_rpc(app: &AppHandle, msg: &Value) -> Option<Value> {
             "protocolVersion": msg["params"]["protocolVersion"].as_str().unwrap_or("2025-03-26"),
             "capabilities": { "tools": {} },
             "serverInfo": { "name": "supercharge-studio-browser", "version": env!("CARGO_PKG_VERSION") },
-            "instructions": "Tools that see and control the side browser panel in Supercharge Studio."
+            "instructions": "Tools that see and control the side browser panel the user sees in Supercharge Studio. Typical loop: browser_navigate, browser_snapshot (find [ref=N]), browser_click / browser_type with that ref, then browser_snapshot or browser_screenshot to check the result."
         }),
         "ping" => json!({}),
         "tools/list" => json!({ "tools": tools() }),

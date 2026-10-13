@@ -370,6 +370,8 @@ export default function App() {
   }
 
   useEffect(() => {
+    // Browser tools work with zero setup: if the agent needs the browser, show the panel.
+    browser.onNeedPanel = () => { setView("chat"); setPanel(true); };
     let off: (() => void) | undefined;
     void browser.serveMcp().then((u) => (off = u));
     return () => off?.();
