@@ -19,6 +19,35 @@ async function ask(page: Page, text: string) {
   await page.locator(".composer textarea").press("Enter");
 }
 
+test("chat model control opens a searchable per-session picker", async ({ page }) => {
+  await boot(page);
+  await ask(page, "hello");
+  await expect(page.getByTestId("model-trigger")).toBeVisible();
+  await page.getByTestId("model-trigger").click();
+  await expect(page.getByTestId("model-picker")).toBeVisible();
+  await page.getByTestId("model-search").fill("second");
+  await expect(page.getByTestId("model-choice")).toHaveCount(1);
+  await page.getByTestId("model-choice").click();
+  await expect(page.getByTestId("model-trigger")).toContainText("Second");
+});
+
+test("desktop model and thinking controls follow the selected chat", async ({ page }) => {
+  await boot(page);
+  await ask(page, "first chat");
+  await expect(page.getByTestId("model-trigger")).toContainText("First");
+  await expect(page.getByTestId("thinking-level")).toHaveValue("high");
+  await page.getByTestId("model-trigger").click();
+  await page.getByTestId("model-choice").filter({ hasText: "Second" }).click();
+  await expect(page.getByTestId("model-trigger")).toContainText("Second");
+  await page.getByTestId("thinking-level").selectOption("low");
+  await expect(page.getByTestId("thinking-level")).toHaveValue("low");
+  await page.getByTestId("new-chat").first().click();
+  await ask(page, "other chat");
+  await expect(page.getByTestId("model-trigger")).toContainText("First");
+  await page.getByTestId("chat").filter({ hasText: "first chat" }).click();
+  await expect(page.getByTestId("model-trigger")).toContainText("Second");
+});
+
 test("streams a reply with thought and plan", async ({ page }) => {
   await boot(page);
   await ask(page, "stream please");
@@ -116,12 +145,13 @@ test("slash menu and settings", async ({ page }) => {
   await page.getByTestId("tab-providers").click();
   await page.getByTestId("prov-add").click();
   await page.getByTestId("prov-name").fill("Local");
-  await page.getByTestId("prov-models").fill("m-1, m-2");
+  await expect(page.getByTestId("prov-discover")).toBeDisabled();
+  await expect(page.getByTestId("provider-editor")).toContainText("Model discovery requires the desktop app");
   await page.getByTestId("settings-save").click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-providers").click();
-  await expect(page.getByTestId("provider-row")).toContainText("m-1, m-2");
+  await expect(page.getByTestId("provider-row")).toContainText("no models");
   await page.getByRole("button", { name: "Cancel" }).click();
 });
 

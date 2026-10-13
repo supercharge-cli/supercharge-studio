@@ -2,7 +2,7 @@ import { cleanPermission } from "../lib/labels";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AcpClient, ConnectionState } from "../acp/client";
 import { applyUpdate, ChatItem, emptySession, SessionState } from "../acp/session";
-import type { PermissionOutcome, PermissionRequest } from "../acp/types";
+import type { ConfigOption, PermissionOutcome, PermissionRequest } from "../acp/types";
 import { Icon } from "../components/Icon";
 import { Markdown } from "../components/Markdown";
 import { ToolCard } from "../components/ToolCard";
@@ -89,10 +89,17 @@ export default function MobileApp() {
   const [toast, setToast] = useState("");
   const [listed, setListed] = useState(false);
   const [loadingSess, setLoadingSess] = useState<string | null>(null);
+  const [configBySession, setConfigBySession] = useState<Record<string, ConfigOption[]>>({});
+  const [picker, setPicker] = useState<string | null>(null);
+  const [modelSearch, setModelSearch] = useState("");
+  const [settingOption, setSettingOption] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const [route, setRoute] = useState<"direct" | "relay">("direct");
   const client = useRef<AcpClient | null>(null);
   const loadedRef = useRef(new Set<string>());
+  const activeSessionRef = useRef<string | null>(null);
+  const sessionsRef = useRef(list);
+  sessionsRef.current = list;
   const scroller = useRef<HTMLDivElement>(null);
   const threadView = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -122,6 +129,8 @@ export default function MobileApp() {
       onStateChange: (s) => setConn(s),
       // Token chunks are applied in one state update per animation frame.
       onUpdate: (sid, u) => {
+        if (u.sessionUpdate === "config_option_update" && Array.isArray(u.configOptions))
+          setConfigBySession((all) => ({ ...all, [sid]: u.configOptions as ConfigOption[] }));
         pending.push({ sid, u });
         if (!raf) raf = requestAnimationFrame(() => {
           raf = 0;
@@ -139,7 +148,23 @@ export default function MobileApp() {
         else if (method === "_supercharge/sessions/changed") void refresh();
       },
       onPermissionRequest: (req) => new Promise((resolve) => setPerm({ req: cleanPermission(req), resolve })),
-      onReconnected: () => { loadedRef.current.clear(); void refresh(); },
+      onReconnected: () => {
+        loadedRef.current.clear();
+        setConfigBySession({});
+        void refresh();
+        const sid = activeSessionRef.current;
+        if (sid) {
+          setState((all) => ({ ...all, [sid]: emptySession() }));
+          setLoadingSess(sid);
+          void c.loadSession(sid, sessionsRef.current.find((s) => s.sessionId === sid)?.cwd ?? "")
+            .then((r: any) => {
+              loadedRef.current.add(sid);
+              if (Array.isArray(r?.configOptions)) setConfigBySession((all) => ({ ...all, [sid]: r.configOptions }));
+            })
+            .catch((e) => setErr(`Could not reload this chat: ${e?.message ?? e}`))
+            .finally(() => setLoadingSess(null));
+        }
+      },
     });
     client.current = c;
     (async () => {
@@ -162,6 +187,9 @@ export default function MobileApp() {
   }, [toast]);
 
   async function openSession(sid: string) {
+    activeSessionRef.current = sid;
+    setPicker(null);
+    setModelSearch("");
     transition(() => setOpen(sid));
     setHandoff(null);
     const c = client.current;
@@ -169,7 +197,9 @@ export default function MobileApp() {
     loadedRef.current.add(sid);
     setState((all) => ({ ...all, [sid]: emptySession() }));
     setLoadingSess(sid);
-    await c.loadSession(sid, list.find((s) => s.sessionId === sid)?.cwd ?? "").catch((e) => { loadedRef.current.delete(sid); setErr(`Could not load this chat: ${e?.message ?? e}`); });
+    await c.loadSession(sid, list.find((s) => s.sessionId === sid)?.cwd ?? "")
+      .then((r: any) => { if (Array.isArray(r?.configOptions)) setConfigBySession((all) => ({ ...all, [sid]: r.configOptions })); })
+      .catch((e) => { loadedRef.current.delete(sid); setErr(`Could not load this chat: ${e?.message ?? e}`); });
     setLoadingSess(null);
   }
 
@@ -178,6 +208,10 @@ export default function MobileApp() {
     if (!c) return;
     const r = await c.newSession(p.cwd, { projectId: p.projectId });
     loadedRef.current.add(r.sessionId);
+    activeSessionRef.current = r.sessionId;
+    setConfigBySession((all) => ({ ...all, [r.sessionId]: r.configOptions ?? [] }));
+    setPicker(null);
+    setModelSearch("");
     await refresh();
     setOpen(r.sessionId);
   }
@@ -198,6 +232,23 @@ export default function MobileApp() {
     }
   }
 
+  async function chooseOption(configId: string, value: string) {
+    const sid = open;
+    const c = client.current;
+    if (!sid || !c || settingOption) return;
+    setSettingOption(true);
+    try {
+      const r: any = await c.setConfigOption(sid, configId, value);
+      if (Array.isArray(r?.configOptions)) setConfigBySession((all) => ({ ...all, [sid]: r.configOptions }));
+      setPicker(null);
+      setModelSearch("");
+    } catch (e: any) {
+      setToast(`Could not change ${configId === "model" ? "model" : "reasoning"}: ${e?.message ?? e}`);
+    } finally {
+      setSettingOption(false);
+    }
+  }
+
   const sess = (open && state[open]) || emptySession();
   useEffect(() => {
     const el = scroller.current;
@@ -215,7 +266,7 @@ export default function MobileApp() {
     return [...m.values()];
   }, [list, projects]);
 
-  const back = () => transition(() => setOpen(null));
+  const back = () => { activeSessionRef.current = null; setPicker(null); transition(() => setOpen(null)); };
   useSwipeBack(threadView, !!open, back);
   usePullToRefresh(listRef, ptr, !!creds && !open, async () => { await refresh(); setToast("Up to date"); });
 
@@ -223,6 +274,11 @@ export default function MobileApp() {
 
   const title = list.find((s) => s.sessionId === open)?.title ?? "Chat";
   const isBusy = !!(open && busy[open]);
+  const sessionOptions = (open && configBySession[open]) || [];
+  const modelOption = sessionOptions.find((o) => o.id === "model" && o.options?.length);
+  const reasoningOption = sessionOptions.find((o) => o.id === "reasoning_effort" && o.options?.length);
+  const activeOption = sessionOptions.find((o) => o.id === picker);
+  const optionLabel = (option: ConfigOption) => option.options?.find((v) => v.value === option.currentValue)?.name ?? option.currentValue ?? option.name ?? option.id;
   const renderItem = (m: ChatItem, i: number) =>
     m.kind === "tool" ? (sess.toolCalls[m.toolCallId] ? <ToolCard key={i} tc={sess.toolCalls[m.toolCallId]} compact /> : null) : m.kind === "agent" ? <div key={i} className="bubble agent"><Markdown text={m.text} /></div> : <div key={i} className={`bubble ${(m as any).error ? "error" : m.kind}`} role={(m as any).error ? "alert" : undefined}>{m.text}</div>;
 
@@ -287,9 +343,28 @@ export default function MobileApp() {
               {isBusy && <div className="typing"><i /><i /><i /></div>}
             </div>
           </div>
+          {(modelOption || reasoningOption) && <div className="m-config-bar">
+            {modelOption && <button className="m-config-chip" data-testid="m-model" aria-label={`Model: ${optionLabel(modelOption)}`} onClick={() => { setModelSearch(""); setPicker("model"); }}><Icon name="bolt" size={14} />{optionLabel(modelOption)}</button>}
+            {reasoningOption && <button className="m-config-chip" data-testid="m-reasoning" aria-label={`Reasoning: ${optionLabel(reasoningOption)}`} onClick={() => setPicker("reasoning_effort")}>Reasoning: {optionLabel(reasoningOption)}</button>}
+          </div>}
           <div className="m-composer">
             <textarea rows={1} value={draft} placeholder="Message Supercharge…" data-testid="m-input" onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!isBusy) void send(); } }} />
             {isBusy ? <button className="danger round" aria-label="Stop" onClick={() => client.current?.cancel(open)}><Icon name="stop" /></button> : <button className="round" aria-label="Send" disabled={!draft.trim()} onClick={() => void send()} data-testid="m-send"><Icon name="send" /></button>}
+          </div>
+        </div>
+      )}
+      {open && activeOption && (
+        <div className="m-sheet-bg" onClick={() => setPicker(null)}>
+          <div className="m-sheet m-config-sheet" role="dialog" aria-label={picker === "model" ? "Choose model" : "Choose reasoning"} data-testid="m-config-picker" onClick={(e) => e.stopPropagation()}>
+            <div className="m-picker-head"><h3>{picker === "model" ? "Model" : "Reasoning"}</h3><button className="icon" aria-label="Close picker" onClick={() => setPicker(null)}>×</button></div>
+            {picker === "model" && <input type="search" aria-label="Search models" placeholder="Search models" value={modelSearch} onChange={(e) => setModelSearch(e.target.value)} />}
+            <div className="m-picker-options">
+              {(activeOption.options ?? []).filter((v) => picker !== "model" || `${v.name ?? ""} ${v.value}`.toLowerCase().includes(modelSearch.trim().toLowerCase())).map((v) => (
+                <button key={v.value} className="m-picker-option" aria-pressed={v.value === activeOption.currentValue} disabled={settingOption} onClick={() => void chooseOption(activeOption.id, v.value)}>
+                  <span>{v.name ?? v.value}</span>{v.name && v.name !== v.value && <small>{v.value}</small>}{v.value === activeOption.currentValue && <span aria-hidden="true">✓</span>}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}

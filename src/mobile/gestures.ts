@@ -55,9 +55,10 @@ export function usePullToRefresh(el: React.RefObject<HTMLElement | null>, indica
     const n = el.current, ind = indicator.current;
     if (!n || !ind || !enabled) return;
     const MAX = 80, TRIGGER = 60;
-    let y0 = 0, dy = 0, active = false, busy = false, raf = 0;
+    let y0 = 0, dy = 0, active = false, busy = false, raf = 0, disposed = false;
     const paint = () => {
       raf = 0;
+      if (disposed) return;
       const p = Math.min(dy, MAX);
       n.style.transform = p ? `translate3d(0,${p * 0.6}px,0)` : "";
       ind.style.opacity = String(Math.min(1, p / TRIGGER));
@@ -78,6 +79,18 @@ export function usePullToRefresh(el: React.RefObject<HTMLElement | null>, indica
     n.addEventListener("touchstart", start, { passive: true });
     n.addEventListener("touchmove", move, { passive: true });
     n.addEventListener("touchend", end);
-    return () => { n.removeEventListener("touchstart", start); n.removeEventListener("touchmove", move); n.removeEventListener("touchend", end); cancelAnimationFrame(raf); };
+    return () => {
+      disposed = true;
+      n.removeEventListener("touchstart", start);
+      n.removeEventListener("touchmove", move);
+      n.removeEventListener("touchend", end);
+      cancelAnimationFrame(raf);
+      n.style.removeProperty("transform");
+      n.style.removeProperty("transition");
+      ind.style.removeProperty("opacity");
+      ind.style.removeProperty("transform");
+      ind.style.removeProperty("transition");
+      ind.classList.remove("spin");
+    };
   }, [el, indicator, enabled]);
 }

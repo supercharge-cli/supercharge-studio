@@ -32,6 +32,24 @@ test("pairs with the gateway, lists projects/chats and replays history", async (
   await expect(page.getByTestId("m-status")).toHaveText("open");
 });
 
+test("touch navigation paints the chat after leaving the project list", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  try {
+    const page = await context.newPage();
+    await pair(page);
+    await page.getByTestId("m-chat").first().tap();
+    await expect(page.getByTestId("m-thread")).toContainText("The token check is inverted.");
+    await expect.poll(() => page.locator(".m-thread .bubble").first().evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const parent = el.closest(".m-thread")!;
+      const p = parent.getBoundingClientRect();
+      return getComputedStyle(parent).opacity !== "0" && r.right > p.left && r.left < p.right && r.bottom > p.top && r.top < p.bottom;
+    })).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
 test("continues a session with streaming and diff tool cards", async ({ page }) => {
   await pair(page);
   await page.getByTestId("m-chat").first().click();

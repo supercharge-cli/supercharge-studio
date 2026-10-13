@@ -4,7 +4,7 @@ import { parseAgentUrl, uid } from "../lib/store";
 import type { ConfigOption } from "../acp/types";
 import { Icon } from "./Icon";
 import { themeList } from "../lib/themes";
-import { agentInfo, agentLog, type AgentInfo } from "../lib/desktop";
+import { agentInfo, agentLog, providerDiscoverModels, type AgentInfo, type DiscoveredModel } from "../lib/desktop";
 
 type Props = {
   value: S;
@@ -40,6 +40,23 @@ const FORMATS: { v: ApiFormat; label: string }[] = [
 function ProviderEditor({ p, desktop, onChange, onKey, onRemove }: { p: Provider; desktop: boolean; onChange: (p: Provider) => void; onKey: (k: string) => Promise<string>; onRemove: () => void }) {
   const [key, setKey] = useState("");
   const [keyState, setKeyState] = useState("");
+  const [discovered, setDiscovered] = useState<DiscoveredModel[] | null>(null);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const discover = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setDiscovered(await providerDiscoverModels(p.id, p.baseUrl.trim()));
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    } finally {
+      setLoading(false);
+    }
+  };
+  const available: DiscoveredModel[] = [...(discovered ?? []), ...p.models.filter((id) => !discovered?.some((m) => m.id === id)).map((id) => ({ id }))];
+  const shown = available.filter((m) => `${m.name ?? ""} ${m.id}`.toLowerCase().includes(search.toLowerCase()));
   return (
     <div className="card" data-testid="provider-editor">
       <div className="grid2">
@@ -51,13 +68,25 @@ function ProviderEditor({ p, desktop, onChange, onKey, onRemove }: { p: Provider
         </label>
       </div>
       <label>Base URL<input data-testid="prov-url" placeholder="https://api.example.com/v1" value={p.baseUrl} onChange={(e) => onChange({ ...p, baseUrl: e.target.value })} /></label>
-      <label>Model IDs (comma separated)
-        <input data-testid="prov-models" value={p.models.join(", ")} onChange={(e) => onChange({ ...p, models: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} />
-      </label>
+      <div className="provider-models">
+        <div className="row between"><strong>Available models</strong><button className="secondary" data-testid="prov-discover" disabled={!desktop || !p.baseUrl.trim() || loading} onClick={() => void discover()}>{loading ? "Finding models…" : "Refresh models"}</button></div>
+        <p className="muted">Choose the models you want available in chats. The desktop app checks /models with and without your saved key.</p>
+        {!desktop && <p className="muted">Model discovery requires the desktop app.</p>}
+        {error && <p className="danger-text" role="alert">{error}</p>}
+        {discovered?.length === 0 && <p className="muted" role="status">The provider returned no models. Your saved selection is unchanged.</p>}
+        {available.length > 0 && <input data-testid="prov-model-search" aria-label="Search available models" placeholder="Search models…" value={search} onChange={(e) => setSearch(e.target.value)} />}
+        <div className="provider-model-list" data-testid="prov-model-list">
+          {shown.map((m) => <label key={m.id} className="check provider-model-row"><input type="checkbox" data-testid="prov-model-choice" checked={p.models.includes(m.id)} onChange={(e) => onChange({ ...p, models: e.target.checked ? [...p.models, m.id] : p.models.filter((id) => id !== m.id) })} />
+            <span><strong>{m.name ?? m.id}</strong>{m.name && m.name !== m.id && <small>{m.id}</small>}{m.context && <small>Context: {m.context.toLocaleString()} tokens</small>}{m.reasoning === true && <small>Reasoning supported</small>}</span>
+          </label>)}
+          {!shown.length && <span className="muted">{discovered ? (discovered.length ? "No matching models" : "The provider returned no models.") : "Refresh to discover available models."}</span>}
+        </div>
+        <p className="muted">{p.models.length} selected{discovered && p.models.some((id) => !discovered.some((m) => m.id === id)) ? " · Some saved models were not returned; they remain selected until you remove them." : ""}</p>
+      </div>
       <label>API key
         <div className="row">
           <input data-testid="prov-key" type="password" placeholder={desktop ? "Stored securely; leave blank to keep" : "Desktop app required"} value={key} disabled={!desktop} onChange={(e) => setKey(e.target.value)} />
-          <button className="secondary" disabled={!desktop || !key} onClick={async () => { setKeyState(`Saved (${await onKey(key)})`); setKey(""); }}>Save key</button>
+          <button className="secondary" disabled={!desktop || !key} onClick={async () => { try { setKeyState(`Saved (${await onKey(key)})`); setKey(""); } catch (e: any) { setKeyState(`Could not save key: ${e?.message ?? e}`); } }}>Save key</button>
         </div>
       </label>
       <div className="row between">
@@ -74,6 +103,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
   const [tab, setTab] = useState<Section>(props.initial ?? "connection");
   const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
+  const [providerError, setProviderError] = useState("");
   const providers = s.providers ?? [];
   const setProviders = (ps: Provider[]) => set({ ...s, providers: ps });
 
@@ -125,6 +155,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
         {tab === "providers" && (
           <div className="stack">
             <p className="muted">Providers are written to the Supercharge agent config; the active one becomes the default model. Keys stay in secure storage.</p>
+            {providerError && <p className="danger-text" role="alert">{providerError}</p>}
             {providers.length === 0 && <div className="empty-card">No providers yet. Add one to use your own API key.</div>}
             {providers.map((p) => (
               <div key={p.id}>
@@ -136,11 +167,13 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
                   {s.activeProviderId === p.id ? (
                     <span className="pill ok"><Icon name="check" size={12} /> Active</span>
                   ) : (
-                    <button className="secondary" data-testid="prov-use" disabled={!!busy} onClick={async () => {
+                    <button className="secondary" data-testid="prov-use" disabled={!!busy || !p.models.length} onClick={async () => {
                       setBusy(p.id);
                       try {
                         await props.onActivate(p, providers);
                         set({ ...s, activeProviderId: p.id });
+                      } catch (e: any) {
+                        setProviderError(String(e?.message ?? e));
                       } finally {
                         setBusy("");
                       }

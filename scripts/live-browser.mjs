@@ -48,6 +48,7 @@ try {
     await sleep(500);
   }
   console.log("app state:", st);
+  await exec("document.querySelector('button[title=\"Close (Esc)\"]')?.click();return true");
   async function round(label, secret, url) {
     seen.length = 0;
     const prompt = `Use the side browser tools: open ${url} , click the "Reveal code" button, then tell me exactly the code shown in the paragraph below the button.`;
@@ -60,7 +61,7 @@ try {
       await sleep(2000);
       const r = await exec("return { busy: !!document.querySelector('.composer button[aria-label=Stop]'), reply: [...document.querySelectorAll('.bubble.agent')].map(e=>e.innerText).pop()||'', tools: [...document.querySelectorAll('.toolcard')].map(e=>e.innerText.split('\\n')[0]).slice(-8), sys: [...document.querySelectorAll('.bubble.system')].map(e=>e.innerText).slice(-2) }");
       reply = r.reply;
-      if (reply.includes(secret) || (!r.busy && Date.now() - t0 > 15000)) { console.log(`[${label}] tools:`, JSON.stringify(r.tools), r.sys.length ? "system: " + JSON.stringify(r.sys) : ""); break; }
+      if (reply.includes(secret) || (!r.busy && !seen.includes("/clicked") && Date.now() - t0 > 30000)) { console.log(`[${label}] tools:`, JSON.stringify(r.tools), r.sys.length ? "system: " + JSON.stringify(r.sys) : ""); break; }
     }
     const png = await call("GET", s("/screenshot")).catch(() => null);
     if (png) writeFileSync(`/tmp/live-browser-${label}.png`, Buffer.from(png, "base64"));

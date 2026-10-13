@@ -16,7 +16,7 @@ on:
       tag:
         description: "Release tag (created if missing)"
         required: true
-        default: v0.1.0
+        default: v0.1.4
 
 permissions:
   contents: write

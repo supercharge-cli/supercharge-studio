@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { b64, Channel, deviceKey, hex, hmac, parsePairUri, sessionKey } from "../src/gateway/crypto";
 import { GatewayHub, HubHost } from "../src/gateway/hub";
+import type { ConfigOption } from "../src/acp/types";
 
 describe("gateway crypto", () => {
   it("seals and opens across directions, rejects replay and tampering", async () => {
@@ -43,8 +44,18 @@ const RUST_FRAME = "00000000000000019a5c67de7d49a6a5a8c6cd26d05da1de57c8cff4";
 
 function makeHub() {
   const sent: { d: string; m: any }[] = [];
+  const options = new Map<string, ConfigOption[]>([
+    ["s1", [{ id: "model", currentValue: "fast", options: [{ value: "fast", name: "Fast" }, { value: "deep", name: "Deep" }] }, { id: "reasoning_effort", currentValue: "low", options: [{ value: "low" }, { value: "high" }] }, { id: "secret", options: [{ value: "private" }] }]],
+    ["s2", [{ id: "model", currentValue: "deep", options: [{ value: "deep", name: "Deep" }] }]],
+  ]);
   const host: HubHost = {
-    sessions: () => [{ sessionId: "s1", title: "Fix bug", cwd: "/w", project: "w", projectId: "p1", group: "Personal" }],
+    sessions: () => [{ sessionId: "s1", title: "Fix bug", cwd: "/w", project: "w", projectId: "p1", group: "Personal" }, { sessionId: "s2", title: "New chat", cwd: "/w", project: "w", projectId: "p1", group: "Personal" }],
+    configOptions: (sid) => options.get(sid) ?? [],
+    setConfigOption: vi.fn(async (sid, configId, value) => {
+      const next = (options.get(sid) ?? []).map((o) => o.id === configId ? { ...o, currentValue: value } : o);
+      options.set(sid, next);
+      return next;
+    }),
     projects: () => [{ projectId: "p1", name: "w", cwd: "/w", group: "Personal" }],
     prompt: vi.fn(async () => ({ stopReason: "end_turn" })),
     cancel: vi.fn(),
@@ -88,6 +99,32 @@ describe("gateway hub", () => {
     expect(host.focus).toHaveBeenCalledWith("s1");
     hub.connected("B");
     expect(hub.handoff("s1")).toBe(2);
+  });
+  it("returns each session's options on load and new", async () => {
+    const { hub, sent } = makeHub();
+    await hub.receive("A", { id: 1, method: "session/load", params: { sessionId: "s1" } });
+    expect(sent.at(-1)!.m.result.configOptions[0]).toMatchObject({ id: "model", currentValue: "fast" });
+    await hub.receive("A", { id: 2, method: "session/new", params: { cwd: "/w" } });
+    expect(sent.at(-1)!.m.result).toMatchObject({ sessionId: "s2", configOptions: [{ id: "model", currentValue: "deep" }] });
+  });
+  it("validates model and reasoning changes and fans out only to subscribed devices", async () => {
+    const { hub, host, sent } = makeHub();
+    await hub.receive("A", { id: 1, method: "session/load", params: { sessionId: "s1" } });
+    await hub.receive("B", { id: 2, method: "session/load", params: { sessionId: "s1" } });
+    await hub.receive("C", { id: 3, method: "session/load", params: { sessionId: "s2" } });
+    sent.length = 0;
+    for (const [id, configId, value, sessionId] of [[4, "secret", "private", "s1"], [5, "model", "invalid", "s1"], [6, "model", "deep", "unknown"], [7, "reasoning_effort", "high", "s2"]] as const) {
+      await hub.receive("A", { id, method: "session/set_config_option", params: { sessionId, configId, value } });
+      expect(sent.at(-1)!.m.error.code).toBe(-32602);
+    }
+    expect(host.setConfigOption).not.toHaveBeenCalled();
+    await hub.receive("A", { id: 8, method: "session/set_config_option", params: { sessionId: "s1", configId: "model", value: "deep" } });
+    expect(host.setConfigOption).toHaveBeenCalledWith("s1", "model", "deep");
+    expect(sent.find((x) => x.m.id === 8)!.m.result.configOptions[0].currentValue).toBe("deep");
+    expect(sent.filter((x) => x.m.method === "session/update").map((x) => x.d).sort()).toEqual(["A", "B"]);
+    expect(sent.find((x) => x.m.method === "session/update")!.m.params.update.configOptions[0]).toMatchObject({ id: "model", currentValue: "deep" });
+    await hub.receive("A", { id: 9, method: "session/set_config_option", params: { sessionId: "s1", configId: "reasoning_effort", value: "high" } });
+    expect(host.setConfigOption).toHaveBeenCalledWith("s1", "reasoning_effort", "high");
   });
   it("fans out permission requests: first device answer wins, others are dismissed", async () => {
     const { hub, sent } = makeHub();

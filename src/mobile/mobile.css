@@ -50,3 +50,12 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-thread{overscroll-behavior-y:contain}
 .m-thread .row-wrap,.m-thread .bubble{content-visibility:auto;contain-intrinsic-size:auto 56px}
 .no-vt .m-view,.no-vt .m-list{animation:rise .26s var(--spring-soft) both}
+.m-config-bar{display:flex;gap:8px;padding:7px 10px;border-top:1px solid var(--line);background:var(--panel);overflow-x:auto}
+.m-config-chip{flex:none;display:flex;align-items:center;gap:6px;max-width:65%;padding:5px 10px;border-radius:20px;background:var(--hover);color:var(--fg);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-config-sheet input[type=search]{width:100%;font-size:16px}
+.m-picker-head{display:flex;align-items:center;justify-content:space-between}
+.m-picker-options{overflow-y:auto;min-height:0}
+.m-picker-option{display:flex;align-items:center;gap:8px;width:100%;padding:12px;text-align:left;border-radius:10px;color:var(--fg);background:none}
+.m-picker-option span:first-child{flex:1;overflow:hidden;text-overflow:ellipsis}
+.m-picker-option small{color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.m-picker-option[aria-pressed=true]{background:var(--hover);color:var(--acc)}

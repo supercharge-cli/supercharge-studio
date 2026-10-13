@@ -25,7 +25,6 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
-use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 
@@ -242,7 +241,7 @@ async fn handle_ws<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(app:
 
     let mut ch = Channel::new(&sk, true);
     let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
-    if let Some(old) = st().conns.insert(device_id.clone(), tx) {
+    if let Some(old) = st().conns.insert(device_id.clone(), tx.clone()) {
         drop(old);
     }
     let _ = app.emit("gateway://connected", json!({ "deviceId": device_id, "name": name }));
@@ -268,13 +267,18 @@ async fn handle_ws<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(app:
             },
         }
     };
-    {
+    let disconnected = {
         let mut s = st();
-        if s.conns.get(&device_id).map(|c| c.is_closed()).unwrap_or(false) {
+        if s.conns.get(&device_id).is_some_and(|current| current.same_channel(&tx)) {
             s.conns.remove(&device_id);
+            true
+        } else {
+            false
         }
+    };
+    if disconnected {
+        let _ = app.emit("gateway://disconnected", json!({ "deviceId": device_id }));
     }
-    let _ = app.emit("gateway://disconnected", json!({ "deviceId": device_id }));
     result
 }
 

@@ -354,7 +354,7 @@ pub fn run() {
             stdio_start, stdio_send, stdio_stop,
             browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible, browser_screenshot,
             secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info,
-            providers::provider_set_key, providers::provider_has_key, providers::provider_seed_from_env, providers::provider_apply, agent_restart,
+            providers::provider_set_key, providers::provider_has_key, providers::provider_seed_from_env, providers::provider_apply, providers::provider_discover_models, agent_restart,
             gateway::gateway_status, gateway::gateway_start, gateway::gateway_firewall_allow, gateway::gateway_stop, gateway::gateway_pair_begin, gateway::gateway_pair_answer, gateway::gateway_revoke, gateway::gateway_send, gateway::gateway_relay_set,
             files::fs_list, files::fs_read_text
         ])

@@ -69,6 +69,12 @@ wss.on("connection", (ws: WebSocket) => {
   let nextId = 1000;
   const pending = new Map<number, (m: any) => void>();
   const cancelled = new Set<string>();
+  const modelChoices = new Map<string, string>();
+  const reasoningChoices = new Map<string, string>();
+  const optionsFor = (sid: string) => [
+    { id: "model", name: "Model", currentValue: modelChoices.get(sid) ?? "studio-test-1", options: [{ value: "studio-test-1", name: "First" }, { value: "studio-test-2", name: "Second" }] },
+    { id: "reasoning_effort", name: "Reasoning Effort", currentValue: reasoningChoices.get(sid) ?? "high", options: [{ value: "high", name: "High" }, { value: "low", name: "Low" }] },
+  ];
   const send = (m: any) => ws.send(JSON.stringify({ jsonrpc: "2.0", ...m }));
   const update = (sessionId: string, u: any) => send({ method: "session/update", params: { sessionId, update: u } });
   const say = (sid: string, text: string) => update(sid, { sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
@@ -113,7 +119,7 @@ wss.on("connection", (ws: WebSocket) => {
         attach(sid);
         update(sid, { sessionUpdate: "user_message_chunk", content: { type: "text", text: `earlier question in ${sid}` } });
         say(sid, `History of ${sid} in ${m.params?.cwd}`);
-        return reply({});
+        return reply({ configOptions: optionsFor(sid) });
       }
       case "_supercharge/session/steer": {
         if (process.env.FAKE_AGENT_STEER !== "1") return send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });
@@ -141,10 +147,17 @@ wss.on("connection", (ws: WebSocket) => {
         if (CLI) setTimeout(() => send({ method: "_supercharge/sessions/changed", params: {} }), 20);
         return reply({
           sessionId: `fake-${st.n}`,
-          configOptions: [{ id: "reasoning_effort", name: "Reasoning Effort", currentValue: "high", options: [{ value: "high", name: "High" }, { value: "low", name: "Low" }] }],
+          configOptions: optionsFor(`fake-${st.n}`),
         });
-      case "session/set_config_option":
-        return reply({ configOptions: [] });
+      case "session/set_config_option": {
+        const sid = m.params?.sessionId;
+        if (!known.has(sid)) return send({ id: m.id, error: { code: -32602, message: "unknown session id" } });
+        if (m.params?.configId === "model") modelChoices.set(sid, m.params.value);
+        if (m.params?.configId === "reasoning_effort") reasoningChoices.set(sid, m.params.value);
+        const options = optionsFor(sid);
+        update(sid, { sessionUpdate: "config_option_update", configOptions: options });
+        return reply({ configOptions: options });
+      }
       case "session/cancel":
         cancelled.add(m.params.sessionId);
         return;

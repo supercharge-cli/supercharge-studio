@@ -3,12 +3,13 @@
  * and multiplexes them onto the desktop's own ACP session(s).
  *
  * Allowed device → desktop methods: initialize, session/list, session/load, session/new,
- * session/prompt, session/cancel, _supercharge/focus. Everything else is rejected.
+ * session/prompt, session/cancel, session/set_config_option (model/reasoning only),
+ * _supercharge/focus. Everything else is rejected.
  * Desktop → device: session/update (live + replay), session/request_permission (fan-out,
  * first answer wins), _supercharge/permission/resolved, _supercharge/handoff,
  * _supercharge/sessions/changed.
  */
-import type { PermissionOutcome } from "../acp/types";
+import type { ConfigOption, PermissionOutcome } from "../acp/types";
 
 export type HubSession = { sessionId: string; title: string; cwd: string; project: string; projectId: string; group: string; updatedAt?: number; busy?: boolean };
 export type HubProject = { projectId: string; name: string; cwd: string; group: string };
@@ -19,6 +20,8 @@ export interface HubHost {
   prompt(sessionId: string, text: string, from: string): Promise<{ stopReason: string; usage?: unknown }>;
   cancel(sessionId: string): void;
   newSession(projectId: string): Promise<string>;
+  configOptions?(sessionId: string): ConfigOption[];
+  setConfigOption?(sessionId: string, id: string, value: string): Promise<ConfigOption[]>;
   focus(sessionId: string): void;
   /** Make sure a session's history is available (e.g. load it from the agent). */
   ensureLoaded?(sessionId: string): Promise<void>;
@@ -27,7 +30,7 @@ export interface HubHost {
 type Msg = { jsonrpc?: "2.0"; id?: number | string; method?: string; params?: any; result?: any; error?: any };
 type Send = (deviceId: string, msg: Msg) => void;
 
-const ALLOWED = new Set(["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "_supercharge/focus"]);
+const ALLOWED = new Set(["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "session/set_config_option", "_supercharge/focus"]);
 const MAX_REPLAY = 3000;
 
 export class GatewayHub {
@@ -147,7 +150,7 @@ export class GatewayHub {
           for (const u of this.buffers.get(sid) ?? []) this.send(deviceId, { jsonrpc: "2.0", method: "session/update", params: { sessionId: sid, update: u } });
           if (!this.subs.has(sid)) this.subs.set(sid, new Set());
           this.subs.get(sid)!.add(deviceId);
-          return this.reply(deviceId, id, {});
+          return this.reply(deviceId, id, { configOptions: this.host.configOptions?.(sid) ?? [] });
         }
         case "session/new": {
           const pid = String(params?._meta?.projectId ?? this.host.projects().find((p) => p.cwd === params.cwd)?.projectId ?? "");
@@ -156,7 +159,20 @@ export class GatewayHub {
           if (!this.subs.has(sid)) this.subs.set(sid, new Set());
           this.subs.get(sid)!.add(deviceId);
           this.sessionsChanged();
-          return this.reply(deviceId, id, { sessionId: sid });
+          return this.reply(deviceId, id, { sessionId: sid, configOptions: this.host.configOptions?.(sid) ?? [] });
+        }
+        case "session/set_config_option": {
+          const sid = params.sessionId;
+          const configId = params.configId;
+          const value = params.value;
+          if (typeof sid !== "string" || !this.host.sessions().some((s) => s.sessionId === sid)) return this.fail(deviceId, id, -32602, "Unknown session");
+          const option = (this.host.configOptions?.(sid) ?? []).find((o) => o.id === configId);
+          if (!(["model", "reasoning_effort"].includes(configId) && typeof value === "string" && option?.options?.some((o) => o.value === value)))
+            return this.fail(deviceId, id, -32602, "Invalid config option or value");
+          if (!this.host.setConfigOption) return this.fail(deviceId, id, -32603, "Session configuration unavailable");
+          const configOptions = await this.host.setConfigOption(sid, configId, value);
+          this.update(sid, { sessionUpdate: "config_option_update", configOptions });
+          return this.reply(deviceId, id, { configOptions });
         }
         case "session/prompt": {
           const sid = String(params.sessionId ?? "");

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-provider-discover-models"
+description = "Enables the provider_discover_models command without any pre-configured scope."
+commands.allow = ["provider_discover_models"]
+
+[[permission]]
+identifier = "deny-provider-discover-models"
+description = "Denies the provider_discover_models command without any pre-configured scope."
+commands.deny = ["provider_discover_models"]

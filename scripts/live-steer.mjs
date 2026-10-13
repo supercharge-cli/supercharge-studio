@@ -35,6 +35,7 @@ try {
   for (let i = 0; i < 50; i++) { try { await fetch(W + "/status"); break; } catch { await sleep(200); } }
   sid = (await call("POST", "/session", { capabilities: { alwaysMatch: { "tauri:options": { application: BIN }, pageLoadStrategy: "none" } } })).sessionId;
   for (let i = 0; i < 120; i++) { const st = await exec("return document.querySelector('.status')?.textContent||''").catch(() => ""); if (st === "open") break; await sleep(500); }
+  await exec("document.querySelector('button[title=\"Close (Esc)\"]')?.click();return true");
   await exec("document.querySelector('[data-testid=new-chat]')?.click();return true"); await sleep(600);
 
   // 1) queue

@@ -9,6 +9,9 @@ import { BrowserPanel } from "./components/BrowserPanel";
 const CliSetup = lazy(() => import("./components/CliSetup"));
 import { Command, CommandPalette } from "./components/CommandPalette";
 import { ComposerMenu } from "./components/ComposerMenu";
+import { ModelControls } from "./components/ModelControls";
+import { optionFor, updateSessionOptions } from "./lib/sessionOptions";
+import { providerCatalogKey } from "./lib/catalog";
 import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./lib/composer";
 import { resolveTheme, themeList } from "./lib/themes";
 import { extractMentions, fileItems, mentionBlocks } from "./lib/mentions";
@@ -61,7 +64,12 @@ export default function App() {
   const [perm, setPerm] = useState<PermState | null>(null);
   const [pairReq, setPairReq] = useState<{ pairingId: string; name: string } | null>(null);
   const [devicesOnline, setDevicesOnline] = useState(0);
-  const [configOptions, setConfigOptions] = useState<ConfigOption[]>([]);
+  const [optionsBySession, setOptionsBySession] = useState<Record<string, ConfigOption[]>>({});
+  const optionsRef = useRef<Record<string, ConfigOption[]>>({});
+  const rememberOptions = (sid: string, options: ConfigOption[]) => {
+    optionsRef.current = updateSessionOptions(optionsRef.current, sid, options);
+    setOptionsBySession(optionsRef.current);
+  };
   const [usage, setUsage] = useState<UsageRecord[]>(loadUsage);
   const [pricing, setPricing] = useState(loadPricing);
   const clientRef = useRef<AcpClient | null>(null);
@@ -159,6 +167,14 @@ export default function App() {
           return runPrompt(f.project.id, f.chat.id, text, from);
         },
         cancel: (sid) => void clientRef.current?.cancel(sid),
+        configOptions: (sid) => optionsRef.current[sid] ?? [],
+        setConfigOption: async (sid, id, value) => {
+          const c = clientRef.current;
+          if (!c) throw new Error("Agent not connected");
+          const result = await c.setConfigOption(sid, id, value);
+          if (Array.isArray(result?.configOptions)) rememberOptions(sid, result.configOptions);
+          return optionsRef.current[sid] ?? [];
+        },
         newSession: async (projectId) => {
           const cid = newChat(projectId, false);
           const sid = await ensureSession(projectId, cid);
@@ -172,7 +188,7 @@ export default function App() {
         ensureLoaded: async (sid) => {
           const f = chatForSession(sid);
           const c = clientRef.current;
-          if (!f || !c || sessionsRef.current[f.chat.id] || loaded.current.has(sid)) return;
+          if (!f || !c || ((sessionsRef.current[f.chat.id] || loaded.current.has(sid)) && optionsRef.current[sid])) return;
           await selectChat(f.project.id, f.chat.id, false);
         },
       },
@@ -251,6 +267,8 @@ export default function App() {
     }
     secretRef.current = s.secret;
     attached.current.clear();
+    optionsRef.current = {};
+    setOptionsBySession({});
     const client = new AcpClient({
       ...(s.transport === "stdio" ? { transportFactory: () => new StdioTransport(s.alwaysApprove) } : { url: wsUrl(s) }),
       clientMeta: browserClientMeta(),
@@ -266,7 +284,7 @@ export default function App() {
         const cid = f.chat.id;
         enqueue(cid, u);
         const x = u as any;
-        if (u.sessionUpdate === "config_option_update" && Array.isArray(x.configOptions)) setConfigOptions(x.configOptions);
+        if (u.sessionUpdate === "config_option_update" && Array.isArray(x.configOptions)) rememberOptions(sid, x.configOptions);
         if (u.sessionUpdate === "session_info_update" && typeof x.title === "string" && x.title)
           update((d) => ({ ...d, groups: d.groups.map((g) => ({ ...g, projects: g.projects.map((p) => ({ ...p, chats: p.chats.map((c) => (c.id === cid ? { ...c, title: String(x.title).slice(0, 60) } : c)) })) })) }));
         if (x.usage) {
@@ -297,6 +315,8 @@ export default function App() {
         setStatus("Reconnected");
         // A restarted agent forgot every MCP attachment: re-register the browser tools now.
         attached.current.clear();
+        optionsRef.current = {};
+        setOptionsBySession({});
         const d = dataRef.current;
         const f = findProject(d, d.activeProjectId);
         const ch = f?.project.chats.find((x) => x.id === d.activeChatId);
@@ -411,6 +431,7 @@ export default function App() {
 
   const active = findProject(data, data.activeProjectId);
   const activeChat = active?.project.chats.find((c) => c.id === data.activeChatId);
+  const configOptions = activeChat?.sessionId ? optionsBySession[activeChat.sessionId] ?? [] : [];
   const sess = (activeChat && sessions[activeChat.id]) || emptySession();
 
   /** The in-app browser's MCP server, attached to every session/new and session/load. */
@@ -423,7 +444,7 @@ export default function App() {
   /** On model_not_configured, switch the session to a configured model and tell the user. */
   async function recoverModel(c: AcpClient, sid: string, chatId: string, e: unknown): Promise<boolean> {
     const prov = dataRef.current.settings.providers?.find((p) => p.id === dataRef.current.settings.activeProviderId);
-    const r = pickConfiguredModel(e, [...((c.initResult?._meta as any)?.modelState?.currentModelId ? [(c.initResult?._meta as any).modelState.currentModelId] : []), ...(prov?.models ?? [])]);
+    const r = pickConfiguredModel(e, [...((c.initResult?._meta as any)?.modelState?.currentModelId ? [(c.initResult?._meta as any).modelState.currentModelId] : []), ...(prov?.models.map((id) => providerCatalogKey(prov.id, id)) ?? [])]);
     if (!r) return false;
     await c.request("session/set_model", { sessionId: sid, modelId: r.pick }).catch(() => c.setConfigOption(sid, modelOption?.id ?? "model", r.pick).catch(() => {}));
     pushItem(chatId, { kind: "system", text: `This chat was last used with ${r.requested ? `"${r.requested}"` : "a model"}, which isn't configured now. Switched it to "${r.pick}".` });
@@ -442,13 +463,15 @@ export default function App() {
   async function ensureAttached(c: AcpClient, sid: string, cwd: string, chatId: string) {
     if (attached.current.has(sid)) return;
     const mcp = await browserMcp(c);
+    let result;
     if (c.sessionCapability("resume")) {
-      await c.resumeSession(sid, cwd, mcp);
+      result = await c.resumeSession(sid, cwd, mcp);
     } else if (c.initResult?.agentCapabilities?.loadSession) {
       // No resume: load re-sends history; drop the replay into a scratch state.
       replaying.current.add(sid);
-      try { await c.loadSession(sid, cwd, mcp); } finally { replaying.current.delete(sid); }
+      try { result = await c.loadSession(sid, cwd, mcp); } finally { replaying.current.delete(sid); }
     } else return;
+    if (Array.isArray(result?.configOptions)) rememberOptions(sid, result.configOptions);
     attached.current.add(sid);
     void chatId;
   }
@@ -494,7 +517,7 @@ export default function App() {
     if (chat.sessionId) return chat.sessionId;
     const mcpServers = await browserMcp(c);
     const res = await c.newSession(normCwd(found.project.cwd), { yoloMode: dataRef.current.settings.alwaysApprove }, mcpServers);
-    setConfigOptions(res.configOptions ?? []);
+    rememberOptions(res.sessionId, res.configOptions ?? []);
     loaded.current.add(res.sessionId);
     attached.current.add(res.sessionId);
     update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, sessionId: res.sessionId } : x)) })));
@@ -530,10 +553,12 @@ export default function App() {
       const sid = chat.sessionId;
       await c.loadSession(sid, cwd, mcp)
         .catch(async (e: any) => { if (await recoverModel(c, sid, chatId, e)) return c.loadSession(sid, cwd, mcp); throw e; })
-        .then((r: any) => { attached.current.add(sid); if (Array.isArray(r?.configOptions)) setConfigOptions(r.configOptions); })
+        .then((r: any) => { attached.current.add(sid); if (Array.isArray(r?.configOptions)) rememberOptions(sid, r.configOptions); })
         .catch((e: any) => pushItem(chatId, { kind: "system", text: `Could not load this chat's history: ${e?.message ?? e}`, error: "load" } as any));
       flush();
       setLoadingChats((l) => { const n = new Set(l); n.delete(chatId); return n; });
+    } else if (c && chat?.sessionId && !optionsRef.current[chat.sessionId]) {
+      await ensureAttached(c, chat.sessionId, chat.cwd ?? normCwd(findProject(dataRef.current, projectId)!.project.cwd), chatId).catch(() => {});
     }
   }
 
@@ -670,14 +695,19 @@ export default function App() {
   const openSettings = (section?: "connection" | "devices" | "providers" | "agent" | "appearance") => { setSettingsSection(section); setView("settings"); };
 
   // ---- Composer: slash commands ----
-  const modelOption = configOptions.find((o) => /model/i.test(`${o.id} ${o.name ?? ""} ${String((o as any).category ?? "")}`));
+  const modelOption = optionFor(configOptions, "model");
+  const changeOption = (sid: string, id: string, value: string) => {
+    const option = optionsRef.current[sid]?.find((o) => o.id === id);
+    if (!option?.options?.some((v) => v.value === value)) return;
+    void clientRef.current?.setConfigOption(sid, id, value)
+      .then((r: any) => { if (Array.isArray(r?.configOptions)) rememberOptions(sid, r.configOptions); })
+      .catch((e: any) => setNotice(`Could not change ${id}: ${e?.message ?? e}`));
+  };
   const setModel = (v: string) => {
     if (!modelOption || !activeChat?.sessionId) return false;
     const opt = modelOption.options?.find((o) => o.value === v || (o.name ?? "").toLowerCase() === v.toLowerCase());
     if (!opt) return false;
-    void clientRef.current?.setConfigOption(activeChat.sessionId, modelOption.id, opt.value)
-      .then((r: any) => { if (Array.isArray(r?.configOptions)) setConfigOptions(r.configOptions); setNotice(`Model: ${opt.name ?? opt.value}`); })
-      .catch((e: any) => setNotice(`Could not switch model: ${e?.message ?? e}`));
+    changeOption(activeChat.sessionId, modelOption.id, opt.value);
     return true;
   };
   function clearChat() {
@@ -904,12 +934,24 @@ export default function App() {
           extensions={clientRef.current ? [...clientRef.current.extensions.methods, ...clientRef.current.extensions.features, ...clientRef.current.extensions.notifications] : []}
           onClose={() => setView("chat")}
           devices={<DevicesSection desktop={isDesktop()} prefs={gwPrefs} onPrefs={(g) => update((d) => ({ ...d, settings: { ...d.settings, gateway: g } }))} />}
-          onConfig={(id, v) => activeChat?.sessionId && void clientRef.current
-              ?.setConfigOption(activeChat.sessionId, id, v)
-              .then((r: any) => Array.isArray(r?.configOptions) && setConfigOptions(r.configOptions))
-              .catch((e: any) => setNotice(`Could not set ${id}: ${e?.message ?? e}`))}
+          onConfig={(id, v) => { if (activeChat?.sessionId) changeOption(activeChat.sessionId, id, v); }}
           onSave={async (settings) => {
+            const activeProvider = settings.providers?.find((p) => p.id === settings.activeProviderId);
+            if (activeProvider && isDesktop() && !activeProvider.models.length) {
+              setNotice("Choose at least one model for the active provider.");
+              return;
+            }
             const stored = (await keychainSet(settings.secret)) ? { ...settings, secret: "", secretInKeychain: true } : { ...settings, secretInKeychain: false };
+            if (activeProvider && isDesktop()) {
+              try {
+                await providerApply(activeProvider);
+                const result = await agentRestart(stored.bind, secretRef.current || settings.secret, stored.alwaysApprove);
+                if (result === "external") setNotice("Provider saved. Restart the external agent to use its updated model selection.");
+              } catch (e: any) {
+                setNotice(`Could not apply provider: ${e?.message ?? e}`);
+                return;
+              }
+            }
             update((d) => ({ ...d, settings: { ...stored, gateway: d.settings.gateway } }));
             setView("chat");
             void connect();
@@ -1063,6 +1105,7 @@ export default function App() {
                 <span className="muted small">{isBusy ? "Sent when the agent finishes" : "Sending…"}</span>
               </div>
             )}
+            {activeChat?.sessionId && <ModelControls key={activeChat.sessionId} options={configOptions} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)} />}
             <div className="composer">
               <textarea
                 ref={composerRef}

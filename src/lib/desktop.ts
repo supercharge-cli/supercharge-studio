@@ -48,6 +48,8 @@ export async function keychainSet(value: string): Promise<boolean> {
 }
 
 export type ProviderDef = { id: string; name: string; baseUrl: string; format: string; models: string[] };
+export type DiscoveredModel = { id: string; name?: string; context?: number; reasoning?: boolean };
+export const providerDiscoverModels = (id: string, baseUrl: string) => invoke<DiscoveredModel[]>("provider_discover_models", { id, baseUrl });
 export const providerSetKey = (id: string, key: string) => invoke<string>("provider_set_key", { id, key });
 export const providerSeedFromEnv = (id: string) => invoke<ProviderDef | null>("provider_seed_from_env", { id }).catch(() => null);
 export const providerApply = (provider: ProviderDef) => invoke<string[]>("provider_apply", { provider });
