@@ -77,12 +77,7 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
             <span className="muted small">Phones try {(st.urls ?? []).length > 1 ? "these addresses in order" : "this address"}{prefs.relayUrl?.trim() ? ", then the relay" : ""}:</span>
             <ul className="mono small">{(st.urls ?? [st.url ?? ""]).map((u) => <li key={u}>{u}</li>)}</ul>
             <span className="muted small">Phone says it can't reach the gateway? Open <code>{(st.urls?.[0] ?? st.url ?? "").replace(/^ws/, "http").replace(/\/gw$/, "/")}</code> in the phone's browser. If that doesn't load, the phone is on another network or the firewall is blocking port {st.port ?? prefs.port}.</span>
-            {st.firewall && (
-              <div className="fw-hint" data-testid="gw-firewall">
-                <span className="small">A firewall is active on this computer. Allow the gateway port with:</span>
-                <div className="row"><code className="mono small grow">{st.firewall}</code><button className="ghost" onClick={() => void navigator.clipboard?.writeText(st.firewall!.split("  (")[0])}>Copy</button></div>
-              </div>
-            )}
+            {st.firewall && <FirewallBox fw={st.firewall} port={st.port ?? prefs.port} onDone={refresh} />}
           </div>
         )}
         {err && <div className="error-text">{err}</div>}
@@ -95,6 +90,9 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
             <Icon name="qr" /> {pair && left > 0 ? "New code" : "Show pairing code"}
           </button>
         </div>
+        {pair && left > 0 && st?.firewall && st.firewall.open !== true && prefs.mode === "lan" && (
+          <div className="fw-warn" data-testid="gw-pair-firewall"><FirewallBox fw={st.firewall} port={st.port ?? prefs.port} onDone={refresh} prominent /></div>
+        )}
         {pair && left > 0 && (
           <div className="pair">
             <div className="qr" dangerouslySetInnerHTML={{ __html: pair.svg }} />
@@ -122,6 +120,39 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** Firewall status for the gateway port with a one-click "Allow in firewall" where the OS supports it. */
+export function FirewallBox({ fw, port, onDone, prominent }: { fw: NonNullable<GwStatus["firewall"]>; port: number; onDone: () => void; prominent?: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const name = fw.kind === "firewalld" ? "firewalld" : fw.kind === "ufw" ? "ufw" : fw.kind === "windows" ? "Windows Firewall" : "the macOS firewall";
+  const head = fw.open === true ? `Port ${port}/tcp is open in ${name}.`
+    : fw.open === false ? `${name} is blocking port ${port}/tcp, so phones can't connect.`
+    : `${name} is active and may block port ${port}/tcp.`;
+  async function allow() {
+    setBusy(true); setMsg(null);
+    try { setMsg({ ok: true, text: await gateway.firewallAllow() }); } catch (e) { setMsg({ ok: false, text: String((e as Error)?.message ?? e) }); }
+    setBusy(false); onDone();
+  }
+  return (
+    <div className={`fw-hint${prominent ? " prominent" : ""}${fw.open === true ? " ok" : ""}`} data-testid="gw-firewall" data-open={String(fw.open)}>
+      <span className={`small ${fw.open === true ? "" : "warn-text"}`}><b>{head}</b></span>
+      {fw.open !== true && (
+        <>
+          {fw.can_allow && <div className="row"><button data-testid="gw-fw-allow" disabled={busy} onClick={() => void allow()}>{busy ? "Waiting for permission…" : "Allow in firewall"}</button><span className="muted small">{fw.kind === "windows" ? "Windows will ask for administrator approval." : "You'll be asked for your password."}</span></div>}
+          {fw.kind === "macos" ? <span className="small">{fw.cmd}</span> : (
+            <>
+              <span className="muted small">{fw.can_allow ? "Or run it yourself:" : "Run this in a terminal:"}</span>
+              <div className="row"><code className="mono small grow">{fw.cmd}</code><button className="ghost" onClick={() => void navigator.clipboard?.writeText(fw.cmd)}>Copy</button></div>
+            </>
+          )}
+          <span className="muted small">The gateway keeps this port ({port}) across restarts, so the rule only needs adding once.</span>
+        </>
+      )}
+      {msg && <span className={`small ${msg.ok ? "ok-text" : "error-text"}`} data-testid="gw-fw-result">{msg.text}</span>}
     </div>
   );
 }

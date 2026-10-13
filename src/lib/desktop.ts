@@ -56,7 +56,8 @@ export const agentRestart = (bind: string, secret: string, alwaysApprove: boolea
 
 // ---- Mobile gateway (see src-tauri/src/gateway.rs) ----
 export type GwDevice = { id: string; name: string; paired_at: number; last_seen: number };
-export type GwStatus = { running: boolean; url?: string | null; urls?: string[]; firewall?: string | null; port?: number | null; port_note?: string | null; devices: GwDevice[]; connected: string[]; relay?: string };
+export type GwFirewall = { kind: "firewalld" | "ufw" | "windows" | "macos" | string; open: boolean | null; cmd: string; can_allow: boolean };
+export type GwStatus = { running: boolean; url?: string | null; urls?: string[]; firewall?: GwFirewall | null; port?: number | null; port_note?: string | null; devices: GwDevice[]; connected: string[]; relay?: string };
 export type GwPairing = { uri: string; svg: string; expiresAt: number; pairingId: string };
 export const gateway = {
   status: () => invoke<GwStatus>("gateway_status"),
@@ -65,6 +66,7 @@ export const gateway = {
   pairBegin: (publicUrl?: string, desktopName?: string, relayUrl?: string) => invoke<GwPairing>("gateway_pair_begin", { publicUrl, desktopName, relayUrl }),
   pairAnswer: (pairingId: string, allow: boolean) => invoke<void>("gateway_pair_answer", { pairingId, allow }),
   revoke: (deviceId: string) => invoke<void>("gateway_revoke", { deviceId }),
+  firewallAllow: () => invoke<string>("gateway_firewall_allow"),
   relaySet: (relayUrl?: string, hostId?: string) => invoke<void>("gateway_relay_set", { relayUrl, hostId }),
   send: (deviceId: string, msg: unknown) => invoke<boolean>("gateway_send", { deviceId, msg }).catch(() => false),
 };
