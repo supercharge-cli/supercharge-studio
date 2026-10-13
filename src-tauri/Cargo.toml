@@ -30,6 +30,7 @@ sha2 = "0.10"
 aes-gcm = "0.10"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "async-secret-service", "tokio", "crypto-rust"] }
+if-addrs = "0.13"
 
 [profile.release]
 codegen-units = 1

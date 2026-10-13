@@ -84,6 +84,25 @@ try {
   for (const t of ["connection", "providers", "appearance", "agent", "devices"]) { await click(`[data-testid="tab-${t}"]`); await check(`settings-${t}`); }
   await click('[data-testid="tab-connection"]');
   await click('[data-testid="agent-log"] button').catch(() => {}); await check("agent-log");
+  if (process.env.SMOKE_GATEWAY) {
+    // Real gateway end to end: turn it on in the UI, show a code, pair a simulated phone that
+    // first tries a dead address, approve in the app, and exchange an encrypted message.
+    await click('[data-testid="tab-devices"]');
+    if (!(await exec("return !!document.querySelector('[data-testid=gw-toggle]').checked"))) await exec("document.querySelector('[data-testid=gw-toggle]').click()");
+    await find('[data-testid="gw-diag"]', 10000);
+    console.log("gateway diagnostics:", (await exec("return document.querySelector('[data-testid=gw-diag]').innerText")).replace(/\n/g, " | "));
+    await click('[data-testid="gw-pair"]');
+    const uri = await exec("return document.querySelector('[data-testid=gw-uri]').value");
+    console.log("pairing code:", uri.replace(/k=[^&]+/, "k=…"));
+    const phone = spawn("npx", ["vite-node", "scripts/phone-sim.ts", "--", uri, "--dead-first"], { stdio: ["ignore", "pipe", "inherit"] });
+    let out = ""; phone.stdout.on("data", (d) => { out += d; process.stdout.write("phone> " + d); });
+    await click('[data-testid="pair-allow"]').catch(async () => { await sleep(3000); await click('[data-testid="pair-allow"]'); });
+    const code = await new Promise((r) => { phone.on("exit", r); setTimeout(() => r(/encrypted reply: \{/.test(out) ? 0 : 1), 40000); });
+    phone.kill();
+    if (code !== 0 || !/paired: device/.test(out) || !/encrypted reply: \{/.test(out)) throw new Error("gateway: simulated phone did not pair");
+    await check("gateway-paired");
+    console.log("ok  gateway: phone paired through failover");
+  }
   await key(["\uE00C"]);
   await click('[data-testid="collapse-sidebar"]').catch(() => {}); await check("sidebar-collapsed");
   await click('[data-testid="expand-sidebar"]').catch(() => {});

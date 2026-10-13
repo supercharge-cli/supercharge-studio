@@ -63,7 +63,7 @@ export class Channel {
   }
 }
 
-export type PairInfo = { url: string; pairingId: string; secret: Uint8Array; desktopName: string; relay?: string };
+export type PairInfo = { url: string; pairingId: string; secret: Uint8Array; desktopName: string; relay?: string; alts?: string[] };
 export const PAIR_ERROR = "That QR code isn't a Supercharge Studio pairing code. Open Settings → Devices → Show pairing code on your computer and scan that.";
 
 /**
@@ -93,5 +93,7 @@ export function parsePairUri(input: unknown): PairInfo {
   const relay = q.get("r") || undefined;
   if (relay) { let ok = /^wss?:\/\//i.test(relay); try { new URL(relay); } catch { ok = false; } if (!ok) fail("This pairing code has an invalid relay address."); }
   const desktopName = (q.get("n") || "Desktop").slice(0, 80);
-  return { url: url!, pairingId: id!, secret, desktopName, relay };
+  // Other direct addresses of the computer (one per network interface); invalid entries are ignored.
+  const alts = (q.get("a") || "").split(",").map((x) => x.trim()).filter((x) => { if (!/^wss?:\/\/[^\s/]+/i.test(x)) return false; try { new URL(x); return x !== url; } catch { return false; } }).slice(0, 6);
+  return { url: url!, pairingId: id!, secret, desktopName, relay, ...(alts.length ? { alts } : {}) };
 }

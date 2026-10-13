@@ -52,6 +52,9 @@ struct Pairing {
 #[derive(Default)]
 struct State {
     url: Option<String>,
+    /// All direct URLs (one per candidate LAN address) when bound to every interface.
+    urls: Vec<String>,
+    port: u16,
     stop: Option<oneshot::Sender<()>>,
     pairings: HashMap<String, Pairing>,
     approvals: HashMap<String, oneshot::Sender<bool>>,
@@ -118,18 +121,123 @@ async fn store_device_secret(id: &str, key: Option<[u8; 32]>) -> Result<(), Stri
     off_runtime(move || crate::secrets::set(&acct, &val).map(|_| ())).await.unwrap_or_else(|| Err("secure storage unavailable".into()))
 }
 
-/// Best-effort LAN address (no packets are sent).
-fn lan_ip() -> String {
+/// Address of the default-route interface (no packets are sent).
+fn route_ip() -> Option<std::net::IpAddr> {
     std::net::UdpSocket::bind("0.0.0.0:0")
         .and_then(|s| s.connect("192.0.2.1:9").map(|_| s))
         .and_then(|s| s.local_addr())
-        .map(|a| a.ip().to_string())
-        .unwrap_or_else(|_| "127.0.0.1".into())
+        .map(|a| a.ip())
+        .ok()
+        .filter(|ip| !ip.is_loopback() && !ip.is_unspecified())
+}
+
+/// Interfaces that are almost never the phone's network (containers, VMs, VPN tunnels).
+fn is_virtual(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    ["docker", "br-", "veth", "virbr", "vmnet", "vboxnet", "tun", "tap", "wg", "utun", "zt", "tailscale", "cni", "flannel", "podman", "lxc", "vethernet"].iter().any(|p| n.starts_with(p) || n.contains("virtual"))
+}
+
+fn is_private(ip: &std::net::Ipv4Addr) -> bool {
+    ip.is_private() || ip.is_link_local()
+}
+
+/// Every IPv4 address a phone on the same network might reach, best first:
+/// the default-route address, then private Wi-Fi/Ethernet addresses, then the rest.
+pub fn lan_ips() -> Vec<String> {
+    let mut scored: Vec<(u8, String)> = Vec::new();
+    let route = route_ip();
+    if let Ok(ifs) = if_addrs::get_if_addrs() {
+        for i in ifs {
+            let std::net::IpAddr::V4(v4) = i.ip() else { continue };
+            if v4.is_loopback() || v4.is_unspecified() {
+                continue;
+            }
+            let score = if Some(i.ip()) == route { 0 } else if is_virtual(&i.name) { 3 } else if v4.is_link_local() { 2 } else if is_private(&v4) { 1 } else { 2 };
+            scored.push((score, v4.to_string()));
+        }
+    }
+    if let Some(r) = route {
+        if !scored.iter().any(|(_, s)| *s == r.to_string()) {
+            scored.push((0, r.to_string()));
+        }
+    }
+    scored.sort_by_key(|(s, _)| *s);
+    let mut out: Vec<String> = Vec::new();
+    for (_, ip) in scored {
+        if !out.contains(&ip) {
+            out.push(ip);
+        }
+    }
+    if out.is_empty() {
+        out.push("127.0.0.1".into());
+    }
+    out
+}
+
+/// A command the user can run to let phones through the local firewall, if one is likely blocking.
+pub fn firewall_hint(port: u16) -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        let ok = |cmd: &str, args: &[&str], want: &str| {
+            std::process::Command::new(cmd)
+                .args(args)
+                .stdin(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim() == want)
+                .unwrap_or(false)
+        };
+        if ok("systemctl", &["is-active", "firewalld"], "active") || ok("firewall-cmd", &["--state"], "running") {
+            return Some(format!("sudo firewall-cmd --permanent --add-port={port}/tcp && sudo firewall-cmd --reload"));
+        }
+        if ok("systemctl", &["is-active", "ufw"], "active") {
+            return Some(format!("sudo ufw allow {port}/tcp"));
+        }
+        None
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Some(format!("netsh advfirewall firewall add rule name=\"Supercharge Studio gateway\" dir=in action=allow protocol=TCP localport={port}  (run in an administrator terminal, or click Allow on the Windows Firewall prompt and tick Private networks)"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Some("If the macOS firewall is on: System Settings → Network → Firewall → Options → allow Supercharge Studio to accept incoming connections.".into())
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    {
+        let _ = port;
+        None
+    }
+}
+
+/// A plain HTTP request (e.g. a phone browser opening http://<ip>:<port>/) gets a short
+/// "reachable" page, so users can test the network path without the app.
+async fn maybe_http_probe(stream: &mut tokio::net::TcpStream) -> bool {
+    use tokio::io::AsyncWriteExt;
+    let mut buf = [0u8; 2048];
+    let n = match tokio::time::timeout(Duration::from_secs(5), stream.peek(&mut buf)).await {
+        Ok(Ok(n)) => n,
+        _ => return false,
+    };
+    let head = String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase();
+    if !head.starts_with("get ") || head.contains("upgrade: websocket") || !head.contains("\r\n\r\n") {
+        return false;
+    }
+    let body = "Supercharge Studio gateway is reachable. Pair from the Supercharge Studio app.\n";
+    let resp = format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\n\r\n{body}", body.len());
+    let mut sink = [0u8; 2048];
+    let _ = tokio::io::AsyncReadExt::read(stream, &mut sink).await;
+    let _ = stream.write_all(resp.as_bytes()).await;
+    let _ = stream.shutdown().await;
+    true
 }
 
 // ---------- connection ----------
 
-async fn handle(app: AppHandle, stream: tokio::net::TcpStream) -> Result<(), String> {
+async fn handle(app: AppHandle, mut stream: tokio::net::TcpStream) -> Result<(), String> {
+    if maybe_http_probe(&mut stream).await {
+        return Ok(());
+    }
     let ws = tokio_tungstenite::accept_async(stream).await.map_err(|e| e.to_string())?;
     handle_ws(app, ws).await
 }
@@ -255,6 +363,10 @@ async fn handle_ws<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(app:
 pub struct Status {
     running: bool,
     url: Option<String>,
+    /// Every direct address advertised to phones, best first.
+    urls: Vec<String>,
+    /// Command to open the port in the local firewall when one is active.
+    firewall: Option<String>,
     devices: Vec<Device>,
     connected: Vec<String>,
     /// "off", "connecting", "online" or "retrying in Ns: reason".
@@ -267,6 +379,8 @@ pub fn gateway_status() -> Status {
     Status {
         running: s.url.is_some(),
         url: s.url.clone(),
+        urls: s.urls.clone(),
+        firewall: if s.url.is_some() && s.urls.iter().any(|u| !u.contains("127.0.0.1")) { firewall_hint(s.port) } else { None },
         devices: load_devices(),
         connected: s.conns.iter().filter(|(_, c)| !c.is_closed()).map(|(k, _)| k.clone()).collect(),
         relay: if s.relay_stop.is_some() { s.relay_status.clone() } else { "off".into() },
@@ -282,12 +396,15 @@ pub async fn gateway_start(app: AppHandle, bind: Option<String>) -> Result<Strin
     let bind = bind.unwrap_or_else(|| "0.0.0.0:2420".into());
     let listener = TcpListener::bind(&bind).await.map_err(|e| format!("gateway bind {bind}: {e}"))?;
     let addr = listener.local_addr().map_err(|e| e.to_string())?;
-    let host = if addr.ip().is_unspecified() { lan_ip() } else { addr.ip().to_string() };
-    let url = format!("ws://{host}:{}/gw", addr.port());
+    let hosts = if addr.ip().is_unspecified() { lan_ips() } else { vec![addr.ip().to_string()] };
+    let urls: Vec<String> = hosts.iter().map(|h| format!("ws://{h}:{}/gw", addr.port())).collect();
+    let url = urls[0].clone();
     let (stop_tx, mut stop_rx) = oneshot::channel();
     {
         let mut s = st();
         s.url = Some(url.clone());
+        s.urls = urls;
+        s.port = addr.port();
         s.stop = Some(stop_tx);
     }
     tauri::async_runtime::spawn(async move {
@@ -308,6 +425,7 @@ pub async fn gateway_start(app: AppHandle, bind: Option<String>) -> Result<Strin
 pub fn gateway_stop() {
     let mut s = st();
     s.url = None;
+    s.urls.clear();
     if let Some(t) = s.stop.take() {
         let _ = t.send(());
     }
@@ -324,7 +442,11 @@ pub fn gateway_stop() {
 #[tauri::command]
 pub fn gateway_pair_begin(public_url: Option<String>, desktop_name: Option<String>, relay_url: Option<String>) -> Result<Value, String> {
     let mut s = st();
-    let url = public_url.filter(|u| !u.trim().is_empty()).or_else(|| s.url.clone()).ok_or("gateway is not running")?;
+    let public = public_url.filter(|u| !u.trim().is_empty());
+    let url = public.clone().or_else(|| s.url.clone()).ok_or("gateway is not running")?;
+    // Extra direct addresses the phone tries in turn (other interfaces); capped to keep the QR scannable.
+    let alts: Vec<String> = if public.is_some() { s.urls.clone() } else { s.urls.iter().skip(1).cloned().collect() };
+    let alts: Vec<String> = alts.into_iter().filter(|u| *u != url).take(4).collect();
     let id = format!("p-{}", hex(&rand::<8>()));
     let secret: [u8; 32] = rand();
     let expires = now() + PAIR_TTL_SECS;
@@ -338,6 +460,10 @@ pub fn gateway_pair_begin(public_url: Option<String>, desktop_name: Option<Strin
         B64URL.encode(secret),
         pct(&name)
     );
+    if !alts.is_empty() {
+        uri.push_str("&a=");
+        uri.push_str(&alts.iter().map(|a| pct(a)).collect::<Vec<_>>().join(","));
+    }
     // Optional relay route (device falls back to it; frames stay end-to-end encrypted).
     if let Some(r) = relay_url.filter(|r| r.starts_with("wss://") || r.starts_with("ws://")) {
         uri.push_str("&r=");
@@ -425,6 +551,16 @@ mod tests {
         assert_eq!(hex(&k), "a8d2257bae4eb22c5b7c61b326406960c30a2bec5351a33062fb54d24bdca610");
         assert_eq!(hex(&sk), "5f07b9525e8ae3f800a266d2dc15a0fd4305e9a2073377979ab7e23c27fc74c1");
         assert_eq!(hex(&f), "00000000000000019a5c67de7d49a6a5a8c6cd26d05da1de57c8cff4");
+    }
+
+    #[test]
+    fn lan_ips_never_empty_and_no_loopback_first() {
+        let ips = lan_ips();
+        assert!(!ips.is_empty());
+        if ips.len() > 1 {
+            assert_ne!(ips[0], "127.0.0.1");
+        }
+        assert!(is_virtual("docker0") && is_virtual("virbr0") && !is_virtual("wlp2s0") && !is_virtual("eth0"));
     }
 
     #[test]

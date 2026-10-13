@@ -225,3 +225,15 @@ On Linux the app also uses the software WebKit path by default, which avoids Way
 - `--safe-graphics` additionally forces X11.
 - `SUPERCHARGE_STUDIO_GDK_BACKEND` picks the backend.
 - If a native Wayland start dies early, the app retries once with XWayland.
+
+## Phone says "Cannot reach the desktop gateway"
+
+The pairing code lists every network address of the computer; the phone tries each one, then the relay (if set), and shows which address failed and why.
+
+1. Put the phone on the same Wi-Fi as the computer (not mobile data, not a guest network that isolates clients).
+2. Open `http://<address>:2420/` (shown under Settings → Devices) in the phone's browser. It should say "gateway is reachable".
+3. If it doesn't load, the computer's firewall is blocking the port. Settings → Devices shows the exact command, for example on Fedora:
+   `sudo firewall-cmd --permanent --add-port=2420/tcp && sudo firewall-cmd --reload`, on Ubuntu `sudo ufw allow 2420/tcp`.
+4. Different networks: set a relay URL (see docs/RELAY.md) and show a new code.
+
+Simulate a phone from a terminal: `npx vite-node scripts/phone-sim.ts -- "<pairing code>" --dead-first`.

@@ -316,3 +316,8 @@ button.compact{padding:5px 11px;font-size:12.5px}
 /* Linux desktop shell: avoid effects that force compositing layers. */
 .wk-safe .modal-bg,.wk-safe .palette-bg{backdrop-filter:none}
 .wk-safe .skeleton::after{will-change:auto}
+.gw-diag{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.gw-diag ul{margin:0;padding-left:18px}
+.fw-hint{border:1px solid var(--border);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px}
+.fw-hint code{overflow-wrap:anywhere}
+.error-text{white-space:pre-line}

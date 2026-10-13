@@ -50,7 +50,10 @@ function Pair({ onPaired }: { onPaired: (c: DeviceCreds) => void }) {
       const t = new GatewayTransport(candidates(creds), creds.deviceId, creds.key, name, undefined, (s) => s === "waiting" && setStage("waiting"));
       await t.open();
       t.close();
-      onPaired({ ...creds, deviceId: t.deviceId });
+      // Remember the address that worked so the next launch tries it first.
+      const direct = t.route === "direct" && t.connectedUrl ? t.connectedUrl : creds.url;
+      const alts = [creds.url, ...(creds.alts ?? [])].filter((u) => u !== direct);
+      onPaired({ ...creds, url: direct, alts, deviceId: t.deviceId });
     } catch (e: any) {
       setErr(String(e?.message ?? e));
       setStage("");

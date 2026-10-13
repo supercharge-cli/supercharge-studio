@@ -19,7 +19,7 @@ export function saveCreds(c: DeviceCreds | null) {
 /** Turn a scanned/pasted pairing code into first-connection credentials (id = pairing id). */
 export async function pendingCredsFromCode(code: string, name: string): Promise<DeviceCreds> {
   const p = parsePairUri(code);
-  return { url: p.url, deviceId: p.pairingId, key: await deviceKey(p.secret), name, desktopName: p.desktopName, relay: p.relay };
+  return { url: p.url, deviceId: p.pairingId, key: await deviceKey(p.secret), name, desktopName: p.desktopName, relay: p.relay, ...(p.alts ? { alts: p.alts } : {}) };
 }
 
 export const defaultDeviceName = () => {

@@ -62,6 +62,19 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
           <span className="muted small">Phones try the direct address first, then this relay. The relay only forwards encrypted frames.</span>
           {st?.running && prefs.relayUrl?.trim() && <span className={`relay-status ${st.relay === "online" ? "ok" : st.relay?.startsWith("retrying") ? "bad" : ""}`} data-testid="gw-relay-status"><i className="dot" /> Relay: {st.relay ?? "off"}</span>}
         </label>
+        {st?.running && prefs.mode === "lan" && (
+          <div className="gw-diag" data-testid="gw-diag">
+            <span className="muted small">Phones try {(st.urls ?? []).length > 1 ? "these addresses in order" : "this address"}{prefs.relayUrl?.trim() ? ", then the relay" : ""}:</span>
+            <ul className="mono small">{(st.urls ?? [st.url ?? ""]).map((u) => <li key={u}>{u}</li>)}</ul>
+            <span className="muted small">Phone says it can't reach the gateway? Open <code>{(st.urls?.[0] ?? st.url ?? "").replace(/^ws/, "http").replace(/\/gw$/, "/")}</code> in the phone's browser. If that doesn't load, the phone is on another network or the firewall is blocking port {prefs.port}.</span>
+            {st.firewall && (
+              <div className="fw-hint" data-testid="gw-firewall">
+                <span className="small">A firewall is active on this computer. Allow the gateway port with:</span>
+                <div className="row"><code className="mono small grow">{st.firewall}</code><button className="ghost" onClick={() => void navigator.clipboard?.writeText(st.firewall!.split("  (")[0])}>Copy</button></div>
+              </div>
+            )}
+          </div>
+        )}
         {err && <div className="error-text">{err}</div>}
       </div>
 

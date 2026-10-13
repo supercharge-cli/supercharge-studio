@@ -23,6 +23,7 @@ sha2 = "0.10"
 aes-gcm = "0.10"
 qrcode = { version = "0.14", default-features = false }
 dirs = "6"
+if-addrs = "0.13"
 
 [profile.release]
 codegen-units = 1

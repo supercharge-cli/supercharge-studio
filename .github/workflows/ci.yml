@@ -121,7 +121,7 @@ jobs:
           npx vite-node scripts/fake-agent.ts -- --port 2421 --secret e2e &
           sleep 5
           export SUPERCHARGE_STUDIO_AGENT=127.0.0.1:2421 SUPERCHARGE_AGENT_SECRET=e2e SMOKE_EXPECT_OPEN=1
-          xvfb-run -a -s "-screen 0 1360x860x24" node scripts/app-smoke.mjs src-tauri/target/release/supercharge-studio smoke/linux
+          SMOKE_GATEWAY=1 xvfb-run -a -s "-screen 0 1360x860x24" node scripts/app-smoke.mjs src-tauri/target/release/supercharge-studio smoke/linux
           WEBKIT_DISABLE_COMPOSITING_MODE=1 xvfb-run -a -s "-screen 0 1360x860x24" node scripts/app-smoke.mjs src-tauri/target/release/supercharge-studio smoke/linux-nocomp
       - name: App smoke (Windows, WebView2 via WebDriver)
         if: matrix.os == 'windows-latest'

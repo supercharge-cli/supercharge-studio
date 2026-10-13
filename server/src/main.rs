@@ -203,7 +203,44 @@ struct Shared {
 }
 
 fn lan_ip() -> String {
-    std::net::UdpSocket::bind("0.0.0.0:0").and_then(|s| { s.connect("8.8.8.8:80")?; s.local_addr() }).map(|a| a.ip().to_string()).unwrap_or_else(|_| "127.0.0.1".into())
+    lan_ips().into_iter().next().unwrap_or_else(|| "127.0.0.1".into())
+}
+
+/// Every non-loopback IPv4 address, default-route first, container/VPN bridges last.
+fn lan_ips() -> Vec<String> {
+    let route = std::net::UdpSocket::bind("0.0.0.0:0").and_then(|s| { s.connect("192.0.2.1:9")?; s.local_addr() }).ok().map(|a| a.ip().to_string());
+    let virt = |n: &str| ["docker", "br-", "veth", "virbr", "vmnet", "vboxnet", "tun", "tap", "wg", "zt", "tailscale", "cni", "podman", "lxc"].iter().any(|p| n.starts_with(p));
+    let mut v: Vec<(u8, String)> = if_addrs::get_if_addrs().unwrap_or_default().into_iter().filter_map(|i| match i.ip() {
+        std::net::IpAddr::V4(ip) if !ip.is_loopback() => { let s = ip.to_string(); Some((if Some(&s) == route.as_ref() { 0 } else if virt(&i.name) { 2 } else { 1 }, s)) }
+        _ => None,
+    }).collect();
+    if let Some(r) = route.filter(|r| r != "0.0.0.0" && !v.iter().any(|(_, s)| s == r)) { v.push((0, r)); }
+    v.sort_by_key(|x| x.0);
+    let mut out: Vec<String> = Vec::new();
+    for (_, s) in v { if !out.contains(&s) { out.push(s); } }
+    out
+}
+
+/// Plain `GET /` (a phone browser) answers "reachable", so users can test the network path.
+async fn http_probe(stream: &mut TcpStream) -> bool {
+    let mut buf = [0u8; 2048];
+    let Ok(Ok(n)) = tokio::time::timeout(Duration::from_secs(5), stream.peek(&mut buf)).await else { return false };
+    let head = String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase();
+    if !head.starts_with("get ") || head.contains("upgrade: websocket") || !head.contains("\r\n\r\n") { return false; }
+    let body = "Supercharge Studio gateway is reachable. Pair from the Supercharge Studio app.\n";
+    let mut sink = [0u8; 2048];
+    let _ = tokio::io::AsyncReadExt::read(stream, &mut sink).await;
+    let _ = stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await;
+    let _ = stream.shutdown().await;
+    true
+}
+
+/// Other direct URLs a phone can try when the first one is unreachable.
+fn alt_urls(c: &Config) -> Vec<String> {
+    if c.public_url.is_some() { return vec![]; }
+    let (host, port) = c.bind.rsplit_once(':').unwrap_or((&c.bind, "2420"));
+    if host != "0.0.0.0" && host != "[::]" { return vec![]; }
+    lan_ips().into_iter().skip(1).take(4).map(|h| format!("ws://{h}:{port}/gw")).collect()
 }
 
 fn direct_url(c: &Config) -> String {
@@ -222,6 +259,11 @@ pub fn pct(s: &str) -> String {
 fn pair_uri(sh: &Shared, id: &str, secret: &[u8; 32]) -> String {
     let st = sh.store.lock().unwrap();
     let mut u = format!("scstudio://pair?u={}&i={id}&k={}&n={}", pct(&direct_url(&sh.cfg)), B64URL.encode(secret), pct(&sh.cfg.name));
+    let alts = alt_urls(&sh.cfg);
+    if !alts.is_empty() {
+        u.push_str("&a=");
+        u.push_str(&alts.iter().map(|a| pct(a)).collect::<Vec<_>>().join(","));
+    }
     if let Some(r) = &sh.cfg.relay {
         u.push_str("&r=");
         u.push_str(&pct(&gwrelay::connect_url(r, &st.host_id)));
@@ -485,6 +527,8 @@ async fn run(mut c: Config) -> Result<(), String> {
             acc = listener.accept() => if let Ok((sock, _)) = acc {
                 let sh = sh.clone();
                 tokio::spawn(async move {
+                    let mut sock = sock;
+                    if http_probe(&mut sock).await { return; }
                     if let Ok(ws) = tokio_tungstenite::accept_async(sock).await { let _ = handle(sh, ws).await; }
                 });
             }
