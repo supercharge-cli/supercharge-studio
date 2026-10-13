@@ -183,18 +183,56 @@ async fn serve_conn(app: AppHandle, mut sock: tokio::net::TcpStream, path: Strin
     }
 }
 
-/// Bind on 127.0.0.1 with a random port and an unguessable path.
+/// Bind on 127.0.0.1 with an unguessable path. The port and path are kept in the app's config
+/// directory and reused on the next launch, so sessions the agent saved with this URL (and
+/// reattaches on load/resume) still reach the browser after the app restarts.
 pub fn start(app: AppHandle) {
+    use tauri::Manager;
     tauri::async_runtime::spawn(async move {
-        let Ok(listener) = TcpListener::bind("127.0.0.1:0").await else { return };
+        let file = app.path().app_config_dir().ok().map(|d| d.join("browser-mcp.json"));
+        let saved: Option<(u16, String)> = file
+            .as_ref()
+            .and_then(|f| std::fs::read_to_string(f).ok())
+            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+            .and_then(|v| Some((v["port"].as_u64()? as u16, v["token"].as_str()?.to_string())))
+            .filter(|(_, t)| t.len() == 32 && t.chars().all(|c| c.is_ascii_hexdigit()));
+        let listener = match saved.as_ref() {
+            Some((p, _)) => match TcpListener::bind(("127.0.0.1", *p)).await {
+                Ok(l) => Some(l),
+                Err(_) => None,
+            },
+            None => None,
+        };
+        let listener = match listener {
+            Some(l) => l,
+            None => match TcpListener::bind("127.0.0.1:0").await {
+                Ok(l) => l,
+                Err(_) => return,
+            },
+        };
         let Ok(addr) = listener.local_addr() else { return };
-        let mut b = [0u8; 16];
-        if getrandom::fill(&mut b).is_err() {
-            return;
+        let token = match saved {
+            Some((_, t)) => t,
+            None => {
+                let mut b = [0u8; 16];
+                if getrandom::fill(&mut b).is_err() {
+                    return;
+                }
+                b.iter().map(|x| format!("{x:02x}")).collect()
+            }
+        };
+        if let Some(f) = &file {
+            let _ = std::fs::create_dir_all(f.parent().unwrap());
+            let _ = std::fs::write(f, json!({ "port": addr.port(), "token": token }).to_string());
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(f, std::fs::Permissions::from_mode(0o600));
+            }
         }
-        let token: String = b.iter().map(|x| format!("{x:02x}")).collect();
         let path = format!("/mcp/{token}");
         let _ = URL.set(format!("http://{addr}{path}"));
+        crate::agent::log_line(&format!("browser tools (MCP) listening on 127.0.0.1:{}", addr.port()));
         loop {
             let Ok((sock, _)) = listener.accept().await else { continue };
             tauri::async_runtime::spawn(serve_conn(app.clone(), sock, path.clone()));

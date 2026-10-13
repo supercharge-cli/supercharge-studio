@@ -27,7 +27,7 @@ export async function appConfig(): Promise<{ bind?: string | null; secret?: stri
 
 /** URL of the app's local MCP server exposing the side browser (desktop only). */
 export async function mcpUrl(): Promise<string | null> {
-  if (!isDesktop()) return null;
+  if (!isDesktop()) return (globalThis as any).__SC_TEST_MCP_URL ?? null; // e2e hook (browser build)
   for (let i = 0; i < 20; i++) {
     const u = await invoke<string | null>("mcp_info").catch(() => null);
     if (u) return u;

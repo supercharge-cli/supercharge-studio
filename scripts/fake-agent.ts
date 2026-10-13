@@ -33,6 +33,8 @@ const cliSeed = (): Listed[] => [
 ];
 const fresh = (): St => { const listed = CLI ? cliSeed() : []; return { n: 0, listed, known: new Set(listed.map((x) => x.sessionId)), loads: [] }; };
 const shared = fresh();
+// CLI mode: sessions live in the agent's store, so they survive a dropped connection ("restart").
+const cliStore = CLI ? fresh() : null;
 const arg = (k: string, d: string) => {
   const i = process.argv.indexOf(`--${k}`);
   return i > 0 ? process.argv[i + 1] : d;
@@ -53,7 +55,12 @@ const wss = new WebSocketServer({
 });
 
 wss.on("connection", (ws: WebSocket) => {
-  const st = process.env.FAKE_AGENT_SHARED === "1" ? shared : fresh();
+  const st = cliStore ?? (process.env.FAKE_AGENT_SHARED === "1" ? shared : fresh());
+  // MCP servers attached per session on THIS connection (lost on restart until new/load/resume).
+  const attached = new Map<string, string[]>();
+  const attach = (sid: string) => attached.set(sid, (m0().params?.mcpServers ?? []).map((x: any) => x.name));
+  let cur: any = null;
+  const m0 = () => cur;
   const { listed, known } = st;
   let nextId = 1000;
   const pending = new Map<number, (m: any) => void>();
@@ -72,6 +79,7 @@ wss.on("connection", (ws: WebSocket) => {
 
   ws.on("message", async (raw) => {
     const m = JSON.parse(String(raw));
+    cur = m;
     if (m.id != null && !m.method) return pending.get(m.id)?.(m), pending.delete(m.id);
     const reply = (result: any) => send({ id: m.id, result });
     switch (m.method) {
@@ -79,7 +87,7 @@ wss.on("connection", (ws: WebSocket) => {
         return reply({
           protocolVersion: 1,
           agentCapabilities: CLI
-            ? { loadSession: true, sessionCapabilities: { list: {} }, mcpCapabilities: { http: true } }
+            ? { loadSession: true, sessionCapabilities: { list: {}, resume: {} }, mcpCapabilities: { http: true }, ...(process.env.FAKE_AGENT_STEER === "1" ? { _meta: { supercharge: { steer: true } } } : {}) }
             : { loadSession: false, _meta: { "supercharge/demo": true } },
           authMethods: [],
           _meta: { agentVersion: "fake-1.0", availableCommands: [{ name: "help", description: "Show help" }, { name: "setup", description: "Configure provider" }] },
@@ -98,8 +106,15 @@ wss.on("connection", (ws: WebSocket) => {
         if (!known.has(sid)) return send({ id: m.id, error: { code: -32602, message: "unknown session id" } });
         if (sid === "cli-old" && !st.modelFixed)
           return send({ id: m.id, error: { code: -32050, message: "model_not_configured", data: { requested: "retired-model", configured: ["model-a", "model-b"] } } });
+        attach(sid);
         update(sid, { sessionUpdate: "user_message_chunk", content: { type: "text", text: `earlier question in ${sid}` } });
         say(sid, `History of ${sid} in ${m.params?.cwd}`);
+        return reply({});
+      }
+      case "session/resume": {
+        if (!CLI) return send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });
+        if (!known.has(m.params?.sessionId)) return send({ id: m.id, error: { code: -32602, message: "unknown session id" } });
+        attach(m.params.sessionId);
         return reply({});
       }
       case "session/set_model":
@@ -108,6 +123,7 @@ wss.on("connection", (ws: WebSocket) => {
         return reply({});
       case "session/new":
         known.add(`fake-${++st.n}`);
+        attach(`fake-${st.n}`);
         listed.splice(0, listed.length, ...listed.filter((x) => x.sessionId !== `fake-${st.n}`));
         listed.push({ sessionId: `fake-${st.n}`, cwd: m.params?.cwd ?? "/tmp", title: "New chat", ...(CLI ? { updatedAt: new Date().toISOString() } : {}) });
         if (CLI) setTimeout(() => send({ method: "_supercharge/sessions/changed", params: {} }), 20);
@@ -125,6 +141,8 @@ wss.on("connection", (ws: WebSocket) => {
         const text: string = m.params.prompt?.map((b: any) => b.text ?? "").join(" ") ?? "";
         if (!known.has(sid)) return send({ id: m.id, error: { code: -32602, message: "Invalid params: unknown session id" } });
         cancelled.delete(sid);
+        if (CLI && /mcpcheck/.test(text)) say(sid, `mcp attached: ${(attached.get(sid) ?? []).join(",") || "none"}`);
+        if (CLI && /dropconn/.test(text)) { say(sid, "restarting"); setTimeout(() => ws.terminate(), 50); return reply({ stopReason: "end_turn" }); }
         if (CLI && /addcli/.test(text)) {
           listed.unshift({ sessionId: "cli-d1", cwd: "/srv/delta", title: "Started in the terminal", updatedAt: new Date().toISOString() });
           known.add("cli-d1");

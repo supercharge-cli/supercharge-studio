@@ -234,6 +234,7 @@ export default function App() {
       setStatus(msg);
     }
     secretRef.current = s.secret;
+    attached.current.clear();
     const client = new AcpClient({
       ...(s.transport === "stdio" ? { transportFactory: () => new StdioTransport(s.alwaysApprove) } : { url: wsUrl(s) }),
       clientMeta: browserClientMeta(),
@@ -242,6 +243,7 @@ export default function App() {
         if (st === "reconnecting") setStatus(`Reconnecting (attempt ${info?.attempt}, ${info?.delayMs}ms)…`);
       },
       onUpdate: (sid, u) => {
+        if (replaying.current.has(sid)) return; // history re-sent while reattaching tools
         hub.update(sid, u);
         const f = chatForSession(sid);
         if (!f) return;
@@ -275,7 +277,16 @@ export default function App() {
           fan?.answer.then((o) => finish(o, "device"));
           setPerm({ req, resolve: (o) => finish(o, "desktop", fan?.token), token: fan?.token });
         }),
-      onReconnected: () => setStatus("Reconnected"),
+      onReconnected: () => {
+        setStatus("Reconnected");
+        // A restarted agent forgot every MCP attachment: re-register the browser tools now.
+        attached.current.clear();
+        const d = dataRef.current;
+        const f = findProject(d, d.activeProjectId);
+        const ch = f?.project.chats.find((x) => x.id === d.activeChatId);
+        if (f && ch?.sessionId && clientRef.current) void ensureAttached(clientRef.current, ch.sessionId, ch.cwd ?? normCwd(f.project.cwd), ch.id).catch(() => {});
+        scheduleSync();
+      },
     });
     browser.attach(client);
     clientRef.current = client;
@@ -405,6 +416,27 @@ export default function App() {
 
   // ---- CLI session sync: every CLI session, grouped by folder ----
   const syncing = useRef(false);
+  /** Sessions whose browser MCP server is attached on the current agent connection. */
+  const attached = useRef(new Set<string>());
+  /**
+   * Make sure the agent has the browser tools for this session on this connection. After an
+   * agent restart (or for a session created elsewhere) resume/load it with the MCP server again,
+   * so the user never has to reconnect the browser tools.
+   */
+  async function ensureAttached(c: AcpClient, sid: string, cwd: string, chatId: string) {
+    if (attached.current.has(sid)) return;
+    const mcp = await browserMcp(c);
+    if (c.sessionCapability("resume")) {
+      await c.resumeSession(sid, cwd, mcp);
+    } else if (c.initResult?.agentCapabilities?.loadSession) {
+      // No resume: load re-sends history; drop the replay into a scratch state.
+      replaying.current.add(sid);
+      try { await c.loadSession(sid, cwd, mcp); } finally { replaying.current.delete(sid); }
+    } else return;
+    attached.current.add(sid);
+    void chatId;
+  }
+  const replaying = useRef(new Set<string>());
   const [syncBusy, setSyncBusy] = useState(false);
   async function syncCli() {
     const c = clientRef.current;
@@ -448,6 +480,7 @@ export default function App() {
     const res = await c.newSession(normCwd(found.project.cwd), { yoloMode: dataRef.current.settings.alwaysApprove }, mcpServers);
     setConfigOptions(res.configOptions ?? []);
     loaded.current.add(res.sessionId);
+    attached.current.add(res.sessionId);
     update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, sessionId: res.sessionId } : x)) })));
     hub.sessionsChanged();
     return res.sessionId;
@@ -481,7 +514,7 @@ export default function App() {
       const sid = chat.sessionId;
       await c.loadSession(sid, cwd, mcp)
         .catch(async (e: any) => { if (await recoverModel(c, sid, chatId, e)) return c.loadSession(sid, cwd, mcp); throw e; })
-        .then((r: any) => { if (Array.isArray(r?.configOptions)) setConfigOptions(r.configOptions); })
+        .then((r: any) => { attached.current.add(sid); if (Array.isArray(r?.configOptions)) setConfigOptions(r.configOptions); })
         .catch((e: any) => pushItem(chatId, { kind: "system", text: `Could not load this chat's history: ${e?.message ?? e}`, error: "load" } as any));
       flush();
       setLoadingChats((l) => { const n = new Set(l); n.delete(chatId); return n; });
@@ -504,6 +537,8 @@ export default function App() {
       hub.update(sid, { sessionUpdate: "user_message_chunk", content: { type: "text", text }, _meta: { supercharge: { from: from ?? "desktop" } } });
       let r;
       turnUsage.current.delete(sid);
+      const cwdNow = chat?.cwd ?? normCwd(findProject(dataRef.current, projectId)!.project.cwd);
+      await ensureAttached(c, sid, cwdNow, chatId).catch(() => {});
       try {
         r = await c.prompt(sid, text, extra).catch(async (e: any) => { if (await recoverModel(c, sid!, chatId, e)) return c.prompt(sid!, text, extra); throw e; });
       } catch (e: any) {
