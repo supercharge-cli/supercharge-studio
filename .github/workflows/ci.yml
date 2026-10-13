@@ -42,6 +42,8 @@ jobs:
       - name: Build the headless server (for e2e/server.spec.ts)
         run: cargo build --release --locked --manifest-path server/Cargo.toml
       - run: npm ci
+      - name: Port conflict end to end (2420 taken, server moves, phone pairs and follows it)
+        run: npx vitest run tests/portconflict.test.ts
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
       - uses: actions/upload-artifact@v4
@@ -122,7 +124,9 @@ jobs:
           npx vite-node scripts/fake-agent.ts -- --port 2421 --secret e2e &
           sleep 5
           export SUPERCHARGE_STUDIO_AGENT=127.0.0.1:2421 SUPERCHARGE_AGENT_SECRET=e2e SMOKE_EXPECT_OPEN=1
-          SMOKE_GATEWAY=1 xvfb-run -a -s "-screen 0 1360x860x24" node scripts/app-smoke.mjs src-tauri/target/release/supercharge-studio smoke/linux
+          # Something else holds the gateway port: the app must move to another one and still pair.
+          python3 -c "import socket,time;s=socket.socket();s.bind(('0.0.0.0',2420));s.listen();time.sleep(3600)" &
+          SMOKE_EXPECT_PORT_MOVED=1 SMOKE_GATEWAY=1 xvfb-run -a -s "-screen 0 1360x860x24" node scripts/app-smoke.mjs src-tauri/target/release/supercharge-studio smoke/linux
           WEBKIT_DISABLE_COMPOSITING_MODE=1 xvfb-run -a -s "-screen 0 1360x860x24" node scripts/app-smoke.mjs src-tauri/target/release/supercharge-studio smoke/linux-nocomp
       - name: App smoke (Windows, WebView2 via WebDriver)
         timeout-minutes: 12

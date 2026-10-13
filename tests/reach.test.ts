@@ -21,6 +21,7 @@ describe("reaching the desktop", () => {
     await new Promise<void>((r) => silent.listen(0, "127.0.0.1", r));
     const sp = (silent.address() as any).port;
     const t = new GatewayTransport([`ws://127.0.0.1:1/gw`, `ws://127.0.0.1:${sp}/gw`], "p-1", new Uint8Array(32), "test", WebSocket as any, undefined, 800);
+    t.probe = false; // other tests may run gateways on 2420..2430 meanwhile
     const err = await t.open().then(() => "", (e) => String(e.message));
     silent.close();
     expect(err).toMatch(/Cannot reach the desktop gateway/);

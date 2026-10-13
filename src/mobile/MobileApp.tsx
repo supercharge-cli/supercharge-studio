@@ -116,7 +116,7 @@ export default function MobileApp() {
     const pending: { sid: string; u: any }[] = [];
     let raf = 0;
     const c = new AcpClient({
-      transportFactory: () => { const t = new GatewayTransport(candidates(creds), creds.deviceId, creds.key, creds.name); const o = t.open.bind(t); t.open = async () => { await o(); setRoute(t.route); }; return t; },
+      transportFactory: () => { const t = new GatewayTransport(candidates(creds), creds.deviceId, creds.key, creds.name); const o = t.open.bind(t); t.open = async () => { await o(); setRoute(t.route); if (t.route === "direct" && t.connectedUrl && t.connectedUrl !== creds.url) { const next = { ...creds, url: t.connectedUrl, alts: [creds.url, ...(creds.alts ?? [])].filter((u) => u !== t.connectedUrl) }; saveCreds(next); } }; return t; },
       clientName: "supercharge-studio-mobile",
       onStateChange: (s) => setConn(s),
       // Token chunks are applied in one state update per animation frame.

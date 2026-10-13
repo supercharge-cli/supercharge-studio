@@ -10,7 +10,7 @@ import { ComposerMenu } from "./components/ComposerMenu";
 import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./lib/composer";
 import { resolveTheme, themeList } from "./lib/themes";
 import { extractMentions, fileItems, mentionBlocks } from "./lib/mentions";
-import { defaultGatewayPrefs, DevicesSection, gatewayBind } from "./components/Devices";
+import { defaultGatewayPrefs, DevicesSection, gatewayBind, urlPort } from "./components/Devices";
 const SettingsScreen = lazy(() => import("./components/Settings").then((m) => ({ default: m.SettingsScreen })));
 // Warm the lazy screens once the app is idle so the first open is instant.
 const idle = (globalThis as any).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 1200));
@@ -339,6 +339,13 @@ export default function App() {
     const gw = dataRef.current.settings.gateway;
     if (gw?.enabled)
       void gateway.start(gatewayBind(gw))
+        .then((url) => {
+          const port = urlPort(url);
+          if (port && port !== gw.port) {
+            update((d) => ({ ...d, settings: { ...d.settings, gateway: { ...(d.settings.gateway ?? gw), port } } }));
+            setNotice(`Mobile gateway: port ${gw.port} is in use, using ${port}. Paired phones find it automatically.`);
+          }
+        })
         .then(() => (gw.relayUrl?.trim() ? gateway.relaySet(gw.relayUrl.trim(), gw.hostId) : undefined))
         .catch((e) => setNotice(`Mobile gateway: ${e}`));
     return () => offs.forEach((o) => void o.then((f) => f()));

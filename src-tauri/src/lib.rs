@@ -17,6 +17,7 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::oneshot;
 
 mod files;
+mod portbind;
 mod gateway;
 mod gwcrypto;
 mod gwrelay;

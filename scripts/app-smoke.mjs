@@ -134,6 +134,11 @@ try {
       if (!/online/.test(rs)) throw new Error(`relay never came online: ${rs}`);
       console.log("ok  relay:", rs.trim());
     }
+    if (process.env.SMOKE_EXPECT_PORT_MOVED) {
+      const note = await exec("return document.querySelector('[data-testid=gw-port-note]')?.innerText || ''");
+      if (!/in use/.test(note)) throw new Error("gateway: expected a port-moved note, got: " + note);
+      console.log("ok  gateway port moved:", note.trim());
+    }
     await click('[data-testid="gw-pair"]');
     const uri = await exec("return document.querySelector('[data-testid=gw-uri]').value");
     console.log("pairing code:", uri.replace(/k=[^&]+/, "k=…"));

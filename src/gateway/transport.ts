@@ -71,10 +71,60 @@ export class GatewayTransport implements Transport {
     return /\/v1\/connect\//.test(u) ? "relay" : "direct";
   }
 
+  /**
+   * The desktop moves to another port (2420..2430) when its port is taken. If every saved direct
+   * address failed, probe those ports on the same hosts in parallel and return the first that opens.
+   */
+  /** Set false to skip the port probe (tests). */
+  probe = true;
+  private probePorts(tried: string[]): Promise<string | null> {
+    if (!this.probe) return Promise.resolve(null);
+    const directs = tried.filter((u, i) => this.routeOf(this.urls.indexOf(u)) === "direct" && i >= 0);
+    const cands: string[] = [];
+    for (const d of directs) {
+      let u: URL;
+      try { u = new URL(d); } catch { continue; }
+      for (let p = 2420; p <= 2430; p++) {
+        const c = `${u.protocol}//${u.hostname}:${p}${u.pathname}`;
+        if (!tried.includes(c) && !cands.includes(c)) cands.push(c);
+      }
+    }
+    if (!cands.length) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const socks: WebSocket[] = [];
+      let left = cands.length, done = false;
+      const finish = (u: string | null) => { if (done) return; done = true; clearTimeout(t); socks.forEach((w) => { try { w.close(); } catch { /* */ } }); resolve(u); };
+      const t = setTimeout(() => finish(null), 2500);
+      for (const c of cands) {
+        let w: WebSocket;
+        try { w = new this.Ctor(c); } catch { if (--left === 0) finish(null); continue; }
+        socks.push(w);
+        w.onopen = () => finish(c);
+        let gone = false; // error and close both fire for one socket: count it once
+        w.onerror = w.onclose = () => { if (gone) return; gone = true; if (--left === 0) finish(null); };
+      }
+    });
+  }
+
   async open(): Promise<void> {
     this.attempts = [];
+    let probed = false;
     for (let i = 0; i < this.urls.length; i++) {
       const route = this.routeOf(i);
+      if (route === "relay" && !probed) {
+        probed = true;
+        const found = await this.probePorts(this.urls.slice(0, i));
+        if (found) {
+          try {
+            await this.openOne(found, this.directTimeoutMs);
+            this.route = "direct";
+            this.connectedUrl = found;
+            return;
+          } catch (e) {
+            this.attempts.push({ url: found, route: "direct", reason: String((e as Error)?.message ?? e) });
+          }
+        }
+      }
       const started = Date.now();
       try {
         await this.openOne(this.urls[i], route === "relay" ? 12000 : this.directTimeoutMs);
@@ -90,6 +140,15 @@ export class GatewayTransport implements Transport {
           : /closed \((\d+)\)/i.test(msg) ? `connection closed (${msg.match(/closed \((\d+)\)/i)![1]})${route === "relay" ? ", is this computer online on the relay?" : ""}`
           : quick ? "connection refused (gateway off, wrong port, or firewall rejecting)" : "unreachable";
         this.attempts.push({ url: this.urls[i], route, reason });
+      }
+    }
+    if (!probed) {
+      const found = await this.probePorts(this.urls);
+      if (found) {
+        await this.openOne(found, this.directTimeoutMs);
+        this.route = "direct";
+        this.connectedUrl = found;
+        return;
       }
     }
     throw new Error(explainFailure(this.attempts));

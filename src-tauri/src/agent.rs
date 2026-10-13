@@ -272,11 +272,12 @@ pub async fn agent_check(bind: String, secret: String) -> String {
     check(&bind, &secret).await
 }
 
-/// First free loopback port from 2420 upward (then an ephemeral one), as "127.0.0.1:<port>".
+/// First free loopback port for our own agent, as "127.0.0.1:<port>". Starts above the gateway's
+/// range (2420..=2430) so the agent and the phone gateway never compete for a port.
 #[tauri::command]
 pub fn agent_free_port() -> String {
-    let ok = |p: u16| std::net::TcpListener::bind(("127.0.0.1", p)).is_ok();
-    let p = (2420..2440).find(|&p| ok(p)).unwrap_or_else(|| {
+    let ok = |p: u16| std::net::TcpListener::bind(("127.0.0.1", p)).is_ok() && std::net::TcpListener::bind(("0.0.0.0", p)).is_ok();
+    let p = (2440..2460).find(|&p| ok(p)).unwrap_or_else(|| {
         std::net::TcpListener::bind(("127.0.0.1", 0)).and_then(|l| l.local_addr()).map(|a| a.port()).unwrap_or(2420)
     });
     format!("127.0.0.1:{p}")

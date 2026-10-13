@@ -8,6 +8,8 @@
 
 #[path = "../../src-tauri/src/gwcrypto.rs"]
 mod gwcrypto;
+#[path = "../../src-tauri/src/portbind.rs"]
+mod portbind;
 #[path = "../../src-tauri/src/gwrelay.rs"]
 mod gwrelay;
 
@@ -37,6 +39,8 @@ const ALLOWED: &[&str] = &["initialize", "session/list", "session/load", "sessio
 #[derive(Clone, Debug)]
 pub struct Config {
     bind: String,
+    /// The user chose the address (flag or env); otherwise the last used port is preferred.
+    bind_explicit: bool,
     public_url: Option<String>,
     agent: String,
     agent_secret: String,
@@ -77,6 +81,7 @@ fn parse(args: &[String]) -> (String, Config, Vec<String>) {
     let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
     let mut c = Config {
         bind: env("SCS_BIND").unwrap_or_else(|| "0.0.0.0:2420".into()),
+        bind_explicit: env("SCS_BIND").is_some(),
         public_url: env("SCS_PUBLIC_URL"),
         agent: env("SCS_AGENT").unwrap_or_else(|| "ws://127.0.0.1:2419".into()),
         agent_secret: env("SUPERCHARGE_AGENT_SECRET").unwrap_or_default(),
@@ -96,7 +101,7 @@ fn parse(args: &[String]) -> (String, Config, Vec<String>) {
     while i < args.len() {
         match args[i].as_str() {
             "run" | "pair" | "devices" | "revoke" if i == 0 => cmd = args[i].clone(),
-            "--bind" => c.bind = val(&mut i),
+            "--bind" => { c.bind = val(&mut i); c.bind_explicit = true; }
             "--public-url" => c.public_url = Some(val(&mut i)),
             "--agent" => c.agent = val(&mut i),
             "--agent-secret" => c.agent_secret = val(&mut i),
@@ -498,7 +503,21 @@ async fn ensure_agent(c: &mut Config) -> Option<tokio::process::Child> {
 async fn run(mut c: Config) -> Result<(), String> {
     let _agent = ensure_agent(&mut c).await;
     let store = load(&c);
-    let listener = TcpListener::bind(&c.bind).await.map_err(|e| format!("bind {}: {e}", c.bind))?;
+    // Prefer the port this server used last time (paired phones remember it), then the configured
+    // one; if it is taken (e.g. by another Supercharge process) use the next free port instead of failing.
+    let port_file = c.data.join("gateway-port");
+    let (host, cfg_port) = portbind::split(&c.bind, 2420);
+    let host = host.trim_start_matches('[').trim_end_matches(']').to_string();
+    let last: Option<u16> = std::fs::read_to_string(&port_file).ok().and_then(|s| s.trim().parse().ok());
+    let preferred = if c.bind_explicit { cfg_port } else { last.unwrap_or(cfg_port) };
+    let (listener, note) = portbind::bind(&host, preferred).await.map_err(|e| format!("gateway: {e}"))?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    if let Some(n) = &note {
+        eprintln!("gateway: {n}");
+    }
+    let _ = std::fs::create_dir_all(&c.data);
+    let _ = std::fs::write(&port_file, port.to_string());
+    c.bind = if host.contains(':') { format!("[{host}]:{port}") } else { format!("{host}:{port}") };
     let sh = Arc::new(Shared { cfg: c.clone(), store: Mutex::new(store), pairings: Mutex::new(HashMap::new()), relay_status: Mutex::new("off".into()) });
     eprintln!("Supercharge Studio Server {} — gateway {} → agent {}", env!("CARGO_PKG_VERSION"), direct_url(&c), c.agent);
     eprintln!("pair a phone with: supercharge-studio-server pair{}", if c.data != parse(&[]).1.data { format!(" --data-dir {}", c.data.display()) } else { String::new() });

@@ -237,3 +237,11 @@ The pairing code lists every network address of the computer; the phone tries ea
 4. Different networks: set a relay URL (see docs/RELAY.md) and show a new code.
 
 Simulate a phone from a terminal: `npx vite-node scripts/phone-sim.ts -- "<pairing code>" --dead-first`.
+
+## Port already in use
+
+If another program (for example a running Supercharge CLI) holds the gateway port, the desktop
+app and `supercharge-studio-server` never fail: they use the next free port in 2420–2430 (then
+any free port), remember it, and put it in pairing codes, Settings → Devices and the firewall
+command. Phones paired earlier probe 2420–2430 on the computer's addresses and follow the move.
+The app's own agent uses ports from 2440 up, so it never competes with the gateway.

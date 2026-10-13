@@ -6,6 +6,8 @@ export type GatewayPrefs = { enabled: boolean; mode: "lan" | "tunnel"; port: num
 /** Device-facing connect URL on the relay for this computer (see docs/MOBILE-PLAN.md, Relay). */
 export const relayConnectUrl = (p: GatewayPrefs) => (p.relayUrl?.trim() && p.hostId ? `${p.relayUrl.trim().replace(/\/+$/, "")}/v1/connect/${p.hostId}` : undefined);
 export const defaultGatewayPrefs: GatewayPrefs = { enabled: false, mode: "lan", port: 2420, publicUrl: "" };
+/** Port in a gateway URL such as ws://192.168.1.5:2421/gw. */
+export const urlPort = (u: string) => { try { return Number(new URL(u).port) || 0; } catch { return 0; } };
 export const gatewayBind = (p: GatewayPrefs) => `${p.mode === "lan" ? "0.0.0.0" : "127.0.0.1"}:${p.port}`;
 
 export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPrefs; onPrefs: (p: GatewayPrefs) => void; desktop: boolean }) {
@@ -25,9 +27,13 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
   async function toggle(on: boolean) {
     setErr("");
     try {
-      if (on) { await gateway.start(gatewayBind(prefs)); if (prefs.relayUrl?.trim()) await gateway.relaySet(prefs.relayUrl.trim(), prefs.hostId); }
-      else { await gateway.stop(); setPair(null); }
-      onPrefs({ ...prefs, enabled: on });
+      let port = prefs.port;
+      if (on) {
+        // The gateway picks another port when the preferred one is taken; keep using that one.
+        port = urlPort(await gateway.start(gatewayBind(prefs))) || prefs.port;
+        if (prefs.relayUrl?.trim()) await gateway.relaySet(prefs.relayUrl.trim(), prefs.hostId);
+      } else { await gateway.stop(); setPair(null); }
+      onPrefs({ ...prefs, enabled: on, port });
     } catch (e: any) {
       setErr(String(e?.message ?? e));
     }
@@ -67,9 +73,10 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
         </label>
         {st?.running && prefs.mode === "lan" && (
           <div className="gw-diag" data-testid="gw-diag">
+            {st.port_note && <span className="small warn-text" data-testid="gw-port-note">The preferred port was in use, so the gateway is on port <b>{st.port}</b> ({st.port_note}). Paired phones find it automatically; new pairing codes use it.</span>}
             <span className="muted small">Phones try {(st.urls ?? []).length > 1 ? "these addresses in order" : "this address"}{prefs.relayUrl?.trim() ? ", then the relay" : ""}:</span>
             <ul className="mono small">{(st.urls ?? [st.url ?? ""]).map((u) => <li key={u}>{u}</li>)}</ul>
-            <span className="muted small">Phone says it can't reach the gateway? Open <code>{(st.urls?.[0] ?? st.url ?? "").replace(/^ws/, "http").replace(/\/gw$/, "/")}</code> in the phone's browser. If that doesn't load, the phone is on another network or the firewall is blocking port {prefs.port}.</span>
+            <span className="muted small">Phone says it can't reach the gateway? Open <code>{(st.urls?.[0] ?? st.url ?? "").replace(/^ws/, "http").replace(/\/gw$/, "/")}</code> in the phone's browser. If that doesn't load, the phone is on another network or the firewall is blocking port {st.port ?? prefs.port}.</span>
             {st.firewall && (
               <div className="fw-hint" data-testid="gw-firewall">
                 <span className="small">A firewall is active on this computer. Allow the gateway port with:</span>

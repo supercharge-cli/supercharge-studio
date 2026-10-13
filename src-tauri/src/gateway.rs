@@ -55,6 +55,8 @@ struct State {
     /// All direct URLs (one per candidate LAN address) when bound to every interface.
     urls: Vec<String>,
     port: u16,
+    /// Set when the preferred port was busy and another one was chosen.
+    port_note: Option<String>,
     /// Firewall command computed once when the gateway starts (never on the UI thread's status poll).
     firewall: Option<String>,
     stop: Option<oneshot::Sender<()>>,
@@ -371,6 +373,10 @@ pub struct Status {
     url: Option<String>,
     /// Every direct address advertised to phones, best first.
     urls: Vec<String>,
+    /// Port actually listened on (may differ from the preferred one).
+    port: Option<u16>,
+    /// Why the preferred port was not used, if it wasn't.
+    port_note: Option<String>,
     /// Command to open the port in the local firewall when one is active.
     firewall: Option<String>,
     devices: Vec<Device>,
@@ -386,6 +392,8 @@ pub fn gateway_status() -> Status {
         running: s.url.is_some(),
         url: s.url.clone(),
         urls: s.urls.clone(),
+        port: s.url.as_ref().map(|_| s.port),
+        port_note: s.port_note.clone(),
         firewall: s.firewall.clone(),
         devices: load_devices(),
         connected: s.conns.iter().filter(|(_, c)| !c.is_closed()).map(|(k, _)| k.clone()).collect(),
@@ -400,8 +408,13 @@ pub async fn gateway_start(app: AppHandle, bind: Option<String>) -> Result<Strin
         return Ok(u);
     }
     let bind = bind.unwrap_or_else(|| "0.0.0.0:2420".into());
-    let listener = TcpListener::bind(&bind).await.map_err(|e| format!("gateway bind {bind}: {e}"))?;
+    let (host, preferred) = crate::portbind::split(&bind, 2420);
+    let host = host.trim_start_matches('[').trim_end_matches(']').to_string();
+    // Never fail because the port is taken (e.g. by another Supercharge process): use the next free one.
+    let (listener, note) = crate::portbind::bind(&host, preferred).await.map_err(|e| format!("gateway: {e}"))?;
     let addr = listener.local_addr().map_err(|e| e.to_string())?;
+    crate::agent::log_line(&format!("gateway listening on {addr}{}", note.as_ref().map(|n| format!(" ({n})")).unwrap_or_default()));
+    st().port_note = note;
     let hosts = if addr.ip().is_unspecified() { lan_ips() } else { vec![addr.ip().to_string()] };
     let urls: Vec<String> = hosts.iter().map(|h| format!("ws://{h}:{}/gw", addr.port())).collect();
     let url = urls[0].clone();
