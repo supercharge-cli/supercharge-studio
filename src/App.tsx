@@ -6,7 +6,7 @@ import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionUpdate 
 import { StdioTransport } from "./acp/tauriStdio";
 import { browser, browserClientMeta } from "./browser/bridge";
 import { BrowserPanel } from "./components/BrowserPanel";
-import { CliSetup } from "./components/CliSetup";
+const CliSetup = lazy(() => import("./components/CliSetup"));
 import { Command, CommandPalette } from "./components/CommandPalette";
 import { ComposerMenu } from "./components/ComposerMenu";
 import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./lib/composer";
@@ -868,12 +868,12 @@ export default function App() {
   return (
     <div className={`app ${panel && view === "chat" ? "with-panel" : ""} view-${view}`}>
       {cliSetup && (
-        <CliSetup
+        <Suspense fallback={null}><CliSetup
           status={cli}
           mode={cliSetup}
           onDone={() => { setCliSetup(null); setAgentMissing(false); void cliStatus(false).then(setCli); void connect(); }}
-          onSkip={cliSetup === "update" ? () => setCliSetup(null) : () => setCliSetup(null)}
-        />
+          onSkip={() => setCliSetup(null)}
+        /></Suspense>
       )}
       <Sidebar
         data={data}

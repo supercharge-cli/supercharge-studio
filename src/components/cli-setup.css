@@ -1,0 +1,10 @@
+.cli-setup{position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:var(--bg);animation:fadein .2s ease-out}
+.cli-card{width:min(640px,92vw);display:flex;flex-direction:column;gap:14px;border:1px solid var(--line);border-radius:14px;padding:24px;background:var(--panel,var(--bg))}
+.cli-head{display:flex;gap:14px;align-items:flex-start}.cli-head h2{margin:0 0 4px}
+.logo.big{width:40px;height:40px;display:grid;place-items:center;border-radius:10px;background:var(--acc);color:#fff;flex:none}
+.cli-steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.cli-steps li.on b{color:var(--acc)}.cli-steps li.ok b{color:var(--ok,#2ea043)}
+.cli-setup .bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden}.cli-setup .bar i{display:block;height:100%;background:var(--acc);transition:width .2s}
+.cli-log{max-height:160px;overflow:auto;margin:0;padding:8px;border-radius:8px;background:rgba(127,127,127,.08);white-space:pre-wrap}
+.cli-manual code{overflow-wrap:anywhere}
+.update-banner{display:flex;gap:8px;align-items:center}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cliInstall, type CliStatus, listen } from "../lib/desktop";
 import { Icon } from "./Icon";
+import "./cli-setup.css";
 
 type Progress = { step: string; pct: number | null; msg: string };
 
@@ -9,7 +10,7 @@ type Progress = { step: string; pct: number | null; msg: string };
  * release with checksum verification, then hands back to the app, which starts
  * `supercharge agent serve` and continues with provider setup.
  */
-export function CliSetup({ status, onDone, onSkip, mode }: { status: CliStatus | null; mode: "missing" | "outdated" | "update"; onDone: () => void; onSkip?: () => void }) {
+export default function CliSetup({ status, onDone, onSkip, mode }: { status: CliStatus | null; mode: "missing" | "outdated" | "update"; onDone: () => void; onSkip?: () => void }) {
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<Progress[]>([]);
   const [pct, setPct] = useState<number | null>(null);
