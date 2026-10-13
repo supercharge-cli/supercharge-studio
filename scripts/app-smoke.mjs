@@ -54,6 +54,12 @@ try {
   const caps = { "tauri:options": { application: BIN }, pageLoadStrategy: "none", timeouts: { pageLoad: 10000, script: 30000, implicit: 0 } };
   sid = (await call("POST", "/session", { capabilities: { alwaysMatch: caps } })).sessionId;
   await find('[data-testid="sidebar"]', 20000);
+  // No CLI on CI runners: the first-run setup screen covers the app; check it, then dismiss it.
+  for (let i = 0; i < 20; i++) {
+    const t = await exec("return document.querySelector('[data-testid=cli-setup] h2')?.innerText || ''");
+    if (t) { console.log(`ok  cli setup screen: ${t}`); await exec("document.querySelector('[data-testid=cli-skip]')?.click(); return 1"); await sleep(300); break; }
+    await sleep(250);
+  }
   await exec("window.__smoke = 1");
   await check("start");
   const waitOpen = async (label) => {

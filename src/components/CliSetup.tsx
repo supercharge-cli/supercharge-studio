@@ -59,7 +59,7 @@ export default function CliSetup({ status, onDone, onSkip, mode }: { status: Cli
           ) : (
             <button data-testid="cli-install" disabled={busy} onClick={() => void run()}>{busy ? "Installing…" : err ? "Retry" : mode === "missing" ? "Install Supercharge CLI" : "Update now"}</button>
           )}
-          {onSkip && !busy && !done && <button className="ghost" onClick={onSkip}>{mode === "update" ? "Later" : "I'll install it myself"}</button>}
+          {onSkip && !busy && !done && <button className="ghost" data-testid="cli-skip" onClick={onSkip}>{mode === "update" ? "Later" : "I'll install it myself"}</button>}
         </div>
         {(err || mode !== "update") && status?.fallback && (
           <details className="cli-manual" open={!!err}>

@@ -198,7 +198,7 @@ fn alias(dir: &std::path::Path, dest: &std::path::Path) {
     #[cfg(windows)]
     {
         let sc = dir.join("sc.exe");
-        if !sc.exists() || std::fs::metadata(&sc).map(|m| m.len()) == std::fs::metadata(dest).map(|m| m.len()) {
+        if !sc.exists() || std::fs::metadata(&sc).ok().map(|m| m.len()) == std::fs::metadata(dest).ok().map(|m| m.len()) {
             let _ = std::fs::copy(dest, sc);
         }
     }
