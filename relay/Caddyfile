@@ -1,0 +1,7 @@
+# Automatic HTTPS for the relay (Let's Encrypt). RELAY_DOMAIN must point at this machine.
+{$RELAY_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy relay:8080 {
+		header_up X-Forwarded-For {remote_host}
+	}
+}

@@ -48,3 +48,23 @@ describe("reference relay", () => {
     phone.close(); phone2.close(); l.close(); h.w.close();
   });
 });
+
+describe("public relay limits", () => {
+  it("caps connections per IP, rate-limits, protects stats and reports health", async () => {
+    const s = await startRelay(24891, "127.0.0.1", { maxConnsPerIp: 3, connRatePerIp: 6, statsToken: "s3cret", quiet: true });
+    const B = "ws://127.0.0.1:24891";
+    const fail = (url: string) => new Promise<string>((res) => { const w = new WebSocket(url); w.once("open", () => res("open")); w.once("unexpected-response", (_q, r) => res(String(r.statusCode))); w.once("error", () => res("error")); });
+    const ws = [await open(`${B}/v1/host/limit-host-1`), await open(`${B}/v1/host/limit-host-2`), await open(`${B}/v1/host/limit-host-3`)];
+    expect(await fail(`${B}/v1/host/limit-host-4`)).toBe("429");
+    ws.forEach((w) => w.close());
+    await new Promise((r) => setTimeout(r, 100));
+    const codes: string[] = [];
+    for (let i = 0; i < 4; i++) { const r = await fail(`${B}/v1/connect/nobody-limit`); codes.push(r); }
+    expect(codes).toContain("429");
+    const h = await (await fetch("http://127.0.0.1:24891/healthz")).json();
+    expect(h).toMatchObject({ ok: true });
+    expect((await fetch("http://127.0.0.1:24891/v1/stats")).status).toBe(401);
+    expect((await fetch("http://127.0.0.1:24891/v1/stats", { headers: { authorization: "Bearer s3cret" } })).status).toBe(200);
+    await s.shutdown();
+  });
+});

@@ -1,0 +1,47 @@
+# Supercharge Studio relay.
+#   Plain (put your own TLS proxy in front):   docker compose up -d
+#   With automatic HTTPS via Caddy:            RELAY_DOMAIN=relay.example.com docker compose --profile tls up -d
+# Then set "Relay URL" in Settings → Devices to wss://relay.example.com (or ws://host:8080 without TLS).
+services:
+  relay:
+    image: ${RELAY_IMAGE:-ghcr.io/iotserver24/supercharge-studio-relay:latest}
+    build: .
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    env_file: [{ path: .env, required: false }]
+    environment:
+      RELAY_TRUST_PROXY: ${RELAY_TRUST_PROXY:-0}
+    ports:
+      - "${RELAY_PUBLISH:-8080}:8080"
+    volumes:
+      - relay-data:/data
+    deploy:
+      resources:
+        limits: { memory: 256m }
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  caddy:
+    profiles: [tls]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [relay]
+    environment:
+      RELAY_DOMAIN: ${RELAY_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  relay-data:
+  caddy-data:
+  caddy-config:

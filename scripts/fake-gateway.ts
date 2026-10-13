@@ -13,7 +13,8 @@ import { WebSocket, WebSocketServer } from "ws";
 import { b64, Channel, deviceKey, hmac, random, sessionKey } from "../src/gateway/crypto";
 import { GatewayHub } from "../src/gateway/hub";
 // @ts-ignore plain JS module
-import { startRelay, stats as relayStats } from "../relay/server.mjs";
+import { startRelay } from "../relay/server.mjs";
+let relayStats: any = {};
 
 const port = Number(process.argv[process.argv.indexOf("--port") + 1] || 2431);
 const pairings = new Map<string, Uint8Array>(); // pairing id -> device key
@@ -128,7 +129,7 @@ http.listen(port, "127.0.0.1", () => console.log(`fake gateway on ws://127.0.0.1
 // run the normal gateway handshake over it. The relay never sees keys or plaintext.
 const relayPort = port + 1;
 const relayToken = "f".repeat(64);
-await startRelay(relayPort, "127.0.0.1");
+relayStats = (await startRelay(relayPort, "127.0.0.1")).stats;
 function hostLoop() {
   const ctl = new WebSocket(`ws://127.0.0.1:${relayPort}/v1/host/test-host`);
   ctl.on("open", () => ctl.send(JSON.stringify({ t: "register", token: relayToken })));

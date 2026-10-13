@@ -109,13 +109,30 @@ try {
     // Real gateway end to end: turn it on in the UI, show a code, pair a simulated phone that
     // first tries a dead address, approve in the app, and exchange an encrypted message.
     await click('[data-testid="tab-devices"]');
+    if (process.env.SMOKE_RELAY) {
+      if (await exec("return !!document.querySelector('[data-testid=gw-toggle]').checked")) await exec("document.querySelector('[data-testid=gw-toggle]').click()");
+      await sleep(500);
+      const r = await find('[data-testid="gw-relay"]');
+      await call("POST", s(`/element/${r}/clear`), {});
+      await call("POST", s(`/element/${r}/value`), { text: process.env.SMOKE_RELAY });
+    }
     if (!(await exec("return !!document.querySelector('[data-testid=gw-toggle]').checked"))) await exec("document.querySelector('[data-testid=gw-toggle]').click()");
     await find('[data-testid="gw-diag"]', 10000);
     console.log("gateway diagnostics:", (await exec("return document.querySelector('[data-testid=gw-diag]').innerText")).replace(/\n/g, " | "));
+    if (process.env.SMOKE_RELAY) {
+      let rs = "";
+      for (let i = 0; i < 60 && !/online/.test(rs); i++) {
+        rs = await exec("return document.querySelector('[data-testid=gw-relay-status]')?.innerText || ''");
+        if (/bound to another key/.test(rs)) { console.log("relay id taken, using a new one"); await click('[data-testid="gw-relay-reset"]'); }
+        await sleep(250);
+      }
+      if (!/online/.test(rs)) throw new Error(`relay never came online: ${rs}`);
+      console.log("ok  relay:", rs.trim());
+    }
     await click('[data-testid="gw-pair"]');
     const uri = await exec("return document.querySelector('[data-testid=gw-uri]').value");
     console.log("pairing code:", uri.replace(/k=[^&]+/, "k=…"));
-    const phone = spawn("npx", ["vite-node", "scripts/phone-sim.ts", "--", uri, "--dead-first"], { stdio: ["ignore", "pipe", "inherit"] });
+    const phone = spawn("npx", ["vite-node", "scripts/phone-sim.ts", "--", uri, process.env.SMOKE_RELAY ? "--relay-only" : "--dead-first"], { stdio: ["ignore", "pipe", "inherit"] });
     let out = ""; phone.stdout.on("data", (d) => { out += d; process.stdout.write("phone> " + d); });
     await click('[data-testid="pair-allow"]').catch(async () => { await sleep(3000); await click('[data-testid="pair-allow"]'); });
     const code = await new Promise((r) => { phone.on("exit", r); setTimeout(() => r(/encrypted reply: \{/.test(out) ? 0 : 1), 40000); });

@@ -60,6 +60,9 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
         <label>Relay URL (optional)
           <input data-testid="gw-relay" placeholder="wss://relay.example.com" value={prefs.relayUrl ?? ""} onBlur={() => st?.running && void gateway.relaySet(prefs.relayUrl?.trim() || undefined, prefs.hostId).then(refresh).catch((e) => setErr(String(e)))} onChange={(e) => onPrefs({ ...prefs, relayUrl: e.target.value, hostId: prefs.hostId || Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("") })} />
           <span className="muted small">Phones try the direct address first, then this relay. The relay only forwards encrypted frames.</span>
+          {st?.running && /bound to another key/.test(st.relay ?? "") && (
+            <span className="small">This computer's relay ID is taken on that relay. <button className="ghost" data-testid="gw-relay-reset" onClick={() => { const hostId = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join(""); onPrefs({ ...prefs, hostId }); void gateway.relaySet(prefs.relayUrl?.trim() || undefined, hostId).then(refresh).catch((e) => setErr(String(e))); }}>Use a new relay ID</button> (then show a new pairing code).</span>
+          )}
           {st?.running && prefs.relayUrl?.trim() && <span className={`relay-status ${st.relay === "online" ? "ok" : st.relay?.startsWith("retrying") ? "bad" : ""}`} data-testid="gw-relay-status"><i className="dot" /> Relay: {st.relay ?? "off"}</span>}
         </label>
         {st?.running && prefs.mode === "lan" && (

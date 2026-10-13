@@ -10,26 +10,18 @@ The protocol is described in [docs/MOBILE-PLAN.md](../docs/MOBILE-PLAN.md#relay-
 
 ## Run
 
+See **[docs/RELAY.md](../docs/RELAY.md)** for Docker / Compose (with optional automatic HTTPS
+via Caddy), every setting, limits and health checks.
+
 ```sh
 cd relay && npm install && PORT=8080 node server.mjs
-# or
-docker build -t supercharge-studio-relay relay
-docker run -d -p 8080:8080 -v relay-data:/data supercharge-studio-relay
+docker compose up -d                                   # plain, :8080
+RELAY_DOMAIN=relay.example.com docker compose --profile tls up -d   # with HTTPS
 ```
-
-Put TLS in front of it (any reverse proxy), then enter `wss://your-relay` as the **Relay** in
-Settings → Devices, or pass `--relay wss://your-relay` to the server.
-
-| Env | Meaning |
-|---|---|
-| `PORT` / `HOST` | listen address (default `0.0.0.0:8080`) |
-| `RELAY_DATA` | JSON file that keeps the `hostId → sha256(token)` bindings across restarts (`/data/bindings.json` in Docker) |
-
-The relay serves `GET /healthz` and `GET /v1/stats` (counters only: hosts, lanes, frames, bytes).
 
 ## Tests
 
-- `tests/relay.test.ts` (unit): host offline, TOFU binding, bad token, piping.
+- `tests/relay.test.ts` (unit): host offline, TOFU binding, bad token, piping, per-IP caps, rate limits, health and stats auth.
 - `e2e/mobile.spec.ts` (phone ↔ relay ↔ gateway): the direct URL is unreachable, and the test
   asserts that the relay never saw plaintext.
 - `e2e/server.spec.ts`: the same path against the real Rust server.

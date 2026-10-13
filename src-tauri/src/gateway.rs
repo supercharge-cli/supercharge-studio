@@ -111,6 +111,10 @@ async fn device_secret(id: &str) -> Option<[u8; 32]> {
     if !load_devices().iter().any(|d| d.id == id) {
         return None;
     }
+    stored_secret(id).await
+}
+/// Read a stored 32-byte secret without the paired-device check (used for the relay host token).
+async fn stored_secret(id: &str) -> Option<[u8; 32]> {
     let acct = key_account(id);
     let (v, _) = off_runtime(move || crate::secrets::get(&acct)).await?;
     B64.decode(v?).ok()?.try_into().ok()
@@ -582,7 +586,8 @@ pub async fn gateway_relay_set(app: AppHandle, relay_url: Option<String>, host_i
         st().relay_url = None;
         return Ok(());
     };
-    let token = match device_secret("relay-host").await {
+    // The host token must survive restarts, or the relay (trust on first use) rejects this computer.
+    let token = match stored_secret("relay-host").await {
         Some(t) => t,
         None => {
             let t: [u8; 32] = rand();
