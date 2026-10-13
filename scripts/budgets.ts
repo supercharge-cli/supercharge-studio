@@ -7,7 +7,8 @@ import { gzipSync } from "node:zlib";
 
 const KB = 1024;
 const budgets: { dir: string; label: string; entry: RegExp; entryMax: number; totalJsMax: number; cssMax: number }[] = [
-  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 40 * KB, totalJsMax: 50 * KB, cssMax: 9 * KB },
+  // Raised for CLI session sync (folder tree) and the accessibility-snapshot browser tools (~6 KB gz).
+  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 48 * KB, totalJsMax: 58 * KB, cssMax: 9 * KB },
   { dir: "dist-mobile/assets", label: "mobile", entry: /^mobile-.*\.js$/, entryMax: 26 * KB, totalJsMax: 30 * KB, cssMax: 9 * KB },
 ];
 let failed = false;
