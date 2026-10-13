@@ -162,7 +162,7 @@ export class GatewayTransport implements Transport {
         const reason = /timed out/i.test(msg) ? "no answer (blocked by a firewall, or a different network)"
           : /closed \((\d+)\)/i.test(msg) ? `connection closed (${msg.match(/closed \((\d+)\)/i)![1]})${route === "relay" ? ", is this computer online on the relay?" : ""}`
           : quick ? "connection refused (gateway off, wrong port, or firewall rejecting)"
-          : "no route to host (usually the computer's firewall rejecting the port, or a different network)";
+          : "no route to host (the phone couldn't find the computer on its network: different Wi-Fi, guest network or router client isolation; less often a firewall)";
         this.attempts.push({ url: this.urls[i], route, reason });
       }
     }

@@ -245,3 +245,9 @@ app and `supercharge-studio-server` never fail: they use the next free port in 2
 any free port), remember it, and put it in pairing codes, Settings → Devices and the firewall
 command. Phones paired earlier probe 2420–2430 on the computer's addresses and follow the move.
 The app's own agent uses ports from 2440 up, so it never competes with the gateway.
+
+### Phone says "no route to host"
+
+The phone sent a connection to the computer's address and nobody on its network answered at all. Usually the phone is on a different network (guest Wi-Fi, a second router, mobile data) or the router isolates Wi-Fi clients from each other. The phone's error message says when its own address is on a different subnet than the computer's. If the networks match, open Settings → Devices on the computer: when firewalld, ufw or Windows Firewall blocks the gateway port, a warning appears there and on the pairing code, with an **Allow in firewall** button (it asks for your password). The gateway keeps its port across restarts, so the rule only needs adding once.
+
+Pairing codes list only Wi-Fi/Ethernet addresses; container bridges (Docker, Podman), VM networks and VPN tunnels are left out.
