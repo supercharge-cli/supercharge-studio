@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createServer } from "node:net";
 import { WebSocket } from "ws";
 import { b64, parsePairUri } from "../src/gateway/crypto";
-import { candidates, explainFailure, GatewayTransport } from "../src/gateway/transport";
+import { candidates, explainFailure, GatewayTransport, networkMismatch } from "../src/gateway/transport";
 
 const secret = b64.enc(new Uint8Array(32).fill(7)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const base = `scstudio://pair?u=ws%3A%2F%2F192.168.1.5%3A2420%2Fgw&i=p-1&k=${secret}`;
@@ -35,5 +35,17 @@ describe("reaching the desktop", () => {
     const m = explainFailure([{ url: "ws://192.168.1.5:2420/gw", route: "direct", reason: "no answer" }]);
     expect(m).toContain("TCP port 2420");
     expect(m).toContain("http://192.168.1.5:2420/");
+  });
+
+  it("says when the phone is on a different network than the computer", () => {
+    const urls = ["ws://192.168.1.54:2422/gw"];
+    expect(networkMismatch("192.168.1.80", urls)).toBe("");
+    expect(networkMismatch("192.168.0.80", urls)).toMatch(/different network than the computer \(192\.168\.1\.54\)/);
+    expect(networkMismatch("100.72.1.9", urls)).toMatch(/not on a local Wi-Fi network/);
+    expect(networkMismatch(undefined, urls)).toBe("");
+    const m = explainFailure([{ url: urls[0], route: "direct", reason: "no route to host" }], undefined, "10.0.0.5");
+    expect(m).toMatch(/different network/);
+    expect(m).not.toMatch(/Make sure this phone/);
+    expect(explainFailure([{ url: urls[0], route: "direct", reason: "x" }], undefined, "192.168.1.9")).toMatch(/Make sure this phone/);
   });
 });

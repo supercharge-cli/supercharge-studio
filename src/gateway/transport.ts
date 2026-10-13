@@ -21,13 +21,34 @@ export type Attempt = { url: string; route: "direct" | "relay"; reason: string }
 const hostOf = (u: string) => { try { return new URL(u).host; } catch { return u; } };
 const isPrivateHost = (u: string) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(hostOf(u));
 
+const v4 = (h: string) => { const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h.replace(/:\d+$/, "")); return m ? m.slice(1).map(Number) : null; };
+const privV4 = (o: number[]) => o[0] === 10 || (o[0] === 192 && o[1] === 168) || (o[0] === 172 && o[1] >= 16 && o[1] <= 31);
+
+/**
+ * Compare this phone's IPv4 address with the computer's direct addresses. Home networks are /24,
+ * so a different first three octets almost always means a different network (guest Wi-Fi,
+ * mobile data, a repeater with its own subnet). Returns a sentence, or "" when it looks fine.
+ */
+export function networkMismatch(localIp: string | undefined, directUrls: string[]): string {
+  const me = localIp ? v4(localIp) : null;
+  if (!me) return "";
+  const hosts = directUrls.map((u) => v4(hostOf(u))).filter((o): o is number[] => !!o && privV4(o));
+  if (!hosts.length) return "";
+  if (!privV4(me)) return `This phone (${localIp}) is not on a local Wi-Fi network (mobile data or VPN?), so it can't reach the computer at ${hosts.map((o) => o.join(".")).join(", ")}. Join the same Wi-Fi as the computer, or use a relay.`;
+  const same = hosts.some((o) => o[0] === me[0] && o[1] === me[1] && o[2] === me[2]);
+  if (same) return "";
+  return `This phone (${localIp}) appears to be on a different network than the computer (${hosts.map((o) => o.join(".")).join(", ")}). Connect the phone to the same Wi-Fi as the computer (not a guest network or a different router), or use a relay.`;
+}
+
 /** Readable explanation of why no route worked, naming each address. */
-export function explainFailure(attempts: Attempt[], port?: string): string {
+export function explainFailure(attempts: Attempt[], port?: string, localIp?: string): string {
+  const mismatch = networkMismatch(localIp, attempts.filter((a) => a.route === "direct").map((a) => a.url));
   const lines = attempts.map((a) => `• ${a.route === "relay" ? "Relay" : "Direct"} ${hostOf(a.url)}: ${a.reason}`);
   const p = port ?? (attempts.find((a) => a.route === "direct") ? new URL(attempts.find((a) => a.route === "direct")!.url).port || "80" : "");
   const tips: string[] = [];
+  if (mismatch) tips.push(mismatch);
   if (attempts.some((a) => a.route === "direct")) {
-    tips.push("Make sure this phone is on the same Wi-Fi as the computer (not mobile data or a guest network).");
+    if (!mismatch) tips.push("Make sure this phone is on the same Wi-Fi as the computer (not mobile data or a guest network).");
     if (p) tips.push(`Allow TCP port ${p} in the computer's firewall (Settings → Devices on the computer shows the exact command).`);
     const d = attempts.find((a) => a.route === "direct" && isPrivateHost(a.url));
     if (d) tips.push(`Test it: open http://${hostOf(d.url)}/ in this phone's browser. If it doesn't load, the network or firewall is blocking it.`);
@@ -46,6 +67,8 @@ export class GatewayTransport implements Transport {
   private ws: WebSocket | null = null;
   private ch: Channel | null = null;
   private chain: Promise<unknown> = Promise.resolve();
+  /** This device's own IPv4 address, if known, to spot "different network" failures. */
+  localIp?: string;
   onMessage: (data: string) => void = () => {};
   onClose: (reason?: string) => void = () => {};
   /** Device id assigned by the desktop (set after a successful handshake). */
@@ -138,7 +161,8 @@ export class GatewayTransport implements Transport {
         const quick = Date.now() - started < 1500;
         const reason = /timed out/i.test(msg) ? "no answer (blocked by a firewall, or a different network)"
           : /closed \((\d+)\)/i.test(msg) ? `connection closed (${msg.match(/closed \((\d+)\)/i)![1]})${route === "relay" ? ", is this computer online on the relay?" : ""}`
-          : quick ? "connection refused (gateway off, wrong port, or firewall rejecting)" : "unreachable";
+          : quick ? "connection refused (gateway off, wrong port, or firewall rejecting)"
+          : "no route to host (usually the computer's firewall rejecting the port, or a different network)";
         this.attempts.push({ url: this.urls[i], route, reason });
       }
     }
@@ -151,7 +175,7 @@ export class GatewayTransport implements Transport {
         return;
       }
     }
-    throw new Error(explainFailure(this.attempts));
+    throw new Error(explainFailure(this.attempts, undefined, this.localIp));
   }
 
   private openOne(url: string, timeoutMs: number): Promise<void> {

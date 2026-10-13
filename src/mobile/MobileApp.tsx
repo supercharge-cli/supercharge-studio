@@ -48,6 +48,7 @@ function Pair({ onPaired }: { onPaired: (c: DeviceCreds) => void }) {
       const creds = await pendingCredsFromCode(c, name);
       setStage("connecting");
       const t = new GatewayTransport(candidates(creds), creds.deviceId, creds.key, name, undefined, (s) => s === "waiting" && setStage("waiting"));
+      t.localIp = await phoneIp();
       await t.open();
       t.close();
       // Remember the address that worked so the next launch tries it first.
@@ -116,7 +117,7 @@ export default function MobileApp() {
     const pending: { sid: string; u: any }[] = [];
     let raf = 0;
     const c = new AcpClient({
-      transportFactory: () => { const t = new GatewayTransport(candidates(creds), creds.deviceId, creds.key, creds.name); const o = t.open.bind(t); t.open = async () => { await o(); setRoute(t.route); if (t.route === "direct" && t.connectedUrl && t.connectedUrl !== creds.url) { const next = { ...creds, url: t.connectedUrl, alts: [creds.url, ...(creds.alts ?? [])].filter((u) => u !== t.connectedUrl) }; saveCreds(next); } }; return t; },
+      transportFactory: () => { const t = new GatewayTransport(candidates(creds), creds.deviceId, creds.key, creds.name); const o = t.open.bind(t); t.open = async () => { t.localIp = await phoneIp(); await o(); setRoute(t.route); if (t.route === "direct" && t.connectedUrl && t.connectedUrl !== creds.url) { const next = { ...creds, url: t.connectedUrl, alts: [creds.url, ...(creds.alts ?? [])].filter((u) => u !== t.connectedUrl) }; saveCreds(next); } }; return t; },
       clientName: "supercharge-studio-mobile",
       onStateChange: (s) => setConn(s),
       // Token chunks are applied in one state update per animation frame.
@@ -307,4 +308,13 @@ export default function MobileApp() {
       {toast && <div className="m-toast">{toast}</div>}
     </div>
   );
+}
+
+/** The phone's Wi-Fi IPv4 address from the native side, if available (used only for error messages). */
+async function phoneIp(): Promise<string | undefined> {
+  try {
+    const core = await import("@tauri-apps/api/core");
+    if (!(core as any).isTauri?.() && !(window as any).__TAURI_INTERNALS__) return undefined;
+    return (await core.invoke<string | null>("local_ipv4")) ?? undefined;
+  } catch { return undefined; }
 }
