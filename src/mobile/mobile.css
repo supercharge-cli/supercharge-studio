@@ -93,6 +93,8 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-row-mode .mode-anchor{margin-left:auto}.m-row-mode .mode-menu{left:auto;right:0;bottom:auto;top:calc(100% + 6px)}
 .m-picker-head{display:flex;align-items:center;justify-content:space-between}
 .m-config-sheet input[type=search]{width:100%;font-size:16px}
+.m-project-search{margin:0}
+.m-project-list{display:flex;flex-direction:column;gap:8px;max-height:46vh;overflow:auto}
 .m-picker-options{overflow-y:auto;min-height:0}
 .m-picker-option{display:flex;align-items:center;gap:8px;width:100%;padding:13px 12px;text-align:left;border-radius:12px;color:var(--fg);background:none}
 .m-picker-option span:first-child{flex:1;overflow:hidden;text-overflow:ellipsis}

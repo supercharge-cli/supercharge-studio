@@ -131,6 +131,7 @@ export default function MobileApp() {
   const [uploading, setUploading] = useState<number | null>(null);
   const [sheet, setSheet] = useState(false);
   const [newSheet, setNewSheet] = useState(false);
+  const [projectQuery, setProjectQuery] = useState("");
   const [search, setSearch] = useState("");
   const [historyView, setHistoryView] = useState<HistoryView>(() => (localStorage.getItem(HISTORY_KEY) === "chats" ? "chats" : "projects"));
   const [drawer, setDrawer] = useState(false);
@@ -547,11 +548,17 @@ export default function MobileApp() {
         </div>
       )}
       {newSheet && (
-        <div className="m-sheet-bg" onClick={() => setNewSheet(false)}>
+        <div className="m-sheet-bg" onClick={() => { setNewSheet(false); setProjectQuery(""); }}>
           <div className="m-sheet" role="dialog" aria-label="New chat in" data-testid="m-new-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="m-grabber" aria-hidden />
-            <h3>New chat in…</h3>
-            {allProjects.map((p) => <button key={p.projectId} className="m-row" data-testid="m-new-in" onClick={() => { setNewSheet(false); void newChat(p); }}><Icon name="folder" size={15} /><span>{p.name}</span><small className="muted">{p.group}</small></button>)}
+            <div className="m-picker-head"><h3>New chat in…</h3><button className="icon" aria-label="Close" onClick={() => { setNewSheet(false); setProjectQuery(""); }}><Icon name="x" size={16} /></button></div>
+            <label className="m-search m-project-search"><Icon name="search" size={15} /><input type="search" placeholder="Search projects" aria-label="Search projects" data-testid="m-new-search" value={projectQuery} onChange={(e) => setProjectQuery(e.target.value)} /></label>
+            <div className="m-project-list">
+              {allProjects.filter((p) => `${p.name} ${p.group}`.toLowerCase().includes(projectQuery.trim().toLowerCase())).map((p) => (
+                <button key={p.projectId} className="m-row" data-testid="m-new-in" onClick={() => { setNewSheet(false); setProjectQuery(""); void newChat(p); }}><Icon name="folder" size={15} /><span>{p.name}</span><small className="muted">{p.group}</small></button>
+              ))}
+              {allProjects.every((p) => !`${p.name} ${p.group}`.toLowerCase().includes(projectQuery.trim().toLowerCase())) && <p className="muted m-none">No projects match “{projectQuery}”.</p>}
+            </div>
           </div>
         </div>
       )}
