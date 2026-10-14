@@ -31,6 +31,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ToolCard } from "./components/ToolCard";
 import { VirtualList } from "./components/VirtualList";
 import { GatewayHub } from "./gateway/hub";
+import { effectiveRelay, ensureHostId } from "./lib/reach";
 import { FileEntry, projectFiles, projectReadText } from "./lib/desktop";
 import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type CliStatus, agentLogNote, agentRestart, appConfig, ensureAgent, gateway, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
 import { AppData, applyTree, ensureFolderProject, findProject, load, mergeCliSessions, normCwd, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
@@ -424,7 +425,12 @@ export default function App() {
             setNotice(`Mobile gateway: port ${gw.port} is in use, using ${port}. Paired phones find it automatically.`);
           }
         })
-        .then(() => (gw.relayUrl?.trim() ? gateway.relaySet(gw.relayUrl.trim(), gw.hostId) : undefined))
+        .then(() => {
+          const g = ensureHostId(dataRef.current.settings.gateway ?? gw);
+          if (g.hostId !== (dataRef.current.settings.gateway ?? gw).hostId) update((d) => ({ ...d, settings: { ...d.settings, gateway: { ...(d.settings.gateway ?? gw), hostId: g.hostId } } }));
+          const r = effectiveRelay(g);
+          return r ? gateway.relaySet(r, g.hostId) : undefined;
+        })
         .catch((e) => setNotice(`Mobile gateway: ${e}`));
     return () => offs.forEach((o) => void o.then((f) => f()));
   }, []);

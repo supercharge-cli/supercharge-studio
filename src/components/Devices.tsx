@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { gateway, GwPairing, GwStatus } from "../lib/desktop";
 import { Icon } from "./Icon";
+import { DEFAULT_RELAY, effectiveRelay, ensureHostId, newHostId, reachOf, relayConnect, type Reach } from "../lib/reach";
 
-export type GatewayPrefs = { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string; relayUrl?: string; hostId?: string };
+export type GatewayPrefs = { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string; relayUrl?: string; hostId?: string; reach?: Reach };
 /** Device-facing connect URL on the relay for this computer (see docs/MOBILE-PLAN.md, Relay). */
-export const relayConnectUrl = (p: GatewayPrefs) => (p.relayUrl?.trim() && p.hostId ? `${p.relayUrl.trim().replace(/\/+$/, "")}/v1/connect/${p.hostId}` : undefined);
-export const defaultGatewayPrefs: GatewayPrefs = { enabled: false, mode: "lan", port: 2420, publicUrl: "" };
+export const relayConnectUrl = (p: GatewayPrefs) => relayConnect(p);
+export const defaultGatewayPrefs: GatewayPrefs = { enabled: false, mode: "lan", port: 2420, publicUrl: "", reach: "public" };
 /** Port in a gateway URL such as ws://192.168.1.5:2421/gw. */
 export const urlPort = (u: string) => { try { return Number(new URL(u).port) || 0; } catch { return 0; } };
 export const gatewayBind = (p: GatewayPrefs) => `${p.mode === "lan" ? "0.0.0.0" : "127.0.0.1"}:${p.port}`;
@@ -31,14 +32,36 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
       if (on) {
         // The gateway picks another port when the preferred one is taken; keep using that one.
         port = urlPort(await gateway.start(gatewayBind(prefs))) || prefs.port;
-        if (prefs.relayUrl?.trim()) await gateway.relaySet(prefs.relayUrl.trim(), prefs.hostId);
-      } else { await gateway.stop(); setPair(null); }
-      onPrefs({ ...prefs, enabled: on, port });
+        const p = ensureHostId(prefs);
+        const r = effectiveRelay(p);
+        if (r) await gateway.relaySet(r, p.hostId);
+        onPrefs({ ...p, enabled: on, port });
+      } else { await gateway.stop(); setPair(null); onPrefs({ ...prefs, enabled: on, port }); }
     } catch (e: any) {
       setErr(String(e?.message ?? e));
     }
     refresh();
   }
+
+  const reach = reachOf(prefs);
+  const relay = effectiveRelay(prefs);
+  async function setReach(r: Reach) {
+    setErr("");
+    const p = ensureHostId({ ...prefs, reach: r });
+    onPrefs(p);
+    setPair(null); // old codes carry the old route
+    if (st?.running) await gateway.relaySet(effectiveRelay(p), p.hostId).catch((e) => setErr(String(e)));
+    refresh();
+  }
+  const reachSwitch = (
+    <div className="seg reach" role="radiogroup" aria-label="Connection" data-testid="gw-reach" data-reach={reach}>
+      <button role="radio" aria-checked={reach === "local"} className={reach === "local" ? "on" : ""} data-testid="gw-reach-local" onClick={() => void setReach("local")}>Local</button>
+      <button role="radio" aria-checked={reach === "public"} className={reach === "public" ? "on" : ""} data-testid="gw-reach-public" onClick={() => void setReach("public")}>Public</button>
+    </div>
+  );
+  const reachHelp = reach === "public"
+    ? <>Works from any network through <code>{relay}</code>. Phones on the same Wi-Fi still connect directly first. The relay only forwards end-to-end encrypted frames.</>
+    : <>Phones must be on the same Wi-Fi as this computer.</>;
 
   return (
     <div className="stack" data-testid="devices">
@@ -50,6 +73,10 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
             <div className="muted">{st?.running ? <>Listening on <code>{st.url}</code></> : "Off"}</div>
           </div>
           <label className="switch"><input type="checkbox" data-testid="gw-toggle" checked={!!st?.running} onChange={(e) => void toggle(e.target.checked)} /><i /></label>
+        </div>
+        <div className="row between reach-row">
+          <div><strong>Connection</strong><div className="muted small" data-testid="gw-reach-help">{reachHelp}</div></div>
+          {reachSwitch}
         </div>
         <div className="grid2">
           <label>Reachable from
@@ -63,18 +90,18 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
         <label>Public URL (optional, for tunnels)
           <input placeholder="wss://my-tunnel.example.com/gw" value={prefs.publicUrl} onChange={(e) => onPrefs({ ...prefs, publicUrl: e.target.value })} />
         </label>
-        <label>Relay URL (optional)
-          <input data-testid="gw-relay" placeholder="wss://relay.example.com" value={prefs.relayUrl ?? ""} onBlur={() => st?.running && void gateway.relaySet(prefs.relayUrl?.trim() || undefined, prefs.hostId).then(refresh).catch((e) => setErr(String(e)))} onChange={(e) => onPrefs({ ...prefs, relayUrl: e.target.value, hostId: prefs.hostId || Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("") })} />
-          <span className="muted small">Phones try the direct address first, then this relay. The relay only forwards encrypted frames.</span>
+        <label>Custom relay URL (Public mode, optional)
+          <input data-testid="gw-relay" placeholder={DEFAULT_RELAY} value={prefs.relayUrl ?? ""} onBlur={() => st?.running && void gateway.relaySet(effectiveRelay(prefs), prefs.hostId).then(refresh).catch((e) => setErr(String(e)))} onChange={(e) => onPrefs({ ...prefs, relayUrl: e.target.value, hostId: prefs.hostId || newHostId() })} />
+          <span className="muted small">Leave empty to use the built-in relay. Phones try the direct address first, then the relay.</span>
           {st?.running && /bound to another key/.test(st.relay ?? "") && (
-            <span className="small">This computer's relay ID is taken on that relay. <button className="ghost" data-testid="gw-relay-reset" onClick={() => { const hostId = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join(""); onPrefs({ ...prefs, hostId }); void gateway.relaySet(prefs.relayUrl?.trim() || undefined, hostId).then(refresh).catch((e) => setErr(String(e))); }}>Use a new relay ID</button> (then show a new pairing code).</span>
+            <span className="small">This computer's relay ID is taken on that relay. <button className="ghost" data-testid="gw-relay-reset" onClick={() => { const hostId = newHostId(); onPrefs({ ...prefs, hostId }); void gateway.relaySet(effectiveRelay(prefs), hostId).then(refresh).catch((e) => setErr(String(e))); }}>Use a new relay ID</button> (then show a new pairing code).</span>
           )}
-          {st?.running && prefs.relayUrl?.trim() && <span className={`relay-status ${st.relay === "online" ? "ok" : st.relay?.startsWith("retrying") ? "bad" : ""}`} data-testid="gw-relay-status"><i className="dot" /> Relay: {st.relay ?? "off"}</span>}
+          {st?.running && relay && <span className={`relay-status ${st.relay === "online" ? "ok" : st.relay?.startsWith("retrying") ? "bad" : ""}`} data-testid="gw-relay-status"><i className="dot" /> Relay: {st.relay ?? "off"}</span>}
         </label>
         {st?.running && prefs.mode === "lan" && (
           <div className="gw-diag" data-testid="gw-diag">
             {st.port_note && <span className="small warn-text" data-testid="gw-port-note">The preferred port was in use, so the gateway is on port <b>{st.port}</b> ({st.port_note}). Paired phones find it automatically; new pairing codes use it.</span>}
-            <span className="muted small">Phones try {(st.urls ?? []).length > 1 ? "these addresses in order" : "this address"}{prefs.relayUrl?.trim() ? ", then the relay" : ""}:</span>
+            <span className="muted small">Phones try {(st.urls ?? []).length > 1 ? "these addresses in order" : "this address"}{relay ? ", then the relay" : ""}:</span>
             <ul className="mono small">{(st.urls ?? [st.url ?? ""]).map((u) => <li key={u}>{u}</li>)}</ul>
             <span className="muted small">Phone says it can't reach the gateway? Open <code>{(st.urls?.[0] ?? st.url ?? "").replace(/^ws/, "http").replace(/\/gw$/, "/")}</code> in the phone's browser. If that doesn't load, the phone is on another network or the firewall is blocking port {st.port ?? prefs.port}.</span>
             {st.firewall && <FirewallBox fw={st.firewall} port={st.port ?? prefs.port} onDone={refresh} />}
@@ -86,6 +113,7 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
       <div className="card">
         <div className="row between">
           <strong>Pair a phone</strong>
+          {reachSwitch}
           <button data-testid="gw-pair" disabled={!st?.running} onClick={() => void gateway.pairBegin(prefs.publicUrl || undefined, undefined, relayConnectUrl(prefs)).then(setPair).catch((e) => setErr(String(e)))}>
             <Icon name="qr" /> {pair && left > 0 ? "New code" : "Show pairing code"}
           </button>
@@ -98,6 +126,7 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
             <div className="qr" dangerouslySetInnerHTML={{ __html: pair.svg }} />
             <div className="stack">
               <p>Scan with Supercharge Studio on your phone, or open/paste the link there. Expires in <b data-testid="gw-countdown">{left}s</b>, single use.</p>
+              <p className="muted small" data-testid="gw-pair-route">{reach === "public" ? "Public: works on any network (direct on the same Wi-Fi, otherwise through the relay)." : "Local: the phone must be on the same Wi-Fi."}</p>
               <p className="muted">No camera? Copy the code and paste it in the app.</p>
               <button className="secondary" onClick={() => void navigator.clipboard?.writeText(pair.uri)}>Copy pairing code</button>
               <input readOnly className="mono" data-testid="gw-uri" value={pair.uri} onFocus={(e) => e.target.select()} />

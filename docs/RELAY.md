@@ -29,7 +29,20 @@ docker run -d --name relay --restart unless-stopped -p 8080:8080 -v relay-data:/
   ghcr.io/iotserver24/supercharge-studio-relay:latest
 ```
 
-## Use it
+## Local / Public
+
+Supercharge Studio has a built-in public relay, `wss://relay.superchargeai.in`. Settings → Devices
+(and the pairing card) has a **Local / Public** switch, remembered across restarts:
+
+- **Public** (default for new installs): the pairing code carries this computer's LAN addresses
+  first (fast path on the same Wi-Fi) and the relay route last, so pairing works from any network.
+  Everything stays end-to-end encrypted. A custom relay URL replaces the built-in one.
+- **Local**: LAN addresses only, no relay connection.
+
+Headless server: `--public` / `--local` (or `SCS_REACH=public|local`); `--relay URL` picks a custom
+relay for Public mode.
+
+## Use it (self-hosted relay)
 
 - **Desktop app**: Settings → Devices → *Relay URL* = `wss://relay.example.com`, then *Show
   pairing code*. The status line should say *Relay: online*. Phones try the computer's direct

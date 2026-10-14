@@ -1,51 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { createServer } from "node:net";
-import { WebSocket } from "ws";
-import { b64, parsePairUri } from "../src/gateway/crypto";
-import { candidates, explainFailure, GatewayTransport, networkMismatch } from "../src/gateway/transport";
+import { DEFAULT_RELAY, effectiveRelay, ensureHostId, reachOf, relayConnect } from "../src/lib/reach";
 
-const secret = b64.enc(new Uint8Array(32).fill(7)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const base = `scstudio://pair?u=ws%3A%2F%2F192.168.1.5%3A2420%2Fgw&i=p-1&k=${secret}`;
-
-describe("reaching the desktop", () => {
-  it("parses extra direct addresses and drops invalid ones", () => {
-    const p = parsePairUri(`${base}&a=ws%3A%2F%2F10.0.0.7%3A2420%2Fgw,javascript%3Ax,ws%3A%2F%2F192.168.1.5%3A2420%2Fgw&r=wss%3A%2F%2Fr.example.com%2Fv1%2Fconnect%2Fh`);
-    expect(p.alts).toEqual(["ws://10.0.0.7:2420/gw"]);
-    expect(candidates({ url: p.url, alts: p.alts, relay: p.relay })).toEqual(["ws://192.168.1.5:2420/gw", "ws://10.0.0.7:2420/gw", "wss://r.example.com/v1/connect/h"]);
-    expect(parsePairUri(base).alts).toBeUndefined();
+describe("Local / Public connection", () => {
+  it("defaults new installs to Public with the built-in relay", () => {
+    expect(reachOf({})).toBe("public");
+    expect(effectiveRelay({})).toBe(DEFAULT_RELAY);
   });
-
-  it("tries every address, then explains each failure", async () => {
-    // A port nobody listens on (refused) and a TCP server that never answers the upgrade (timeout).
-    const silent = createServer(() => {});
-    await new Promise<void>((r) => silent.listen(0, "127.0.0.1", r));
-    const sp = (silent.address() as any).port;
-    const t = new GatewayTransport([`ws://127.0.0.1:1/gw`, `ws://127.0.0.1:${sp}/gw`], "p-1", new Uint8Array(32), "test", WebSocket as any, undefined, 800);
-    t.probe = false; // other tests may run gateways on 2420..2430 meanwhile
-    const err = await t.open().then(() => "", (e) => String(e.message));
-    silent.close();
-    expect(err).toMatch(/Cannot reach the desktop gateway/);
-    expect(err).toContain("127.0.0.1:1: connection refused");
-    expect(err).toContain(`127.0.0.1:${sp}: no answer`);
-    expect(err).toMatch(/relay URL/);
-    expect(t.attempts).toHaveLength(2);
+  it("keeps older installs: empty relay meant local, a relay meant public", () => {
+    expect(reachOf({ relayUrl: "" })).toBe("local");
+    expect(reachOf({ relayUrl: "wss://r.example" })).toBe("public");
   });
-
-  it("gives network and firewall tips for private addresses", () => {
-    const m = explainFailure([{ url: "ws://192.168.1.5:2420/gw", route: "direct", reason: "no answer" }]);
-    expect(m).toContain("TCP port 2420");
-    expect(m).toContain("http://192.168.1.5:2420/");
+  it("Local never uses a relay; a custom URL overrides the built-in one", () => {
+    expect(effectiveRelay({ reach: "local", relayUrl: "wss://r.example" })).toBeUndefined();
+    expect(effectiveRelay({ reach: "public", relayUrl: "wss://r.example/" })).toBe("wss://r.example");
+    expect(effectiveRelay({ reach: "public", relayUrl: "junk" })).toBe(DEFAULT_RELAY);
   });
-
-  it("says when the phone is on a different network than the computer", () => {
-    const urls = ["ws://192.168.1.54:2422/gw"];
-    expect(networkMismatch("192.168.1.80", urls)).toBe("");
-    expect(networkMismatch("192.168.0.80", urls)).toMatch(/different network than the computer \(192\.168\.1\.54\)/);
-    expect(networkMismatch("100.72.1.9", urls)).toMatch(/not on a local Wi-Fi network/);
-    expect(networkMismatch(undefined, urls)).toBe("");
-    const m = explainFailure([{ url: urls[0], route: "direct", reason: "no route to host" }], undefined, "10.0.0.5");
-    expect(m).toMatch(/different network/);
-    expect(m).not.toMatch(/Make sure this phone/);
-    expect(explainFailure([{ url: urls[0], route: "direct", reason: "x" }], undefined, "192.168.1.9")).toMatch(/Make sure this phone/);
+  it("Public gets a host id and a connect URL", () => {
+    const p = ensureHostId({ reach: "public" as const });
+    expect(p.hostId).toMatch(/^[0-9a-f]{24}$/);
+    expect(relayConnect(p)).toBe(`${DEFAULT_RELAY}/v1/connect/${p.hostId}`);
+    expect(ensureHostId({ reach: "local" as const }).hostId).toBeUndefined();
+    expect(relayConnect({ reach: "local", hostId: "abc" })).toBeUndefined();
   });
 });

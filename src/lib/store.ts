@@ -25,7 +25,7 @@ export type Settings = {
   /** When the agent at `bind` rejects our key: "own" = run our own managed agent on `ownBind` (default), "key" = use the key the user entered. */
   agentChoice?: "own" | "key";
   ownBind?: string;
-  gateway?: { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string; relayUrl?: string; hostId?: string };
+  gateway?: { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string; relayUrl?: string; hostId?: string; reach?: "local" | "public" };
 };
 export type AppData = {
   groups: Group[];

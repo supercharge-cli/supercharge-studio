@@ -70,7 +70,10 @@ OPTIONS (env in brackets):
   --agent URL          agent serve address [SCS_AGENT] (ws://127.0.0.1:2419)
   --agent-secret S     agent serve key [SUPERCHARGE_AGENT_SECRET]
   --spawn-agent        start `supercharge agent serve` if nothing is listening [SCS_SPAWN_AGENT=1]
-  --relay URL          outbound relay, e.g. wss://relay.example.com [SCS_RELAY]
+  --public             Public mode: pair through the built-in relay so phones connect
+                       from any network (LAN addresses stay as a fast path) [SCS_REACH=public]
+  --local              Local mode: LAN only, no relay (default) [SCS_REACH=local]
+  --relay URL          custom relay for Public mode, e.g. wss://relay.example.com [SCS_RELAY]
   --data-dir DIR       keys + devices [SCS_DATA] (~/.config/supercharge-studio-server)
   --name NAME          name shown on the phone [SCS_NAME] (hostname)
   --control ADDR       local control socket [SCS_CONTROL] (127.0.0.1:2422)",
@@ -95,6 +98,7 @@ fn parse(args: &[String]) -> (String, Config, Vec<String>) {
     };
     let mut cmd = "run".to_string();
     let mut rest = vec![];
+    let mut reach: Option<bool> = env("SCS_REACH").map(|v| v.eq_ignore_ascii_case("public"));
     let mut i = 0;
     let val = |i: &mut usize| -> String {
         *i += 1;
@@ -109,6 +113,8 @@ fn parse(args: &[String]) -> (String, Config, Vec<String>) {
             "--agent-secret" => c.agent_secret = val(&mut i),
             "--spawn-agent" => c.spawn_agent = true,
             "--relay" => c.relay = Some(val(&mut i)),
+            "--public" => reach = Some(true),
+            "--local" => reach = Some(false),
             "--data-dir" => c.data = PathBuf::from(val(&mut i)),
             "--name" => c.name = val(&mut i),
             "--control" => c.control = val(&mut i),
@@ -121,8 +127,16 @@ fn parse(args: &[String]) -> (String, Config, Vec<String>) {
         }
         i += 1;
     }
+    match reach {
+        Some(true) if c.relay.is_none() => c.relay = Some(DEFAULT_RELAY.into()),
+        Some(false) => c.relay = None,
+        _ => {}
+    }
     (cmd, c, rest)
 }
+
+/// Built-in public relay used by `--public` (same as the desktop app's Public mode).
+pub const DEFAULT_RELAY: &str = "wss://relay.superchargeai.in";
 
 fn hostname() -> String {
     std::env::var("HOSTNAME").ok().or_else(|| std::fs::read_to_string("/etc/hostname").ok()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "Supercharge Server".into())
@@ -594,6 +608,16 @@ mod tests {
         assert_eq!(cmd, "pair");
         assert_eq!(c.bind, "127.0.0.1:9");
         assert_eq!(direct_url(&c), "ws://127.0.0.1:9/gw");
+    }
+
+    #[test]
+    fn public_and_local_modes() {
+        let (_, c, _) = parse(&["run".into(), "--public".into()]);
+        assert_eq!(c.relay.as_deref(), Some(DEFAULT_RELAY));
+        let (_, c, _) = parse(&["--relay".into(), "wss://mine.example".into(), "--public".into()]);
+        assert_eq!(c.relay.as_deref(), Some("wss://mine.example"));
+        let (_, c, _) = parse(&["--relay".into(), "wss://mine.example".into(), "--local".into()]);
+        assert_eq!(c.relay, None);
     }
 
     #[test]
