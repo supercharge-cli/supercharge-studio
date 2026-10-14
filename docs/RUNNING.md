@@ -251,3 +251,12 @@ The app's own agent uses ports from 2440 up, so it never competes with the gatew
 The phone sent a connection to the computer's address and nobody on its network answered at all. Usually the phone is on a different network (guest Wi-Fi, a second router, mobile data) or the router isolates Wi-Fi clients from each other. The phone's error message says when its own address is on a different subnet than the computer's. If the networks match, open Settings → Devices on the computer: when firewalld, ufw or Windows Firewall blocks the gateway port, a warning appears there and on the pairing code, with an **Allow in firewall** button (it asks for your password). The gateway keeps its port across restarts, so the rule only needs adding once.
 
 Pairing codes list only Wi-Fi/Ethernet addresses; container bridges (Docker, Podman), VM networks and VPN tunnels are left out.
+
+## Start at login and keep running
+
+Settings → Devices → *Start at login and keep running in the background* (also offered, checked,
+on the first-run checklist). When on, the app starts hidden at sign-in (Linux XDG autostart entry,
+macOS LaunchAgent, Windows Run key) and closing the window hides it to the system tray, so the
+mobile gateway and the relay stay reachable. Use the tray icon's **Open** / **Quit**. Launching the
+app again while it runs shows the existing window. Some Linux desktops (stock GNOME) need an
+AppIndicator extension to show tray icons; relaunch the app from the menu to reopen the window.

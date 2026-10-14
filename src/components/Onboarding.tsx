@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Icon } from "./Icon";
 
 type Step = { id: string; title: string; body: string; done: boolean; action?: { label: string; run: () => void } };
@@ -13,7 +14,11 @@ export function Onboarding(props: {
   onConnection: () => void;
   onProviders: () => void;
   onDismiss: () => void;
+  /** Desktop only: offer "start at login and keep running", checked by default. */
+  onBackground?: (enabled: boolean) => void;
 }) {
+  const [bg, setBg] = useState(true);
+  const dismiss = () => { props.onBackground?.(bg); props.onDismiss(); };
   const steps: Step[] = [
     {
       id: "agent",
@@ -45,9 +50,12 @@ export function Onboarding(props: {
           </li>
         ))}
       </ol>
+      {props.onBackground && (
+        <label className="check onboard-bg"><input type="checkbox" data-testid="onboard-background" checked={bg} onChange={(e) => setBg(e.target.checked)} /> Start at login and keep running in the background, so my phone can always reach this computer</label>
+      )}
       <div className="row end">
         {!props.connected && <button className="ghost compact" onClick={props.onConnection}>Connection settings</button>}
-        <button className="ghost compact" data-testid="onboard-dismiss" onClick={props.onDismiss}>{doneCount === steps.length ? "Done" : "Skip for now"}</button>
+        <button className="ghost compact" data-testid="onboard-dismiss" onClick={dismiss}>{doneCount === steps.length ? "Done" : "Skip for now"}</button>
       </div>
     </section>
   );

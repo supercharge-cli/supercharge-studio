@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-gateway-firewall-allow"
+description = "Enables the gateway_firewall_allow command without any pre-configured scope."
+commands.allow = ["gateway_firewall_allow"]
+
+[[permission]]
+identifier = "deny-gateway-firewall-allow"
+description = "Denies the gateway_firewall_allow command without any pre-configured scope."
+commands.deny = ["gateway_firewall_allow"]

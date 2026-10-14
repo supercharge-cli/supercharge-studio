@@ -24,6 +24,7 @@ mod cliinstall;
 mod gateway;
 mod gwcrypto;
 mod gwrelay;
+mod background;
 mod mcp;
 mod providers;
 mod screenshot;
@@ -329,6 +330,9 @@ async fn browser_eval(app: AppHandle, state: State<'_, AppState>, script: String
 
 pub fn run() {
     tauri::Builder::default()
+        // A second launch (e.g. from the menu while hidden in the tray) shows the running window.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| background::show_main(app)))
+        .plugin(tauri_plugin_autostart::Builder::new().args([background::BACKGROUND_ARG]).build())
         .manage(AppState::default())
         .setup(|app| {
             mcp::start(app.handle().clone());
@@ -338,7 +342,9 @@ pub fn run() {
                 .title("Supercharge Studio")
                 .inner_size(1360.0, 860.0)
                 .min_inner_size(900.0, 560.0)
+                .visible(!background::launched_in_background(std::env::args()))
                 .build()?;
+            background::setup(app.handle())?;
             let size = window.inner_size()?.to_logical::<f64>(window.scale_factor()?);
             let _main = window.add_child(
                 WebviewBuilder::new("main-ui", WebviewUrl::App("index.html".into())).auto_resize(),
@@ -356,13 +362,21 @@ pub fn run() {
             secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info,
             providers::provider_set_key, providers::provider_has_key, providers::provider_seed_from_env, providers::provider_apply, providers::provider_discover_models, agent_restart,
             gateway::gateway_status, gateway::gateway_start, gateway::gateway_firewall_allow, gateway::gateway_stop, gateway::gateway_pair_begin, gateway::gateway_pair_answer, gateway::gateway_revoke, gateway::gateway_send, gateway::gateway_relay_set,
-            files::fs_list, files::fs_read_text
+            files::fs_list, files::fs_read_text, background::background_get, background::background_set
         ])
         .build(tauri::generate_context!())
         .expect("error while running Supercharge Studio")
-        .run(|_app, ev| {
-            if let tauri::RunEvent::Exit = ev {
-                agent::stop_now();
+        .run(|app, ev| match ev {
+            // Keep running in the tray: closing the window only hides it.
+            tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { api, .. }, .. } if label == "main" && background::hide_on_close() => {
+                api.prevent_close();
+                if let Some(w) = app.get_window("main") {
+                    let _ = w.hide();
+                }
             }
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => background::show_main(app),
+            tauri::RunEvent::Exit => agent::stop_now(),
+            _ => {}
         });
 }

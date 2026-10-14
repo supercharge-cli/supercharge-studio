@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { gateway, GwPairing, GwStatus } from "../lib/desktop";
 import { Icon } from "./Icon";
+import { BackgroundSetting } from "./Background";
 import { DEFAULT_RELAY, effectiveRelay, ensureHostId, newHostId, reachOf, relayConnect, type Reach } from "../lib/reach";
 
 export type GatewayPrefs = { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string; relayUrl?: string; hostId?: string; reach?: Reach };
@@ -66,6 +67,7 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
   return (
     <div className="stack" data-testid="devices">
       <p className="muted">Pair a phone to follow and steer your sessions. Traffic is end-to-end encrypted with a key that only the paired device and this computer know; it never leaves the QR code.</p>
+      <BackgroundSetting />
       <div className="card">
         <div className="row between">
           <div>

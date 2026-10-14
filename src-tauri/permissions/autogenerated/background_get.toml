@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-background-get"
+description = "Enables the background_get command without any pre-configured scope."
+commands.allow = ["background_get"]
+
+[[permission]]
+identifier = "deny-background-get"
+description = "Denies the background_get command without any pre-configured scope."
+commands.deny = ["background_get"]

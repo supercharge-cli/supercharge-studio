@@ -90,3 +90,10 @@ export const agentLogNote = (line: string) => (isDesktop() ? invoke("agent_log_n
 export type FileEntry = { path: string; dir: boolean };
 export const projectFiles = (root: string): Promise<FileEntry[]> => (isDesktop() ? invoke<FileEntry[]>("fs_list", { root }) : Promise.resolve([]));
 export const projectReadText = (root: string, rel: string, max?: number): Promise<string> => invoke<string>("fs_read_text", { root, rel, max });
+
+/** Start at login + keep running in the tray when the window closes (desktop only). */
+export type BackgroundStatus = { autostart: boolean; keep_running: boolean };
+export const background = {
+  get: () => invoke<BackgroundStatus>("background_get"),
+  set: (enabled: boolean) => invoke<BackgroundStatus>("background_set", { enabled }),
+};

@@ -33,7 +33,7 @@ import { VirtualList } from "./components/VirtualList";
 import { GatewayHub } from "./gateway/hub";
 import { effectiveRelay, ensureHostId } from "./lib/reach";
 import { FileEntry, projectFiles, projectReadText } from "./lib/desktop";
-import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type CliStatus, agentLogNote, agentRestart, appConfig, ensureAgent, gateway, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
+import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type CliStatus, agentLogNote, agentRestart, appConfig, background, ensureAgent, gateway, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
 import { AppData, applyTree, ensureFolderProject, findProject, load, mergeCliSessions, normCwd, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
 
@@ -1120,6 +1120,7 @@ export default function App() {
                     onConnection={() => openSettings("connection")}
                     onProviders={() => openSettings("providers")}
                     onDismiss={() => update((d) => ({ ...d, settings: { ...d.settings, onboarded: true } }))}
+                    onBackground={isDesktop() ? (on) => void background.set(on).catch((e) => setNotice(`Start at login: ${e}`)) : undefined}
                   />
                 )}
                 {sess.items.length === 0 && !isBusy && !(activeChat && loadingChats.has(activeChat.id)) && data.settings.onboarded && (

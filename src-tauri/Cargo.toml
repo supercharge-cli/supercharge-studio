@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["unstable"] }
+tauri = { version = "2", features = ["unstable", "tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["sync", "time", "process", "io-util", "net", "rt", "macros"] }
@@ -33,6 +33,10 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "async-
 if-addrs = "0.13"
 # CLI installer downloads (rustls, blocking; run off the async runtime).
 ureq = { version = "2", default-features = false, features = ["tls"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
 
 [profile.release]
 codegen-units = 1
