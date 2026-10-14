@@ -14,13 +14,33 @@ import { defaultDeviceName, loadCreds, pendingCredsFromCode, saveCreds } from ".
 import { canScan, onPairLink, scanQr } from "./scan";
 import { parsePairUri } from "../gateway/crypto";
 import { type Attachment, deviceBlocks, fmtSize, fromFile, isImage, rejectReason } from "../lib/attachments";
+import { relTime } from "../lib/store";
 
 /** Light haptic tick where the platform allows it. */
 const haptic = (ms = 8) => { try { navigator.vibrate?.(ms); } catch { /* not supported */ } };
 const SUGGESTIONS = ["Explain this project", "Find and fix a bug", "Write tests for recent changes", "Summarize what changed today"];
 
-type Sess = { sessionId: string; title?: string; cwd?: string; _meta?: { project?: string; projectId?: string; group?: string; busy?: boolean } };
+type Sess = { sessionId: string; title?: string; cwd?: string; updatedAt?: string; _meta?: { project?: string; projectId?: string; group?: string; busy?: boolean } };
 type Project = { projectId: string; name: string; cwd: string; group: string };
+type HistoryView = "projects" | "chats";
+const HISTORY_KEY = "supercharge-mobile/history-view";
+
+function sessionTime(s: Sess): number {
+  const t = Date.parse(s.updatedAt ?? "");
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** ChatGPT-style buckets: today, yesterday, the last week, then everything older. */
+function chatBucket(ms: number, now = Date.now()): string {
+  if (!ms) return "Older";
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  const day = start.getTime();
+  if (ms >= day) return "Today";
+  if (ms >= day - 86_400_000) return "Yesterday";
+  if (ms >= day - 7 * 86_400_000) return "Previous 7 days";
+  return "Older";
+}
 
 function Pair({ onPaired }: { onPaired: (c: DeviceCreds) => void }) {
   const [code, setCode] = useState("");
@@ -112,6 +132,9 @@ export default function MobileApp() {
   const [sheet, setSheet] = useState(false);
   const [newSheet, setNewSheet] = useState(false);
   const [search, setSearch] = useState("");
+  const [historyView, setHistoryView] = useState<HistoryView>(() => (localStorage.getItem(HISTORY_KEY) === "chats" ? "chats" : "projects"));
+  const [drawer, setDrawer] = useState(false);
+  const pickView = (v: HistoryView) => { setHistoryView(v); localStorage.setItem(HISTORY_KEY, v); };
   const fileInput = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const client = useRef<AcpClient | null>(null);
@@ -350,12 +373,27 @@ export default function MobileApp() {
   const q = search.trim().toLowerCase();
   const shown = q ? grouped.map((g) => ({ ...g, sessions: g.sessions.filter((s) => `${s.title ?? ""} ${g.project.name}`.toLowerCase().includes(q)) })).filter((g) => g.sessions.length || g.project.name.toLowerCase().includes(q)) : grouped;
   const allProjects = grouped.map((g) => g.project);
+  const chatSections = (() => {
+    const order = ["Today", "Yesterday", "Previous 7 days", "Older"];
+    const now = Date.now();
+    const sessions = shown.flatMap(({ project, sessions }) => sessions.map((s) => ({ s, project })));
+    sessions.sort((a, b) => sessionTime(b.s) - sessionTime(a.s));
+    const buckets = new Map<string, typeof sessions>();
+    for (const row of sessions) {
+      const name = chatBucket(sessionTime(row.s), now);
+      const rows = buckets.get(name) ?? [];
+      rows.push(row);
+      buckets.set(name, rows);
+    }
+    return order.filter((name) => buckets.has(name)).map((name) => ({ name, rows: buckets.get(name)! }));
+  })();
   const canSend = (!!draft.trim() || atts.length > 0) && uploading == null;
 
   return (
     <div className="m-app">
       <header className="m-top">
-        {open ? <button className="icon" aria-label="Chats" onClick={back} data-testid="m-back"><Icon name="arrowLeft" size={20} /></button> : <div className="logo"><Icon name="bolt" size={16} /></div>}
+        {open ? <button className="icon" aria-label="Chats" data-testid="m-menu" onClick={() => { haptic(); setDrawer(true); }}><Icon name="panelLeft" size={20} /></button> : <div className="logo"><Icon name="bolt" size={16} /></div>}
+        {open && <button className="icon" aria-label="Back" onClick={back} data-testid="m-back"><Icon name="arrowLeft" size={20} /></button>}
         {open ? (
           <button className="m-head-title" data-testid="m-chat-settings" aria-label="Chat settings" disabled={!hasSettings} onClick={() => { haptic(); setSheet(true); }}>
             <span className="m-title">{title}</span>
@@ -378,12 +416,18 @@ export default function MobileApp() {
       {handoff && (
         <button className="m-handoff" data-testid="m-handoff" onClick={() => void openSession(handoff)}><Icon name="phone" /> Continue “{list.find((s) => s.sessionId === handoff)?.title ?? "chat"}” from your computer</button>
       )}
-      {!open ? (
-        <div className="m-list-wrap">
+      {(!open || drawer) && (
+        <div className={open ? "m-list-wrap m-drawer-open" : "m-list-wrap"} onClick={(e) => { if (open && e.target === e.currentTarget) setDrawer(false); }}>
           <div className="m-ptr" ref={ptr} aria-hidden><Icon name="refresh" size={18} /></div>
           <div className="m-list" ref={listRef} data-testid="m-list">
             {listed && grouped.length > 0 && (
-              <label className="m-search"><Icon name="search" size={15} /><input type="search" placeholder="Search chats" aria-label="Search chats" data-testid="m-search" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
+              <>
+                <div className="m-views" role="tablist" aria-label="History">
+                  <button role="tab" aria-selected={historyView === "projects"} className={historyView === "projects" ? "on" : ""} data-testid="m-view-projects" onClick={() => pickView("projects")}>Projects</button>
+                  <button role="tab" aria-selected={historyView === "chats"} className={historyView === "chats" ? "on" : ""} data-testid="m-view-chats" onClick={() => pickView("chats")}>Chats</button>
+                </div>
+                <label className="m-search"><Icon name="search" size={15} /><input type="search" placeholder="Search chats" aria-label="Search chats" data-testid="m-search" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
+              </>
             )}
             {!listed && !err && [0, 1].map((k) => (
               <section key={k} className="m-proj m-skel" aria-busy="true" data-testid="m-skeleton">
@@ -393,13 +437,27 @@ export default function MobileApp() {
               </section>
             ))}
             {listed && grouped.length === 0 && <div className="empty"><div className="empty-icon"><Icon name="folder" size={24} /></div><h2>No projects yet</h2><p className="muted">Add a project on your computer and it will show up here.</p></div>}
-            {shown.map(({ project, sessions }, pi) => (
+            {historyView === "projects" && shown.map(({ project, sessions }, pi) => (
               <section key={`${project.projectId}-${pi}`} className="m-proj" style={{ animationDelay: `${Math.min(pi, 6) * 30}ms` }}>
-                <div className="m-proj-head"><Icon name="folder" size={14} /><b>{project.name}</b><span className="muted">{project.group}</span><div className="spacer" /><button className="icon" aria-label={`New chat in ${project.name}`} data-testid="m-new" onClick={() => { haptic(); void newChat(project); }}><Icon name="plus" /></button></div>
+                <div className="m-proj-head"><Icon name="folder" size={14} /><b>{project.name}</b><span className="muted">{project.group}</span><div className="spacer" /><button className="icon" aria-label={`New chat in ${project.name}`} data-testid="m-new" onClick={() => { haptic(); setDrawer(false); void newChat(project); }}><Icon name="plus" /></button></div>
                 {sessions.length === 0 && <div className="muted m-none">No chats</div>}
                 {sessions.map((s, si) => (
-                  <button key={`${s.sessionId}-${si}`} className="m-chat" data-testid="m-chat" onClick={() => void openSession(s.sessionId)}>
-                    <span className="m-chat-title">{s.title || "Untitled"}</span>{s._meta?.busy && <i className="m-busy" aria-label="working" />}<Icon name="chevronRight" size={14} />
+                  <button key={`${s.sessionId}-${si}`} className={`m-chat${s.sessionId === open ? " on" : ""}`} data-testid="m-chat" onClick={() => { setDrawer(false); void openSession(s.sessionId); }}>
+                    <span className="m-chat-title">{s.title || "Untitled"}</span>
+                    <span className="m-chat-time">{sessionTime(s) ? relTime(sessionTime(s)) : ""}</span>
+                    {s._meta?.busy && <i className="m-busy" aria-label="working" />}
+                  </button>
+                ))}
+              </section>
+            ))}
+            {historyView === "chats" && chatSections.map((section) => (
+              <section key={section.name} className="m-proj" data-testid="m-chat-section">
+                <div className="m-proj-head"><b>{section.name}</b></div>
+                {section.rows.map(({ s, project }, si) => (
+                  <button key={`${s.sessionId}-${si}`} className={`m-chat${s.sessionId === open ? " on" : ""}`} data-testid="m-chat" onClick={() => { setDrawer(false); void openSession(s.sessionId); }}>
+                    <span className="m-chat-body"><span className="m-chat-title">{s.title || "Untitled"}</span><span className="m-chat-sub">{project.name}</span></span>
+                    <span className="m-chat-time">{sessionTime(s) ? relTime(sessionTime(s)) : ""}</span>
+                    {s._meta?.busy && <i className="m-busy" aria-label="working" />}
                   </button>
                 ))}
               </section>
@@ -408,10 +466,11 @@ export default function MobileApp() {
             <button className="ghost m-unpair" onClick={() => { saveCreds(null); setCreds(null); }}>Unpair this device</button>
           </div>
           {listed && allProjects.length > 0 && (
-            <button className="m-fab" data-testid="m-fab" aria-label="New chat" onClick={() => { haptic(); if (allProjects.length === 1) void newChat(allProjects[0]); else setNewSheet(true); }}><Icon name="compose" size={18} /> New chat</button>
+            <button className="m-fab" data-testid="m-fab" aria-label="New chat" onClick={() => { haptic(); setDrawer(false); if (allProjects.length === 1) void newChat(allProjects[0]); else setNewSheet(true); }}><Icon name="compose" size={18} /> New chat</button>
           )}
         </div>
-      ) : (
+      )}
+      {open && (
         <div className="m-view" ref={threadView}>
           <div className="m-thread" ref={scroller} data-testid="m-thread">
             <div className={`thread${isBusy ? " streaming" : ""}`}>

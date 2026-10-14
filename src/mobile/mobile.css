@@ -1,5 +1,5 @@
 /* Mobile companion: chat-first layout, sheets, safe areas, system light/dark. */
-html,body,#root{height:100%}
+html,body,#root{height:100%;touch-action:pan-x pan-y}
 body{overscroll-behavior:none;-webkit-font-smoothing:antialiased}
 button,a{-webkit-tap-highlight-color:transparent}
 .m-app{height:100dvh;display:flex;flex-direction:column;background:var(--bg);padding-top:env(safe-area-inset-top);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
@@ -16,6 +16,16 @@ button,a{-webkit-tap-highlight-color:transparent}
 
 /* chat list */
 .m-list-wrap{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.m-drawer-open{position:fixed;inset:0;z-index:25;flex:none;display:block;background:rgba(0,0,0,.42)}
+.m-drawer-open .m-list{position:absolute;left:0;top:0;bottom:0;width:min(86vw,340px);height:auto;background:var(--bg);box-shadow:12px 0 40px rgba(0,0,0,.35)}
+.m-drawer-open .m-fab{left:16px;right:auto}
+.m-views{display:flex;gap:4px;padding:3px;margin:2px 0 10px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.m-views button{flex:1;border:0;border-radius:9px;padding:8px 10px;background:none;color:var(--muted);font-weight:600;font-size:13px}
+.m-views button.on{background:var(--raise);color:var(--fg)}
+.m-chat-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.m-chat-sub,.m-chat-time{font-size:12px;color:var(--muted);font-weight:450}
+.m-chat-time{flex:none}
+.m-chat.on{background:var(--hover)}
 .m-list{flex:1;overflow:auto;padding:10px 12px calc(96px + env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;will-change:transform}
 .m-search{display:flex;align-items:center;gap:8px;padding:0 12px;margin:2px 0 12px;border-radius:12px;background:var(--panel);border:1px solid var(--line);color:var(--muted)}
 .m-search input{flex:1;border:0;background:none;padding:11px 0;font-size:16px;outline:none;box-shadow:none}
