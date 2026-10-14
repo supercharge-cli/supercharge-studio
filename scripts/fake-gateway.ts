@@ -21,6 +21,8 @@ const pairings = new Map<string, Uint8Array>(); // pairing id -> device key
 const devices = new Map<string, Uint8Array>(); // device id -> key
 const conns = new Map<string, (m: any) => void>();
 let permResult: any = null;
+const uploads: Record<string, { name: string; mimeType: string; parts: string[] }> = {};
+let lastAttachments: any[] = [];
 const sessions = [
   { sessionId: "s1", title: "Fix login bug", cwd: "/work/api", project: "api", projectId: "p1", group: "Work" },
   { sessionId: "s2", title: "Write release notes", cwd: "/work/docs", project: "docs", projectId: "p2", group: "Work" },
@@ -30,8 +32,20 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const hub: GatewayHub = new GatewayHub((d, m) => conns.get(d)?.(m), {
   sessions: () => sessions,
   projects: () => [{ projectId: "p1", name: "api", cwd: "/work/api", group: "Work" }, { projectId: "p2", name: "docs", cwd: "/work/docs", group: "Work" }],
-  async prompt(sid, text) {
+  async upload(p: any) {
+    const u = (uploads[p.uploadId] ??= { name: p.name, mimeType: p.mimeType, parts: [] });
+    u.parts[p.index] = p.data;
+    if (p.index < p.total - 1) return { received: p.index };
+    const size = u.parts.reduce((n: number, d: string) => n + Buffer.from(d, "base64").length, 0);
+    return { uploadId: p.uploadId, uri: `file:///uploads/${p.name}`, path: `/uploads/${p.name}`, name: p.name, mimeType: p.mimeType, size };
+  },
+  async resolveUploads(blocks: any[]) {
+    return blocks.map((b) => (b?._meta?.supercharge?.uploadId ? { type: "resource_link", uri: b.uri, name: b.name, mimeType: b.mimeType, size: b.size } : b));
+  },
+  async prompt(sid, text, _from, extra: any[] = []) {
+    if (extra.length) lastAttachments = extra;
     hub.update(sid, { sessionUpdate: "user_message_chunk", content: { type: "text", text } });
+    if (extra.length) hub.update(sid, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Got ${extra.length} attachment(s): ${extra.map((b: any) => b.name ?? b.type).join(", ")}. ` } });
     if (/perm/.test(text)) {
       const { answer } = hub.requestPermission(sid, { toolCall: { toolCallId: "t9", title: "Run npm test", rawInput: { command: "npm test" } }, options: [{ optionId: "y", name: "Allow once", kind: "allow_once" }, { optionId: "n", name: "Reject", kind: "reject_once" }] });
       const o = await answer;
@@ -71,6 +85,7 @@ const http = createServer(async (req, res) => {
     const relay = u.searchParams.get("relay") ? `&r=${encodeURIComponent(`ws://127.0.0.1:${port + 1}/v1/connect/test-host`)}` : "";
     return res.end(JSON.stringify({ uri: `scstudio://pair?u=${encodeURIComponent(direct)}&i=${id}&k=${k}&n=Test%20Desktop${relay}` }));
   }
+  if (u.pathname === "/attachments") return res.end(JSON.stringify(lastAttachments));
   if (u.pathname === "/relay-stats") return res.end(JSON.stringify(relayStats));
   if (u.pathname === "/handoff") return res.end(JSON.stringify({ n: hub.handoff(u.searchParams.get("sid") ?? "s2") }));
   if (u.pathname === "/perm") {

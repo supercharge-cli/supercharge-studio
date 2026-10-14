@@ -92,7 +92,7 @@ describe("gateway hub", () => {
   it("forwards prompts, cancel, new session and focus (handoff)", async () => {
     const { hub, host, sent } = makeHub();
     await hub.receive("A", { id: 3, method: "session/prompt", params: { sessionId: "s1", prompt: [{ type: "text", text: "hi" }] } });
-    expect(host.prompt).toHaveBeenCalledWith("s1", "hi", "dev-A");
+    expect(host.prompt).toHaveBeenCalledWith("s1", "hi", "dev-A", []);
     expect(sent.at(-1)!.m).toMatchObject({ id: 3, result: { stopReason: "end_turn" } });
     await hub.receive("A", { method: "session/cancel", params: { sessionId: "s1" } });
     expect(host.cancel).toHaveBeenCalledWith("s1");
@@ -176,5 +176,31 @@ describe("gateway hub", () => {
     const { token } = hub.requestPermission("s1", { options: [] });
     hub.resolved(token, { outcome: "cancelled" });
     expect(sent.at(-1)).toMatchObject({ d: "A", m: { method: "_supercharge/permission/resolved", params: { by: "desktop" } } });
+  });
+});
+
+describe("gateway uploads", () => {
+  it("routes upload chunks to the host and passes attachments into the prompt", async () => {
+    const sent: any[] = [];
+    const prompt = vi.fn(async () => ({ stopReason: "end_turn" }));
+    const host: HubHost = {
+      sessions: () => [{ sessionId: "s1", title: "t", cwd: "/w", project: "w", projectId: "p1", group: "g" }],
+      projects: () => [],
+      prompt,
+      cancel() {},
+      newSession: async () => "s2",
+      focus() {},
+      upload: async (p) => ({ uploadId: p.uploadId, uri: "file:///up/a.png", path: "/up/a.png", name: "a.png", mimeType: "image/png", size: 3 }),
+      resolveUploads: async (blocks) => blocks.map((b: any) => ({ type: "image", mimeType: b.mimeType, data: "AQID" })),
+    };
+    const hub = new GatewayHub((d, m) => sent.push(m), host, () => "Phone");
+    await hub.receive("d1", { jsonrpc: "2.0", id: 1, method: "_supercharge/upload", params: { uploadId: "u", index: 0, total: 1, data: "AQID" } });
+    expect(sent.pop().result.uri).toBe("file:///up/a.png");
+    await hub.receive("d1", { jsonrpc: "2.0", id: 2, method: "session/prompt", params: { sessionId: "s1", prompt: [{ type: "resource_link", uri: "file:///up/a.png", name: "a.png", mimeType: "image/png", _meta: { supercharge: { uploadId: "u" } } }] } });
+    expect(prompt).toHaveBeenCalledWith("s1", "", "Phone", [{ type: "image", mimeType: "image/png", data: "AQID" }]);
+    // No upload support: the method is refused, not passed on.
+    const hub2 = new GatewayHub((d, m) => sent.push(m), { ...host, upload: undefined });
+    await hub2.receive("d1", { jsonrpc: "2.0", id: 3, method: "_supercharge/upload", params: {} });
+    expect(sent.pop().error.code).toBe(-32601);
   });
 });

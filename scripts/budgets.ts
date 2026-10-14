@@ -7,9 +7,9 @@ import { gzipSync } from "node:zlib";
 
 const KB = 1024;
 const budgets: { dir: string; label: string; entry: RegExp; entryMax: number; totalJsMax: number; cssMax: number }[] = [
-  // Includes CLI session sync, browser tools, per-chat model and permission controls, Local/Public and background settings.
-  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 52 * KB, totalJsMax: 61 * KB, cssMax: 10 * KB },
-  { dir: "dist-mobile/assets", label: "mobile", entry: /^mobile-.*\.js$/, entryMax: 26 * KB, totalJsMax: 30 * KB, cssMax: 10 * KB },
+  // Includes CLI session sync, browser tools, per-chat model and permission controls, Local/Public, background settings and attachments.
+  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 54 * KB, totalJsMax: 63 * KB, cssMax: 11 * KB },
+  { dir: "dist-mobile/assets", label: "mobile", entry: /^mobile-.*\.js$/, entryMax: 26 * KB, totalJsMax: 30 * KB, cssMax: 11 * KB },
 ];
 let failed = false;
 for (const b of budgets) {

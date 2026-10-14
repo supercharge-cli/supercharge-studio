@@ -4,7 +4,7 @@
  *
  * Allowed device → desktop methods: initialize, session/list, session/load, session/new,
  * session/prompt, session/cancel, session/set_mode, session/set_config_option,
- * _supercharge/focus. Everything else is rejected.
+ * _supercharge/focus, _supercharge/upload (chunked file upload; prompts link uploads by id). Everything else is rejected.
  * Desktop → device: session/update (live + replay), session/request_permission (fan-out,
  * first answer wins), _supercharge/permission/resolved, _supercharge/handoff,
  * _supercharge/sessions/changed.
@@ -17,7 +17,11 @@ export type HubProject = { projectId: string; name: string; cwd: string; group: 
 export interface HubHost {
   sessions(): HubSession[];
   projects(): HubProject[];
-  prompt(sessionId: string, text: string, from: string): Promise<{ stopReason: string; usage?: unknown }>;
+  prompt(sessionId: string, text: string, from: string, extra?: unknown[]): Promise<{ stopReason: string; usage?: unknown }>;
+  /** Save one chunk of a device upload; the last chunk resolves with {uploadId, uri, path, name, mimeType, size}. */
+  upload?(params: any): Promise<any>;
+  /** Point upload links in a device prompt at the saved files (images may become image blocks). */
+  resolveUploads?(blocks: unknown[]): Promise<unknown[]>;
   cancel(sessionId: string): void;
   newSession(projectId: string): Promise<string>;
   configOptions?(sessionId: string): ConfigOption[];
@@ -32,7 +36,7 @@ export interface HubHost {
 type Msg = { jsonrpc?: "2.0"; id?: number | string; method?: string; params?: any; result?: any; error?: any };
 type Send = (deviceId: string, msg: Msg) => void;
 
-const ALLOWED = new Set(["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "session/set_config_option", "session/set_mode", "_supercharge/focus"]);
+const ALLOWED = new Set(["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "session/set_config_option", "session/set_mode", "_supercharge/focus", "_supercharge/upload"]);
 const MAX_REPLAY = 3000;
 
 export class GatewayHub {
@@ -135,7 +139,7 @@ export class GatewayHub {
         case "initialize":
           return this.reply(deviceId, id, {
             protocolVersion: 1,
-            agentCapabilities: { loadSession: true, sessionCapabilities: { list: {} }, promptCapabilities: { image: false } },
+            agentCapabilities: { loadSession: true, sessionCapabilities: { list: {} }, promptCapabilities: { image: true, embeddedContext: true }, _meta: { supercharge: { upload: !!this.host.upload } } },
             agentInfo: { name: "supercharge-studio-gateway", title: "Supercharge Studio" },
             authMethods: [],
             _meta: { supercharge: { gateway: { version: 1, projects: this.host.projects() } } },
@@ -187,13 +191,19 @@ export class GatewayHub {
         }
         case "session/prompt": {
           const sid = String(params.sessionId ?? "");
-          const text = (params.prompt ?? []).map((b: any) => (b?.type === "text" ? b.text : "")).join("");
-          if (!text.trim()) return this.fail(deviceId, id, -32602, "Empty prompt");
+          const blocks: any[] = Array.isArray(params.prompt) ? params.prompt : [];
+          const text = blocks.map((b: any) => (b?.type === "text" ? b.text : "")).join("");
+          let extra: unknown[] = blocks.filter((b: any) => b && typeof b === "object" && ["image", "resource", "resource_link"].includes(b.type));
+          if (!text.trim() && !extra.length) return this.fail(deviceId, id, -32602, "Empty prompt");
+          if (extra.length && this.host.resolveUploads) extra = await this.host.resolveUploads(extra);
           if (!this.subs.has(sid)) this.subs.set(sid, new Set());
           this.subs.get(sid)!.add(deviceId);
-          const r = await this.host.prompt(sid, text, this.names(deviceId));
+          const r = await this.host.prompt(sid, text, this.names(deviceId), extra);
           return this.reply(deviceId, id, r);
         }
+        case "_supercharge/upload":
+          if (!this.host.upload) return this.fail(deviceId, id, -32601, "Uploads are not available");
+          return this.reply(deviceId, id, await this.host.upload(params));
         case "session/cancel":
           this.host.cancel(String(params.sessionId ?? ""));
           return;

@@ -32,8 +32,9 @@ import { ToolCard } from "./components/ToolCard";
 import { VirtualList } from "./components/VirtualList";
 import { GatewayHub } from "./gateway/hub";
 import { effectiveRelay, ensureHostId } from "./lib/reach";
+import { type Attachment, fmtSize, fromFile, isImage, rejectReason, toBlocks } from "./lib/attachments";
 import { FileEntry, projectFiles, projectReadText } from "./lib/desktop";
-import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type CliStatus, agentLogNote, agentRestart, appConfig, background, ensureAgent, gateway, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
+import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type CliStatus, agentLogNote, agentRestart, appConfig, background, ensureAgent, gateway, invoke, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
 import { AppData, applyTree, ensureFolderProject, findProject, load, mergeCliSessions, normCwd, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
 
@@ -172,11 +173,13 @@ export default function App() {
             g.projects.flatMap((p) => p.chats.filter((c) => c.sessionId).map((c) => ({ sessionId: c.sessionId!, title: c.title, cwd: p.cwd, project: p.name, projectId: p.id, group: g.name, updatedAt: c.createdAt, busy: !!busyRef.current[c.id] }))),
           ),
         projects: () => dataRef.current.groups.flatMap((g) => g.projects.map((p) => ({ projectId: p.id, name: p.name, cwd: p.cwd, group: g.name }))),
-        prompt: (sid, text, from) => {
+        prompt: (sid, text, from, extra) => {
           const f = chatForSession(sid);
           if (!f) return Promise.reject(new Error("Unknown session"));
-          return runPrompt(f.project.id, f.chat.id, text, from);
+          return runPrompt(f.project.id, f.chat.id, text, from, extra ?? []);
         },
+        upload: isDesktop() ? (params) => invoke("upload_chunk", { params }) : undefined,
+        resolveUploads: isDesktop() ? (blocks) => invoke<unknown[]>("upload_rewrite", { prompt: blocks, images: agentImages() }) : undefined,
         cancel: (sid) => void clientRef.current?.cancel(sid),
         configOptions: (sid) => optionsRef.current[sid] ?? [],
         modes: (sid) => modesRef.current[sid],
@@ -435,6 +438,10 @@ export default function App() {
     return () => offs.forEach((o) => void o.then((f) => f()));
   }, []);
 
+  function agentImages() {
+    return (clientRef.current?.initResult?.agentCapabilities as any)?.promptCapabilities?.image !== false;
+  }
+
   async function activateProvider(p: Provider, all: Provider[]) {
     update((d) => ({ ...d, settings: { ...d.settings, providers: all } }));
     try {
@@ -616,7 +623,9 @@ export default function App() {
       update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, title: text.slice(0, 40) } : x)) })));
     update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, updatedAt: Date.now() } : x)) })));
     turnText.current[chatId] = text;
-    if (!resend) pushItem(chatId, { kind: "user", text: from ? `${text}` : text, ...(from ? { from } : {}) } as ChatItem);
+    const attNames = (extra as any[]).filter((b) => b && b._att).map((b) => b._att as string);
+    for (const b of extra as any[]) if (b && b._att) delete b._att;
+    if (!resend) pushItem(chatId, { kind: "user", text: from ? `${text}` : text, ...(from ? { from } : {}), ...(attNames.length ? { attachments: attNames } : {}) } as ChatItem);
     setBusy((b) => ({ ...b, [chatId]: true }));
     try {
       let sid = await ensureSession(projectId, chatId);
@@ -703,8 +712,8 @@ export default function App() {
       if (!(agentHas && sl.args && !nativeByName.get(sl.name)!.sub) && runNative(sl.name, sl.args)) { setDraftCaret(""); return; }
       if (!agentHas) { setNotice(`/${sl.name}: unknown option “${sl.args}”`); return; }
     }
-    if (!text || !clientRef.current || !active) return;
-    if (activeChat && busyRef.current[activeChat.id]) {
+    if ((!text && !atts.length) || !clientRef.current || !active) return;
+    if (activeChat && busyRef.current[activeChat.id] && !atts.length) {
       setDraft("");
       if (data.settings.steerByDefault) void steer(active.project.id, activeChat.id, text);
       else enqueue_(activeChat.id, text);
@@ -720,10 +729,44 @@ export default function App() {
       const embed = !!(clientRef.current.initResult?.agentCapabilities as any)?.promptCapabilities?.embeddedContext;
       extra = await mentionBlocks(root, extractMentions(text, files), embed, (rel) => projectReadText(root, rel));
     }
+    if (atts.length) {
+      const pc = (clientRef.current.initResult?.agentCapabilities as any)?.promptCapabilities ?? {};
+      const sending = atts;
+      setAtts([]);
+      try {
+        const blocks = await toBlocks(sending, { image: pc.image !== false, embeddedContext: true }, isDesktop() ? (params) => invoke("upload_chunk", { params }) : undefined);
+        blocks.forEach((b: any, i) => (b._att = sending[i].name));
+        extra = [...extra, ...blocks];
+      } catch (e: any) {
+        setAtts(sending);
+        setAttErr(`Could not attach: ${e?.message ?? e}`);
+        return;
+      }
+      sending.forEach((a) => a.preview && URL.revokeObjectURL(a.preview));
+    }
     await runPrompt(active.project.id, chatId, text, undefined, extra).catch(() => {});
   }
 
   const stop = () => activeChat?.sessionId && clientRef.current?.cancel(activeChat.sessionId);
+
+  // ---- Attachments (button, drag and drop, paste) ----
+  const [atts, setAtts] = useState<Attachment[]>([]);
+  const [attErr, setAttErr] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  async function addFiles(files: File[]) {
+    setAttErr("");
+    let n = atts.length;
+    const add: Attachment[] = [];
+    for (const f of files) {
+      const why = rejectReason(f, n);
+      if (why) { setAttErr(why); continue; }
+      add.push(await fromFile(f));
+      n++;
+    }
+    if (add.length) setAtts((a) => [...a, ...add]);
+  }
+  const removeAtt = (id: string) => setAtts((a) => { const x = a.find((y) => y.id === id); if (x?.preview) URL.revokeObjectURL(x.preview); return a.filter((y) => y.id !== id); });
 
   // Native webviews draw above the DOM: hide the side browser while an overlay or another screen is shown.
   const browserVisible = view === "chat" && panel && !perm && !palette && !pairReq;
@@ -955,7 +998,7 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div className={`bubble ${m.kind}`}>{(m as any).from && <span className="from"><Icon name="phone" size={11} /> {(m as any).from}</span>}{m.text}</div>
+        <div className={`bubble ${m.kind}`}>{(m as any).from && <span className="from"><Icon name="phone" size={11} /> {(m as any).from}</span>}{m.text}{(m as any).attachments?.length > 0 && <span className="att-names" data-testid="bubble-attachments">{(m as any).attachments.map((n: string) => <span key={n} className="att-name"><Icon name="file" size={11} /> {n}</span>)}</span>}</div>
       ),
     [sess.toolCalls],
   );
@@ -1137,7 +1180,10 @@ export default function App() {
             }
             footer={isBusy && <div className="typing" aria-label="Agent is working"><i /><i /><i /></div>}
           />
-          <div className="composer-wrap">
+          <div className={`composer-wrap${dragOver ? " drag-over" : ""}`} data-testid="composer-wrap"
+            onDragOver={(e) => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); setDragOver(true); } }}
+            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }}
+            onDrop={(e) => { if (!e.dataTransfer?.files?.length) return; e.preventDefault(); setDragOver(false); void addFiles([...e.dataTransfer.files]); }}>
             {menuOpen && (
               <ComposerMenu
                 items={menuItems}
@@ -1167,8 +1213,23 @@ export default function App() {
               </div>
             )}
             {activeChat?.sessionId && <ModelControls key={activeChat.sessionId} options={configOptions} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)} />}
+            {(atts.length > 0 || attErr) && (
+              <div className="att-row" data-testid="attachments">
+                {atts.map((a) => (
+                  <div key={a.id} className="att-chip" data-testid="attachment" title={`${a.name} · ${fmtSize(a.size)}`}>
+                    {a.preview && isImage(a.mime) ? <img src={a.preview} alt="" /> : <span className="att-ico"><Icon name="file" size={14} /></span>}
+                    <span className="att-meta"><b>{a.name}</b><span className="muted">{fmtSize(a.size)}</span></span>
+                    <button className="icon sm" data-testid="attachment-remove" aria-label={`Remove ${a.name}`} onClick={() => removeAtt(a.id)}><Icon name="x" size={12} /></button>
+                  </div>
+                ))}
+                {attErr && <span className="error-text small" data-testid="attach-error">{attErr}</span>}
+              </div>
+            )}
             <div className="composer">
+              <input ref={fileInput} type="file" multiple hidden data-testid="attach-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
+              <button className="icon attach" data-testid="attach" aria-label="Attach files" title="Attach files (or drop / paste them)" disabled={conn !== "open" || !active} onClick={() => fileInput.current?.click()}><Icon name="clip" /></button>
               <textarea
+                onPaste={(e) => { const fs = [...(e.clipboardData?.files ?? [])]; if (fs.length) { e.preventDefault(); void addFiles(fs); } }}
                 ref={composerRef}
                 value={draft}
                 rows={1}
@@ -1196,7 +1257,7 @@ export default function App() {
                   <button className="danger round" aria-label="Stop" title="Stop (Ctrl .)" onClick={stop}><Icon name="stop" /><span className="sr">Stop</span></button>
                 </>
               ) : (
-                <button className="round" aria-label="Send" title="Send (Enter)" onClick={() => void send()} disabled={conn !== "open" || !active || !draft.trim()}><Icon name="send" /><span className="sr">Send</span></button>
+                <button className="round" aria-label="Send" title="Send (Enter)" onClick={() => void send()} disabled={conn !== "open" || !active || (!draft.trim() && !atts.length)}><Icon name="send" /><span className="sr">Send</span></button>
               )}
             </div>
             <div className="hint">{active ? <><span>cwd <code>{active.project.cwd}</code> · Enter to send, Shift+Enter for a new line · / commands · @ files</span>{activeChat?.sessionId && <ModeControl key={activeChat.sessionId} modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} />}</> : " "}</div>

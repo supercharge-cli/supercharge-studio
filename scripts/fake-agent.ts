@@ -299,6 +299,9 @@ wss.on("connection", (ws: WebSocket) => {
             update(sid, { sessionUpdate: i % 2 ? "agent_message_chunk" : "agent_thought_chunk", content: { type: "text", text: `line ${i}` } });
           }
         }
+        // Attachments: report each non-text block so tests can check what the client sent.
+        const att = (m.params?.prompt ?? []).filter((b: any) => b?.type && b.type !== "text");
+        if (att.length) say(sid, `attachments: ${att.map((b: any) => b.type === "image" ? `image(${b.mimeType})` : b.type === "resource" ? `resource(${decodeURIComponent(String(b.resource?.uri ?? "").split("/").pop() ?? "")}${b.resource?.text != null ? ",text" : ",blob"})` : `link(${b.name})`).join(" ")} `);
         if (!/stream|tool|perm|slow|browser|modelfail|edit|long|tokens/.test(text)) say(sid, `echo: ${text}`);
         // Usage as an extension notification (turn report) and on the prompt result.
         const usage = { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 200, reasoningTokens: 50, modelCalls: 1, modelUsage: { "fake-model": { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 200, reasoningTokens: 50, modelCalls: 1 } } };

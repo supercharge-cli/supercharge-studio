@@ -25,6 +25,7 @@ mod gateway;
 mod gwcrypto;
 mod gwrelay;
 mod background;
+mod uploads;
 mod mcp;
 mod providers;
 mod screenshot;
@@ -328,6 +329,28 @@ async fn browser_eval(app: AppHandle, state: State<'_, AppState>, script: String
     }
 }
 
+static UPLOADS: std::sync::OnceLock<Mutex<uploads::Uploads>> = std::sync::OnceLock::new();
+fn uploads_base() -> std::path::PathBuf {
+    dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("supercharge-studio")
+}
+
+/// One chunk of a file attached on the desktop or uploaded by a paired phone (see uploads.rs).
+#[tauri::command]
+fn upload_chunk(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    let mut u = UPLOADS.get_or_init(Default::default).lock().unwrap();
+    Ok(match u.chunk(&uploads_base(), &params)? {
+        Some((id, saved)) => saved.to_json(&id),
+        None => serde_json::json!({ "received": params["index"] }),
+    })
+}
+
+/// Point upload links in a device prompt at the saved files (small images become image blocks).
+#[tauri::command]
+fn upload_rewrite(mut prompt: serde_json::Value, images: bool) -> serde_json::Value {
+    UPLOADS.get_or_init(Default::default).lock().unwrap().rewrite_prompt(&mut prompt, images);
+    prompt
+}
+
 pub fn run() {
     tauri::Builder::default()
         // A second launch (e.g. from the menu while hidden in the tray) shows the running window.
@@ -347,7 +370,8 @@ pub fn run() {
             background::setup(app.handle())?;
             let size = window.inner_size()?.to_logical::<f64>(window.scale_factor()?);
             let _main = window.add_child(
-                WebviewBuilder::new("main-ui", WebviewUrl::App("index.html".into())).auto_resize(),
+                // HTML5 drag and drop in the UI (file attachments) instead of the native handler.
+                WebviewBuilder::new("main-ui", WebviewUrl::App("index.html".into())).auto_resize().disable_drag_drop_handler(),
                 LogicalPosition::new(0.0, 0.0),
                 LogicalSize::new(size.width, size.height),
             )?;
@@ -362,7 +386,7 @@ pub fn run() {
             secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info,
             providers::provider_set_key, providers::provider_has_key, providers::provider_seed_from_env, providers::provider_apply, providers::provider_discover_models, agent_restart,
             gateway::gateway_status, gateway::gateway_start, gateway::gateway_firewall_allow, gateway::gateway_stop, gateway::gateway_pair_begin, gateway::gateway_pair_answer, gateway::gateway_revoke, gateway::gateway_send, gateway::gateway_relay_set,
-            files::fs_list, files::fs_read_text, background::background_get, background::background_set
+            files::fs_list, files::fs_read_text, background::background_get, background::background_set, upload_chunk, upload_rewrite
         ])
         .build(tauri::generate_context!())
         .expect("error while running Supercharge Studio")

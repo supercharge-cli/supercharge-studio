@@ -12,6 +12,8 @@ mod gwcrypto;
 mod lanaddr;
 #[path = "../../src-tauri/src/portbind.rs"]
 mod portbind;
+#[path = "../../src-tauri/src/uploads.rs"]
+mod uploads;
 #[path = "../../src-tauri/src/gwrelay.rs"]
 mod gwrelay;
 
@@ -373,17 +375,44 @@ pub fn filter(v: &Value) -> Result<(), Value> {
     }
 }
 
+/// `_supercharge/upload` chunks are answered here; `session/prompt` gets upload links rewritten.
+fn handle_upload(data: &std::path::Path, ups: &mut uploads::Uploads, v: &mut Value) -> Option<Value> {
+    match v.get("method").and_then(|m| m.as_str()) {
+        Some("_supercharge/upload") => {
+            let id = v.get("id").cloned().unwrap_or(Value::Null);
+            Some(match ups.chunk(data, &v["params"]) {
+                Ok(Some((uid, saved))) => json!({"jsonrpc":"2.0","id":id,"result":saved.to_json(&uid)}),
+                Ok(None) => json!({"jsonrpc":"2.0","id":id,"result":{"received": v["params"]["index"]}}),
+                Err(e) => json!({"jsonrpc":"2.0","id":id,"error":{"code":-32602,"message":e}}),
+            })
+        }
+        Some("session/prompt") => {
+            if let Some(p) = v.get_mut("params").and_then(|p| p.get_mut("prompt")) {
+                ups.rewrite_prompt(p, true);
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
 /// Pipe one authenticated device to its own ACP connection to the agent.
 async fn bridge<S: AsyncRead + AsyncWrite + Unpin>(sh: Arc<Shared>, ws: WebSocketStream<S>, mut ch: Channel) -> Result<(), String> {
     let url = format!("{}/ws?server-key={}", sh.cfg.agent.trim_end_matches('/'), pct(&sh.cfg.agent_secret));
     let (agent, _) = tokio_tungstenite::connect_async(url).await.map_err(|e| format!("agent: {e}"))?;
     let (mut asink, mut astream) = agent.split();
     let (mut dsink, mut dstream) = ws.split();
+    let mut ups = uploads::Uploads::default();
     loop {
         tokio::select! {
             m = dstream.next() => match m {
                 Some(Ok(Message::Binary(b))) => {
-                    let Some(v) = ch.open(&b).ok().and_then(|p| serde_json::from_slice::<Value>(&p).ok()) else { return Err("bad frame".into()) };
+                    let Some(mut v) = ch.open(&b).ok().and_then(|p| serde_json::from_slice::<Value>(&p).ok()) else { return Err("bad frame".into()) };
+                    // Phone file uploads are saved here and the prompt points the agent at them.
+                    if let Some(reply) = handle_upload(&sh.cfg.data, &mut ups, &mut v) {
+                        dsink.send(Message::Binary(ch.seal(reply.to_string().as_bytes()).into())).await.map_err(|e| e.to_string())?;
+                        continue;
+                    }
                     match filter(&v) {
                         Ok(()) => { asink.send(Message::Text(v.to_string().into())).await.map_err(|e| e.to_string())?; }
                         Err(Value::Null) => {}
@@ -608,6 +637,20 @@ mod tests {
         assert_eq!(cmd, "pair");
         assert_eq!(c.bind, "127.0.0.1:9");
         assert_eq!(direct_url(&c), "ws://127.0.0.1:9/gw");
+    }
+
+    #[test]
+    fn uploads_are_handled_before_the_agent() {
+        use base64::Engine;
+        let dir = std::env::temp_dir().join("scs-srv-upload-test");
+        let mut ups = uploads::Uploads::default();
+        let mut up = json!({"jsonrpc":"2.0","id":5,"method":"_supercharge/upload","params":{"uploadId":"u1","index":0,"total":1,"name":"notes.txt","mimeType":"text/plain","size":2,"data":base64::engine::general_purpose::STANDARD.encode(b"hi")}});
+        let r = handle_upload(&dir, &mut ups, &mut up).unwrap();
+        assert_eq!(r["result"]["name"], "notes.txt");
+        let mut pr = json!({"jsonrpc":"2.0","id":6,"method":"session/prompt","params":{"sessionId":"s","prompt":[{"type":"resource_link","uri":"x","name":"x","_meta":{"supercharge":{"uploadId":"u1"}}}]}});
+        assert!(handle_upload(&dir, &mut ups, &mut pr).is_none());
+        assert!(pr["params"]["prompt"][0]["uri"].as_str().unwrap().ends_with("notes.txt"));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
