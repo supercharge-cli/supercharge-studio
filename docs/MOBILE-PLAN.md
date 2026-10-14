@@ -161,3 +161,15 @@ We can revisit if Tauri mobile push/background limits become blocking.
 | M5 | Push | Optional relay, APNs/FCM, actionable permission notifications |
 | M6 | Hardening | TLS pinning, audit log, rate limits, per-device scopes, external review |
 | M7 | Release | Store listings, docs, CI for mobile builds |
+
+## File uploads
+
+Phones attach files with `_supercharge/upload` (allowed through the desktop hub and the headless
+server). A file is sent as ordered base64 chunks of at most 160 KB (relay frames are capped at
+256 KB): `{uploadId, name, mimeType, size, index, total, data}`. Intermediate chunks answer
+`{received}`, the last one `{uploadId, uri: "file:///…", path, name, mimeType, size}`. The host saves
+files under its cache/data dir in `uploads/` (25 MB per file). The prompt then carries a
+`resource_link` with `_meta.supercharge.uploadId`; the host rewrites it to point at the saved file
+and turns images up to 8 MB into ACP `image` blocks. Desktop attachments are sent directly: images as
+`image` blocks, text files up to 256 KB as embedded `resource`, anything else uploaded locally and
+linked with `resource_link`.
