@@ -17,7 +17,7 @@ button,a{-webkit-tap-highlight-color:transparent}
 /* chat list */
 .m-list-wrap{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .m-drawer-open{position:fixed;inset:0;z-index:25;flex:none;display:block;background:rgba(0,0,0,.42)}
-.m-drawer-open .m-list{position:absolute;left:0;top:0;bottom:0;width:min(86vw,340px);height:auto;background:var(--bg);box-shadow:12px 0 40px rgba(0,0,0,.35)}
+.m-drawer-open .m-list{position:absolute;left:0;top:0;bottom:0;width:min(86vw,340px);height:auto;background:var(--bg);box-shadow:12px 0 40px rgba(0,0,0,.35);animation:drawerIn .32s var(--spring-soft) both}
 .m-drawer-open .m-fab{left:16px;right:auto}
 .m-views{display:flex;gap:4px;padding:3px;margin:2px 0 10px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
 .m-views button{flex:1;border:0;border-radius:9px;padding:8px 10px;background:none;color:var(--muted);font-weight:600;font-size:13px}
@@ -31,8 +31,8 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-search input{flex:1;border:0;background:none;padding:11px 0;font-size:16px;outline:none;box-shadow:none}
 .m-proj{margin-bottom:14px;animation:rise .28s var(--spring-soft) both}
 .m-proj-head{display:flex;align-items:center;gap:8px;padding:4px 6px 6px;font-size:13px;color:var(--muted)}.m-proj-head b{color:var(--fg);font-weight:600}
-.m-chat{width:100%;display:flex;align-items:center;gap:10px;min-height:50px;background:var(--panel);color:var(--fg);padding:12px 14px;border-radius:0;font-weight:450;text-align:left;border:1px solid var(--line);border-bottom-width:0;transition:background .12s,transform .1s}
-.m-chat:first-of-type{border-radius:14px 14px 0 0}.m-chat:last-child{border-radius:0 0 14px 14px;border-bottom-width:1px}.m-chat:only-of-type{border-radius:14px}
+.m-chat{width:100%;display:flex;align-items:center;gap:10px;min-height:38px;background:none;color:var(--fg);padding:7px 8px;border:0;border-radius:8px;font-weight:450;text-align:left;animation:rowIn .28s var(--spring-soft) both}
+.m-more{background:none;color:var(--muted);padding:2px 8px 8px;font-size:13px;text-align:left}
 .m-chat-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .m-chat:active{background:var(--hover);transform:scale(.99)}
 .m-chat>svg:last-child{color:var(--muted);opacity:.5}
@@ -47,7 +47,7 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-ptr.spin svg{animation:spin .8s linear infinite}
 
 /* thread */
-.m-view{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--bg);box-shadow:-12px 0 24px -18px rgba(0,0,0,.5)}
+.m-view{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--bg);animation:slideIn .32s var(--spring-soft) both}
 .m-thread{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain}
 .m-thread .thread{padding:16px 14px 8px;gap:14px}
 .m-thread .bubble{font-size:15.5px;line-height:1.55;content-visibility:auto;contain-intrinsic-size:auto 56px}
@@ -69,6 +69,17 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-compose-box{display:flex;flex-direction:column;gap:4px;padding:8px 8px 6px;border-radius:24px;background:var(--panel);border:1px solid var(--line);box-shadow:0 6px 24px -14px rgba(0,0,0,.5);transition:border-color .15s}
 .m-compose-box:focus-within{border-color:color-mix(in srgb,var(--acc) 55%,var(--line))}
 .m-compose-box textarea{resize:none;max-height:160px;min-height:24px;font-size:16px;line-height:1.4;border:0;background:none;padding:6px 8px;outline:none;box-shadow:none}
+.m-compose-meta{display:flex;gap:6px;padding:2px 6px 0}
+.m-chip{display:inline-flex;align-items:center;gap:5px;max-width:46%;padding:6px 8px;border-radius:10px;background:none;color:var(--muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-chip-accent{color:#e08a3c;font-weight:600}
+.m-pills{display:flex;gap:8px;overflow-x:auto;padding:0 4px 8px}
+.m-pill{flex:none;padding:8px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font-size:13px}
+.m-think-anchor{position:relative;display:inline-flex}
+.m-think-pop{position:absolute;right:0;bottom:calc(100% + 8px);z-index:8;width:220px;padding:12px;border-radius:14px;background:var(--raise);border:1px solid var(--line);box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px;animation:pop .22s var(--spring) both}
+.m-think-pop input[type=range]{width:100%;accent-color:var(--acc)}
+.m-pop-item{background:none;color:var(--fg);text-align:left;padding:8px;border-radius:8px}
+.m-pop-item[aria-pressed=true]{color:var(--acc)}
+.m-thinking{flex-wrap:wrap}.m-thinking input[type=range]{flex:1 0 100%;accent-color:var(--acc)}
 .m-compose-row{display:flex;align-items:center;gap:6px}
 .m-attach{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--hover);color:var(--fg)}
 .m-model-chip{background:none;color:var(--muted);font-size:12.5px;padding:6px 8px;border-radius:14px;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -94,7 +105,7 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-row-mode .mode-anchor{flex:1 0 100%;margin-left:0;display:flex;flex-wrap:wrap;justify-content:flex-end}
 .m-row-mode .mode-trigger{margin-left:auto}
 .m-row-mode .mode-menu{position:static;left:auto;right:auto;top:auto;bottom:auto;width:100%;max-height:none;margin-top:8px;box-shadow:none}
-.m-thinking select{margin-left:auto;max-width:58%;font-size:15px;padding:8px 28px 8px 10px}
+
 .m-picker-head{display:flex;align-items:center;justify-content:space-between}
 .m-config-sheet input[type=search]{width:100%;font-size:16px}
 .m-project-search{margin:0}
@@ -119,6 +130,9 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-err{margin:8px 10px 0;border-radius:12px}
 .no-vt .m-view,.no-vt .m-list{animation:rise .26s var(--spring-soft) both}
 @keyframes sheet{from{transform:translateY(100%)}to{transform:none}}
+@keyframes drawerIn{from{transform:translateX(-100%)}to{transform:none}}
+@keyframes slideIn{from{transform:translateX(28px);opacity:.35}to{transform:none;opacity:1}}
+@keyframes rowIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes bubbleIn{from{opacity:0;transform:translateY(8px) scale(.96)}to{opacity:1;transform:none}}
 @keyframes pop{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}

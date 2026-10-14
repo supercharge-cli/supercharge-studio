@@ -14,7 +14,6 @@ import { defaultDeviceName, loadCreds, pendingCredsFromCode, saveCreds } from ".
 import { canScan, onPairLink, scanQr } from "./scan";
 import { parsePairUri } from "../gateway/crypto";
 import { type Attachment, deviceBlocks, fmtSize, fromFile, isImage, rejectReason } from "../lib/attachments";
-import { relTime } from "../lib/store";
 
 /** Light haptic tick where the platform allows it. */
 const haptic = (ms = 8) => { try { navigator.vibrate?.(ms); } catch { /* not supported */ } };
@@ -28,6 +27,16 @@ const HISTORY_KEY = "supercharge-mobile/history-view";
 function sessionTime(s: Sess): number {
   const t = Date.parse(s.updatedAt ?? "");
   return Number.isFinite(t) ? t : 0;
+}
+
+function ago(ms: number, now = Date.now()): string {
+  if (!ms) return "";
+  const s = Math.max(0, (now - ms) / 1000);
+  if (s < 45) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 86400 * 7) return `${Math.floor(s / 86400)}d ago`;
+  return new Date(ms).toLocaleDateString();
 }
 
 /** ChatGPT-style buckets: today, yesterday, the last week, then everything older. */
@@ -132,6 +141,9 @@ export default function MobileApp() {
   const [sheet, setSheet] = useState(false);
   const [newSheet, setNewSheet] = useState(false);
   const [projectQuery, setProjectQuery] = useState("");
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [thinkPop, setThinkPop] = useState(false);
+  const [permPop, setPermPop] = useState(false);
   const [search, setSearch] = useState("");
   const [historyView, setHistoryView] = useState<HistoryView>(() => (localStorage.getItem(HISTORY_KEY) === "chats" ? "chats" : "projects"));
   const [drawer, setDrawer] = useState(false);
@@ -438,31 +450,35 @@ export default function MobileApp() {
               </section>
             ))}
             {listed && grouped.length === 0 && <div className="empty"><div className="empty-icon"><Icon name="folder" size={24} /></div><h2>No projects yet</h2><p className="muted">Add a project on your computer and it will show up here.</p></div>}
-            {historyView === "projects" && shown.map(({ project, sessions }, pi) => (
-              <section key={`${project.projectId}-${pi}`} className="m-proj" style={{ animationDelay: `${Math.min(pi, 6) * 30}ms` }}>
-                <div className="m-proj-head"><Icon name="folder" size={14} /><b>{project.name}</b><span className="muted">{project.group}</span><div className="spacer" /><button className="icon" aria-label={`New chat in ${project.name}`} data-testid="m-new" onClick={() => { haptic(); setDrawer(false); void newChat(project); }}><Icon name="plus" /></button></div>
+            {historyView === "projects" && shown.map(({ project, sessions }, pi) => {
+              const openFolder = !!expanded[project.projectId];
+              const visible = openFolder ? sessions : sessions.slice(0, 3);
+              return (
+              <section key={`${project.projectId}-${pi}`} className="m-proj" style={{ animationDelay: `${Math.min(pi, 6) * 40}ms` }}>
+                <div className="m-proj-head"><Icon name="folder" size={15} /><b>{project.name}</b><div className="spacer" /><button className="icon" aria-label={`New chat in ${project.name}`} data-testid="m-new" onClick={() => { haptic(); setDrawer(false); void newChat(project); }}><Icon name="plus" /></button></div>
                 {sessions.length === 0 && <div className="muted m-none">No chats</div>}
-                {sessions.map((s, si) => (
+                {visible.map((s, si) => (
                   <button key={`${s.sessionId}-${si}`} className={`m-chat${s.sessionId === open ? " on" : ""}`} data-testid="m-chat" onClick={() => { setDrawer(false); void openSession(s.sessionId); }}>
                     <span className="m-chat-title">{s.title || "Untitled"}</span>
-                    <span className="m-chat-time">{sessionTime(s) ? relTime(sessionTime(s)) : ""}</span>
                     {s._meta?.busy && <i className="m-busy" aria-label="working" />}
                   </button>
                 ))}
+                {sessions.length > 3 && <button className="m-more" onClick={() => setExpanded((e) => ({ ...e, [project.projectId]: !openFolder }))}>{openFolder ? "Show less" : "Show more"}</button>}
               </section>
-            ))}
-            {historyView === "chats" && chatSections.map((section) => (
-              <section key={section.name} className="m-proj" data-testid="m-chat-section">
-                <div className="m-proj-head"><b>{section.name}</b></div>
-                {section.rows.map(({ s, project }, si) => (
+              );
+            })}
+            {historyView === "chats" && (
+              <section className="m-proj" data-testid="m-chat-section">
+                <div className="m-proj-head"><b>Recents</b></div>
+                {chatSections.flatMap((section) => section.rows).map(({ s }, si) => (
                   <button key={`${s.sessionId}-${si}`} className={`m-chat${s.sessionId === open ? " on" : ""}`} data-testid="m-chat" onClick={() => { setDrawer(false); void openSession(s.sessionId); }}>
-                    <span className="m-chat-body"><span className="m-chat-title">{s.title || "Untitled"}</span><span className="m-chat-sub">{project.name}</span></span>
-                    <span className="m-chat-time">{sessionTime(s) ? relTime(sessionTime(s)) : ""}</span>
+                    <span className="m-chat-title">{s.title || "Untitled"}</span>
+                    <span className="m-chat-time">{ago(sessionTime(s))}</span>
                     {s._meta?.busy && <i className="m-busy" aria-label="working" />}
                   </button>
                 ))}
               </section>
-            ))}
+            )}
             {q && shown.length === 0 && <p className="muted m-none">No chats match “{search}”.</p>}
             <button className="ghost m-unpair" onClick={() => { saveCreds(null); setCreds(null); }}>Unpair this device</button>
           </div>
@@ -486,7 +502,6 @@ export default function MobileApp() {
                 <div className="m-welcome" data-testid="m-welcome">
                   <div className="logo big"><Icon name="bolt" size={24} /></div>
                   <h2>What can I help with?</h2>
-                  <div className="m-suggest">{SUGGESTIONS.map((t) => <button key={t} className="m-suggestion" onClick={() => { setDraft(t); inputRef.current?.focus(); }}>{t}</button>)}</div>
                 </div>
               )}
               {sess.plan.length > 0 && <section className="m-plan" data-testid="m-plan"><strong>Plan</strong><ol>{sess.plan.map((step, i) => <li key={`${i}-${step.content}`} className={step.status === "completed" ? "completed" : ""}>{step.content} <small>{step.status?.replaceAll("_", " ")}</small></li>)}</ol></section>}
@@ -495,6 +510,9 @@ export default function MobileApp() {
             </div>
           </div>
           <div className="m-composer">
+            {loadingSess !== open && sess.items.length === 0 && !isBusy && (
+              <div className="m-pills">{SUGGESTIONS.map((t) => <button key={t} className="m-pill" onClick={() => { setDraft(t); inputRef.current?.focus(); }}>{t}</button>)}</div>
+            )}
             <div className="m-compose-box">
               {(atts.length > 0 || attErr) && (
                 <div className="m-atts" data-testid="m-attachments">
@@ -507,6 +525,9 @@ export default function MobileApp() {
                   {attErr && <span className="error-text small" data-testid="m-attach-error">{attErr}</span>}
                 </div>
               )}
+              <div className="m-compose-meta">
+                <button type="button" className="m-chip" onClick={() => { haptic(); setNewSheet(true); }}><Icon name="folder" size={13} /> {list.find((s) => s.sessionId === open)?._meta?.project || "Project"}</button>
+              </div>
               <textarea ref={inputRef} rows={1} value={draft} placeholder="Message Supercharge…" data-testid="m-input"
                 onChange={(e) => { setDraft(e.target.value); const t = e.target; t.style.height = "auto"; t.style.height = `${Math.min(t.scrollHeight, 160)}px`; }}
                 onPaste={(e) => { const fs = [...(e.clipboardData?.files ?? [])]; if (fs.length) { e.preventDefault(); void addFiles(fs); } }}
@@ -514,8 +535,33 @@ export default function MobileApp() {
               <div className="m-compose-row">
                 <input ref={fileInput} type="file" multiple hidden data-testid="m-attach-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
                 <button className="icon m-attach" aria-label="Attach files" data-testid="m-attach" onClick={() => fileInput.current?.click()}><Icon name="plus" size={20} /></button>
-                {hasSettings && modelOption && <button className="m-model-chip" onClick={() => { haptic(); setSheet(true); }}>{optionLabel(modelOption)}</button>}
+                {permissionOption && (
+                  <span className="m-think-anchor">
+                    <button type="button" className="m-chip m-chip-accent" onClick={() => { haptic(); setPermPop((v) => !v); setThinkPop(false); }}>{optionLabel(permissionOption)}</button>
+                    {permPop && (
+                      <div className="m-think-pop" role="dialog" aria-label="Access">
+                        {permissionOption.options!.map((v) => (
+                          <button key={v.value} type="button" className="m-pop-item" aria-pressed={v.value === permissionOption.currentValue} onClick={() => { setPermPop(false); void chooseOption(permissionOption.id, v.value); }}>{v.name ?? v.value}</button>
+                        ))}
+                      </div>
+                    )}
+                  </span>
+                )}
                 <div className="spacer" />
+                {modelOption && <button className="m-chip" data-testid="m-model-chip" onClick={() => { haptic(); setModelSearch(""); setPicker("model"); }}>{optionLabel(modelOption)}</button>}
+                {thinkingOption && (
+                  <span className="m-think-anchor">
+                    <button type="button" className="m-chip" data-testid="m-think-chip" onClick={() => { haptic(); setThinkPop((v) => !v); setPermPop(false); }}>{optionLabel(thinkingOption)}</button>
+                    {thinkPop && (
+                      <div className="m-think-pop" role="dialog" aria-label="Thinking">
+                        <b>{optionLabel(thinkingOption)}</b>
+                        <input type="range" aria-label="Thinking level" min={0} max={Math.max(0, (thinkingOption.options?.length ?? 1) - 1)} step={1} disabled={settingOption}
+                          value={Math.max(0, thinkingOption.options!.findIndex((v) => v.value === thinkingOption.currentValue))}
+                          onChange={(e) => { const choice = thinkingOption.options![Number(e.target.value)]; if (choice) void chooseOption(thinkingOption.id, choice.value); }} />
+                      </div>
+                    )}
+                  </span>
+                )}
                 {uploading != null && <span className="muted small" data-testid="m-uploading">Uploading {Math.round(uploading * 100)}%</span>}
                 {isBusy ? <button className="danger round" aria-label="Stop" onClick={() => { haptic(); client.current?.cancel(open); }}><Icon name="stop" /></button> : <button className="round" aria-label="Send" disabled={!canSend} onClick={() => void send()} data-testid="m-send"><Icon name="send" /></button>}
               </div>
@@ -532,9 +578,10 @@ export default function MobileApp() {
             {thinkingOption && (
               <label className="m-row m-thinking">
                 <span>Thinking</span>
-                <select aria-label="Thinking level" data-testid="m-thinking" value={thinkingOption.currentValue ?? ""} disabled={settingOption} onChange={(e) => { haptic(); void chooseOption(thinkingOption.id, e.target.value); }}>
-                  {thinkingOption.options!.map((v) => <option key={v.value} value={v.value}>{v.name ?? v.value}</option>)}
-                </select>
+                <b>{optionLabel(thinkingOption)}</b>
+                <input type="range" aria-label="Thinking level" data-testid="m-thinking" min={0} max={Math.max(0, (thinkingOption.options?.length ?? 1) - 1)} step={1} disabled={settingOption}
+                  value={Math.max(0, thinkingOption.options!.findIndex((v) => v.value === thinkingOption.currentValue))}
+                  onChange={(e) => { haptic(); const choice = thinkingOption.options![Number(e.target.value)]; if (choice) void chooseOption(thinkingOption.id, choice.value); }} />
               </label>
             )}
             {(sessionModes || permissionOption) && <div className="m-row m-row-mode"><span>Mode</span>

@@ -118,7 +118,7 @@ test("redesigned chat: welcome screen, search, new chat sheet and chat settings"
   await expect(page.getByTestId("m-new-sheet")).toBeVisible();
   await page.getByTestId("m-new-in").first().click();
   await expect(page.getByTestId("m-welcome")).toContainText("What can I help with?");
-  await page.locator(".m-suggestion").first().click();
+  await page.locator(".m-pill").first().click();
   await expect(page.getByTestId("m-input")).toHaveValue("Explain this project");
 });
 
