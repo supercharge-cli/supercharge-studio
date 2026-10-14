@@ -18,6 +18,15 @@ function inline(s: string, key = 0): ReactNode[] {
   return out;
 }
 
+function CodeBlock({ lang, code }: { lang?: string; code: string }) {
+  return (
+    <div className="md-codewrap">
+      <div className="md-codehead"><span>{lang || "code"}</span><button className="md-copy" aria-label="Copy code" onClick={(e) => { void navigator.clipboard?.writeText(code); const b = e.currentTarget; b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1200); }}>Copy</button></div>
+      <pre className="md-code" data-lang={lang || undefined}><code>{code}</code></pre>
+    </div>
+  );
+}
+
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   const lines = text.split("\n");
   const blocks: ReactNode[] = [];
@@ -30,7 +39,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
       i++;
       while (i < lines.length && !lines[i].startsWith("```")) body.push(lines[i++]);
       i++;
-      blocks.push(<pre key={k++} className="md-code" data-lang={fence[1] || undefined}><code>{body.join("\n")}</code></pre>);
+      blocks.push(<CodeBlock key={k++} lang={fence[1]} code={body.join("\n")} />);
       continue;
     }
     const h = l.match(/^(#{1,4})\s+(.*)/);

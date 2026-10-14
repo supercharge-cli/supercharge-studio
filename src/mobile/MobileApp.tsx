@@ -13,6 +13,11 @@ import { candidates, GatewayTransport, type DeviceCreds } from "../gateway/trans
 import { defaultDeviceName, loadCreds, pendingCredsFromCode, saveCreds } from "./creds";
 import { canScan, onPairLink, scanQr } from "./scan";
 import { parsePairUri } from "../gateway/crypto";
+import { type Attachment, deviceBlocks, fmtSize, fromFile, isImage, rejectReason } from "../lib/attachments";
+
+/** Light haptic tick where the platform allows it. */
+const haptic = (ms = 8) => { try { navigator.vibrate?.(ms); } catch { /* not supported */ } };
+const SUGGESTIONS = ["Explain this project", "Find and fix a bug", "Write tests for recent changes", "Summarize what changed today"];
 
 type Sess = { sessionId: string; title?: string; cwd?: string; _meta?: { project?: string; projectId?: string; group?: string; busy?: boolean } };
 type Project = { projectId: string; name: string; cwd: string; group: string };
@@ -101,6 +106,14 @@ export default function MobileApp() {
   const [settingOption, setSettingOption] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const [route, setRoute] = useState<"direct" | "relay">("direct");
+  const [atts, setAtts] = useState<Attachment[]>([]);
+  const [attErr, setAttErr] = useState("");
+  const [uploading, setUploading] = useState<number | null>(null);
+  const [sheet, setSheet] = useState(false);
+  const [newSheet, setNewSheet] = useState(false);
+  const [search, setSearch] = useState("");
+  const fileInput = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const client = useRef<AcpClient | null>(null);
   const loadedRef = useRef(new Set<string>());
   const activeSessionRef = useRef<string | null>(null);
@@ -122,7 +135,11 @@ export default function MobileApp() {
   }, []);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    const mq = window.matchMedia?.("(prefers-color-scheme: light)");
+    const apply = () => (document.documentElement.dataset.theme = mq?.matches ? "light" : "dark");
+    apply();
+    mq?.addEventListener?.("change", apply);
+    return () => mq?.removeEventListener?.("change", apply);
   }, []);
 
   useEffect(() => {
@@ -229,14 +246,45 @@ export default function MobileApp() {
     setOpen(r.sessionId);
   }
 
+  async function addFiles(files: File[]) {
+    setAttErr("");
+    let n = atts.length;
+    const add: Attachment[] = [];
+    for (const f of files) {
+      const why = rejectReason(f, n);
+      if (why) { setAttErr(why); continue; }
+      add.push(await fromFile(f));
+      n++;
+    }
+    if (add.length) { haptic(); setAtts((a) => [...a, ...add]); }
+  }
+  const removeAtt = (id: string) => setAtts((a) => { const x = a.find((y) => y.id === id); if (x?.preview) URL.revokeObjectURL(x.preview); return a.filter((y) => y.id !== id); });
+
   async function send() {
     const c = client.current;
     const text = draft.trim();
-    if (!c || !open || !text) return;
+    if (!c || !open || (!text && !atts.length) || uploading != null) return;
+    haptic();
+    let extra: unknown[] = [];
+    if (atts.length) {
+      setUploading(0);
+      try {
+        // Files go up in small encrypted chunks first (the relay caps frame size), then the prompt links them.
+        extra = await deviceBlocks(atts, (p) => c.ext("_supercharge/upload", p), (i, pr) => setUploading((i + pr) / atts.length));
+      } catch (e: any) {
+        setAttErr(`Upload failed: ${e?.message ?? e}`);
+        setUploading(null);
+        return;
+      }
+      setUploading(null);
+      atts.forEach((a) => a.preview && URL.revokeObjectURL(a.preview));
+      setAtts([]);
+    }
     setDraft("");
+    if (inputRef.current) inputRef.current.style.height = "";
     setBusy((b) => ({ ...b, [open]: true }));
     try {
-      const r = await c.prompt(open, text);
+      const r = await c.prompt(open, text, extra);
       if (r.stopReason !== "end_turn") setState((all) => ({ ...all, [open]: { ...all[open], items: [...all[open].items, { kind: "system", text: `stopped: ${r.stopReason}` }] } }));
     } catch (e: any) {
       setState((all) => ({ ...all, [open]: { ...(all[open] ?? emptySession()), items: [...(all[open]?.items ?? []), { kind: "system", text: `The turn failed: ${e?.message ?? e}`, error: true } as any] } }));
@@ -279,13 +327,13 @@ export default function MobileApp() {
     return [...m.values()];
   }, [list, projects]);
 
-  const back = () => { activeSessionRef.current = null; setPicker(null); transition(() => setOpen(null)); };
+  const back = () => { activeSessionRef.current = null; setPicker(null); setSheet(false); transition(() => setOpen(null)); };
   useSwipeBack(threadView, !!open, back);
   usePullToRefresh(listRef, ptr, !!creds && !open, async () => { await refresh(); setToast("Up to date"); });
 
   if (!creds) return <div className="m-app"><Pair onPaired={(c) => { saveCreds(c); setCreds(c); }} /></div>;
 
-  const title = list.find((s) => s.sessionId === open)?.title ?? "Chat";
+  const title = list.find((s) => s.sessionId === open)?.title ?? "New chat";
   const isBusy = !!(open && busy[open]);
   const sessionOptions = (open && configBySession[open]) || [];
   const modelOption = sessionOptions.find((o) => o.id === "model" && o.options?.length);
@@ -294,17 +342,31 @@ export default function MobileApp() {
   const sessionModes = open ? modesBySession[open] : undefined;
   const activeOption = sessionOptions.find((o) => o.id === picker);
   const optionLabel = (option: ConfigOption) => option.options?.find((v) => v.value === option.currentValue)?.name ?? option.currentValue ?? option.name ?? option.id;
+  const hasSettings = !!(modelOption || reasoningOption || permissionOption || sessionModes);
   const renderItem = (m: ChatItem, i: number) =>
-    m.kind === "tool" ? (sess.toolCalls[m.toolCallId] ? <ToolCard key={i} tc={sess.toolCalls[m.toolCallId]} compact /> : null) : m.kind === "agent" ? <div key={i} className="bubble agent"><Markdown text={m.text} /></div> : <div key={i} className={`bubble ${(m as any).error ? "error" : m.kind}`} role={(m as any).error ? "alert" : undefined}>{m.text}</div>;
+    m.kind === "tool" ? (sess.toolCalls[m.toolCallId] ? <ToolCard key={i} tc={sess.toolCalls[m.toolCallId]} compact /> : null)
+      : m.kind === "agent" ? <div key={i} className="bubble agent"><Markdown text={m.text} /></div>
+      : <div key={i} className={`bubble ${(m as any).error ? "error" : m.kind}`} role={(m as any).error ? "alert" : undefined}>{m.text}</div>;
+  const q = search.trim().toLowerCase();
+  const shown = q ? grouped.map((g) => ({ ...g, sessions: g.sessions.filter((s) => `${s.title ?? ""} ${g.project.name}`.toLowerCase().includes(q)) })).filter((g) => g.sessions.length || g.project.name.toLowerCase().includes(q)) : grouped;
+  const allProjects = grouped.map((g) => g.project);
+  const canSend = (!!draft.trim() || atts.length > 0) && uploading == null;
 
   return (
     <div className="m-app">
       <header className="m-top">
-        {open ? <button className="icon" aria-label="Back" onClick={back} data-testid="m-back"><Icon name="arrowLeft" size={20} /></button> : <div className="logo"><Icon name="bolt" size={16} /></div>}
-        <div className="m-title">{open ? title : creds.desktopName ?? "Supercharge Studio"}</div>
+        {open ? <button className="icon" aria-label="Chats" onClick={back} data-testid="m-back"><Icon name="arrowLeft" size={20} /></button> : <div className="logo"><Icon name="bolt" size={16} /></div>}
+        {open ? (
+          <button className="m-head-title" data-testid="m-chat-settings" aria-label="Chat settings" disabled={!hasSettings} onClick={() => { haptic(); setSheet(true); }}>
+            <span className="m-title">{title}</span>
+            {modelOption && <span className="m-sub">{optionLabel(modelOption)}{sessionModes && <> · {sessionModes.availableModes.find((x) => x.id === (sess.modeId ?? sessionModes.currentModeId))?.name ?? ""}</>}{hasSettings && <Icon name="chevronRight" size={11} />}</span>}
+          </button>
+        ) : (
+          <div className="m-head-title static"><span className="m-title">{creds.desktopName ?? "Supercharge Studio"}</span><span className="m-sub">{conn === "open" ? (route === "relay" ? "Connected anywhere" : "Connected on Wi-Fi") : conn === "connecting" || conn === "reconnecting" ? "Connecting…" : "Offline"}</span></div>
+        )}
         {conn === "open" && route === "relay" && <span className="pill" data-testid="m-route" title="Connected through the relay (end-to-end encrypted)">relay</span>}
-        <span className={`status ${conn === "open" ? "ok" : "bad"}`} data-testid="m-status"><i className="dot" />{conn}</span>
-        {open && <button className="icon" title="Open on computer" onClick={() => void client.current?.ext("_supercharge/focus", { sessionId: open })}><Icon name="panelRight" size={18} /></button>}
+        <span className={`m-dot ${conn === "open" ? "ok" : "bad"}`} data-testid="m-status" title={conn}><i /><span className="sr">{conn}</span></span>
+        {open && <button className="icon" aria-label="New chat" data-testid="m-new-chat" onClick={() => { haptic(); const pid = list.find((s) => s.sessionId === open)?._meta?.projectId; const p = allProjects.find((x) => x.projectId === pid); if (p) void newChat(p); else setNewSheet(true); }}><Icon name="compose" size={18} /></button>}
       </header>
       {err && (
         <div className="notice m-err" role="alert" data-testid="m-err">
@@ -318,34 +380,41 @@ export default function MobileApp() {
       )}
       {!open ? (
         <div className="m-list-wrap">
-        <div className="m-ptr" ref={ptr} aria-hidden><Icon name="refresh" size={18} /></div>
-        <div className="m-list" ref={listRef} data-testid="m-list">
-          {!listed && !err && [0, 1].map((k) => (
-            <section key={k} className="m-proj m-skel" aria-busy="true" data-testid="m-skeleton">
-              <div className="skeleton" style={{ width: "40%", height: 16, margin: "8px" }} />
-              <div className="skeleton" style={{ height: 40, margin: "6px" }} />
-              <div className="skeleton" style={{ height: 40, margin: "6px" }} />
-            </section>
-          ))}
-          {listed && grouped.length === 0 && <div className="empty"><div className="empty-icon"><Icon name="folder" size={24} /></div><h2>No projects yet</h2><p className="muted">Add a project on your computer and it will show up here.</p></div>}
-          {grouped.map(({ project, sessions }, pi) => (
-            <section key={`${project.projectId}-${pi}`} className="m-proj">
-              <div className="m-proj-head"><Icon name="folder" size={14} /><b>{project.name}</b><span className="muted">{project.group}</span><div className="spacer" /><button className="icon" aria-label={`New chat in ${project.name}`} data-testid="m-new" onClick={() => void newChat(project)}><Icon name="plus" /></button></div>
-              {sessions.length === 0 && <div className="muted m-none">No chats</div>}
-              {sessions.map((s, si) => (
-                <button key={`${s.sessionId}-${si}`} className="m-chat" data-testid="m-chat" onClick={() => void openSession(s.sessionId)}>
-                  <Icon name="chat" size={15} /><span>{s.title || "Untitled"}</span>{s._meta?.busy && <i className="m-busy" aria-label="working" />}<Icon name="chevronRight" size={14} />
-                </button>
-              ))}
-            </section>
-          ))}
-          <button className="ghost m-unpair" onClick={() => { saveCreds(null); setCreds(null); }}>Unpair this device</button>
-        </div>
+          <div className="m-ptr" ref={ptr} aria-hidden><Icon name="refresh" size={18} /></div>
+          <div className="m-list" ref={listRef} data-testid="m-list">
+            {listed && grouped.length > 0 && (
+              <label className="m-search"><Icon name="search" size={15} /><input type="search" placeholder="Search chats" aria-label="Search chats" data-testid="m-search" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
+            )}
+            {!listed && !err && [0, 1].map((k) => (
+              <section key={k} className="m-proj m-skel" aria-busy="true" data-testid="m-skeleton">
+                <div className="skeleton" style={{ width: "40%", height: 16, margin: "8px" }} />
+                <div className="skeleton" style={{ height: 40, margin: "6px" }} />
+                <div className="skeleton" style={{ height: 40, margin: "6px" }} />
+              </section>
+            ))}
+            {listed && grouped.length === 0 && <div className="empty"><div className="empty-icon"><Icon name="folder" size={24} /></div><h2>No projects yet</h2><p className="muted">Add a project on your computer and it will show up here.</p></div>}
+            {shown.map(({ project, sessions }, pi) => (
+              <section key={`${project.projectId}-${pi}`} className="m-proj" style={{ animationDelay: `${Math.min(pi, 6) * 30}ms` }}>
+                <div className="m-proj-head"><Icon name="folder" size={14} /><b>{project.name}</b><span className="muted">{project.group}</span><div className="spacer" /><button className="icon" aria-label={`New chat in ${project.name}`} data-testid="m-new" onClick={() => { haptic(); void newChat(project); }}><Icon name="plus" /></button></div>
+                {sessions.length === 0 && <div className="muted m-none">No chats</div>}
+                {sessions.map((s, si) => (
+                  <button key={`${s.sessionId}-${si}`} className="m-chat" data-testid="m-chat" onClick={() => void openSession(s.sessionId)}>
+                    <span className="m-chat-title">{s.title || "Untitled"}</span>{s._meta?.busy && <i className="m-busy" aria-label="working" />}<Icon name="chevronRight" size={14} />
+                  </button>
+                ))}
+              </section>
+            ))}
+            {q && shown.length === 0 && <p className="muted m-none">No chats match “{search}”.</p>}
+            <button className="ghost m-unpair" onClick={() => { saveCreds(null); setCreds(null); }}>Unpair this device</button>
+          </div>
+          {listed && allProjects.length > 0 && (
+            <button className="m-fab" data-testid="m-fab" aria-label="New chat" onClick={() => { haptic(); if (allProjects.length === 1) void newChat(allProjects[0]); else setNewSheet(true); }}><Icon name="compose" size={18} /> New chat</button>
+          )}
         </div>
       ) : (
         <div className="m-view" ref={threadView}>
           <div className="m-thread" ref={scroller} data-testid="m-thread">
-            <div className="thread">
+            <div className={`thread${isBusy ? " streaming" : ""}`}>
               {loadingSess === open && sess.items.length === 0 && (
                 <div className="skel-chat" aria-busy="true">
                   <div className="skeleton" style={{ width: "50%", height: 34, marginLeft: "auto" }} />
@@ -353,41 +422,89 @@ export default function MobileApp() {
                   <div className="skeleton" style={{ width: "60%", height: 30 }} />
                 </div>
               )}
-              {loadingSess !== open && sess.items.length === 0 && !isBusy && <div className="empty"><p className="muted">Say something to start.</p></div>}
+              {loadingSess !== open && sess.items.length === 0 && !isBusy && (
+                <div className="m-welcome" data-testid="m-welcome">
+                  <div className="logo big"><Icon name="bolt" size={24} /></div>
+                  <h2>What can I help with?</h2>
+                  <div className="m-suggest">{SUGGESTIONS.map((t) => <button key={t} className="m-suggestion" onClick={() => { setDraft(t); inputRef.current?.focus(); }}>{t}</button>)}</div>
+                </div>
+              )}
               {sess.plan.length > 0 && <section className="m-plan" data-testid="m-plan"><strong>Plan</strong><ol>{sess.plan.map((step, i) => <li key={`${i}-${step.content}`} className={step.status === "completed" ? "completed" : ""}>{step.content} <small>{step.status?.replaceAll("_", " ")}</small></li>)}</ol></section>}
               {sess.items.map(renderItem)}
               {isBusy && <div className="typing"><i /><i /><i /></div>}
             </div>
           </div>
-          {(modelOption || reasoningOption || permissionOption || sessionModes) && <div className="m-config-bar">
-            {modelOption && <button className="m-config-chip" data-testid="m-model" aria-label={`Model: ${optionLabel(modelOption)}`} onClick={() => { setModelSearch(""); setPicker("model"); }}><Icon name="bolt" size={14} />{optionLabel(modelOption)}</button>}
-            {reasoningOption && <button className="m-config-chip" data-testid="m-reasoning" aria-label={`Reasoning: ${optionLabel(reasoningOption)}`} onClick={() => setPicker("reasoning_effort")}>Reasoning: {optionLabel(reasoningOption)}</button>}
-            <ModeControl key={open} modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={async (id) => {
-              try {
-                await client.current?.setMode(open!, id);
-                if (sessionModes) rememberModes(open!, { ...sessionModes, currentModeId: id });
-              } catch (e: any) { setToast(`Could not change work mode: ${e?.message ?? e}`); throw e; }
-            }} onPermission={async (id, value) => {
-              try {
-                const result = await client.current?.setConfigOption(open!, id, value);
-                if (Array.isArray(result?.configOptions)) setConfigBySession((all) => ({ ...all, [open!]: result.configOptions }));
-              } catch (e: any) { setToast(`Could not change tool permissions: ${e?.message ?? e}`); throw e; }
-            }} />
-          </div>}
           <div className="m-composer">
-            <textarea rows={1} value={draft} placeholder="Message Supercharge…" data-testid="m-input" onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!isBusy) void send(); } }} />
-            {isBusy ? <button className="danger round" aria-label="Stop" onClick={() => client.current?.cancel(open)}><Icon name="stop" /></button> : <button className="round" aria-label="Send" disabled={!draft.trim()} onClick={() => void send()} data-testid="m-send"><Icon name="send" /></button>}
+            <div className="m-compose-box">
+              {(atts.length > 0 || attErr) && (
+                <div className="m-atts" data-testid="m-attachments">
+                  {atts.map((a) => (
+                    <div key={a.id} className="m-att" data-testid="m-attachment">
+                      {a.preview && isImage(a.mime) ? <img src={a.preview} alt={a.name} /> : <span className="m-att-file"><Icon name="file" size={16} /><span>{a.name}</span><small>{fmtSize(a.size)}</small></span>}
+                      <button className="m-att-x" aria-label={`Remove ${a.name}`} data-testid="m-attachment-remove" onClick={() => removeAtt(a.id)}><Icon name="x" size={11} /></button>
+                    </div>
+                  ))}
+                  {attErr && <span className="error-text small" data-testid="m-attach-error">{attErr}</span>}
+                </div>
+              )}
+              <textarea ref={inputRef} rows={1} value={draft} placeholder="Message Supercharge…" data-testid="m-input"
+                onChange={(e) => { setDraft(e.target.value); const t = e.target; t.style.height = "auto"; t.style.height = `${Math.min(t.scrollHeight, 160)}px`; }}
+                onPaste={(e) => { const fs = [...(e.clipboardData?.files ?? [])]; if (fs.length) { e.preventDefault(); void addFiles(fs); } }}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!isBusy) void send(); } }} />
+              <div className="m-compose-row">
+                <input ref={fileInput} type="file" multiple hidden data-testid="m-attach-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
+                <button className="icon m-attach" aria-label="Attach files" data-testid="m-attach" onClick={() => fileInput.current?.click()}><Icon name="plus" size={20} /></button>
+                {hasSettings && modelOption && <button className="m-model-chip" onClick={() => { haptic(); setSheet(true); }}>{optionLabel(modelOption)}</button>}
+                <div className="spacer" />
+                {uploading != null && <span className="muted small" data-testid="m-uploading">Uploading {Math.round(uploading * 100)}%</span>}
+                {isBusy ? <button className="danger round" aria-label="Stop" onClick={() => { haptic(); client.current?.cancel(open); }}><Icon name="stop" /></button> : <button className="round" aria-label="Send" disabled={!canSend} onClick={() => void send()} data-testid="m-send"><Icon name="send" /></button>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {open && sheet && (
+        <div className="m-sheet-bg" onClick={() => setSheet(false)}>
+          <div className="m-sheet m-settings-sheet" role="dialog" aria-label="Chat settings" data-testid="m-settings-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="m-grabber" aria-hidden />
+            <div className="m-picker-head"><h3>Chat settings</h3><button className="icon" aria-label="Close" data-testid="m-sheet-close" onClick={() => setSheet(false)}><Icon name="x" size={16} /></button></div>
+            {modelOption && <button className="m-row" data-testid="m-model" aria-label={`Model: ${optionLabel(modelOption)}`} onClick={() => { setModelSearch(""); setPicker("model"); }}><span>Model</span><b>{optionLabel(modelOption)}</b><Icon name="chevronRight" size={14} /></button>}
+            {reasoningOption && <button className="m-row" data-testid="m-reasoning" aria-label={`Reasoning: ${optionLabel(reasoningOption)}`} onClick={() => setPicker("reasoning_effort")}><span>Reasoning</span><b>{optionLabel(reasoningOption)}</b><Icon name="chevronRight" size={14} /></button>}
+            {(sessionModes || permissionOption) && <div className="m-row m-row-mode"><span>Mode</span>
+              <ModeControl key={open} modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={async (id) => {
+                try {
+                  await client.current?.setMode(open!, id);
+                  if (sessionModes) rememberModes(open!, { ...sessionModes, currentModeId: id });
+                } catch (e: any) { setToast(`Could not change work mode: ${e?.message ?? e}`); throw e; }
+              }} onPermission={async (id, value) => {
+                try {
+                  const result = await client.current?.setConfigOption(open!, id, value);
+                  if (Array.isArray(result?.configOptions)) setConfigBySession((all) => ({ ...all, [open!]: result.configOptions }));
+                } catch (e: any) { setToast(`Could not change tool permissions: ${e?.message ?? e}`); throw e; }
+              }} />
+            </div>}
+            <button className="m-row" onClick={() => { setSheet(false); void client.current?.ext("_supercharge/focus", { sessionId: open }); setToast("Opened on your computer"); }}><span>Open on computer</span><Icon name="panelRight" size={15} /></button>
+          </div>
+        </div>
+      )}
+      {newSheet && (
+        <div className="m-sheet-bg" onClick={() => setNewSheet(false)}>
+          <div className="m-sheet" role="dialog" aria-label="New chat in" data-testid="m-new-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="m-grabber" aria-hidden />
+            <h3>New chat in…</h3>
+            {allProjects.map((p) => <button key={p.projectId} className="m-row" data-testid="m-new-in" onClick={() => { setNewSheet(false); void newChat(p); }}><Icon name="folder" size={15} /><span>{p.name}</span><small className="muted">{p.group}</small></button>)}
           </div>
         </div>
       )}
       {open && activeOption && (
-        <div className="m-sheet-bg" onClick={() => setPicker(null)}>
+        <div className="m-sheet-bg top" onClick={() => setPicker(null)}>
           <div className="m-sheet m-config-sheet" role="dialog" aria-label={picker === "model" ? "Choose model" : "Choose reasoning"} data-testid="m-config-picker" onClick={(e) => e.stopPropagation()}>
-            <div className="m-picker-head"><h3>{picker === "model" ? "Model" : "Reasoning"}</h3><button className="icon" aria-label="Close picker" onClick={() => setPicker(null)}>×</button></div>
+            <div className="m-grabber" aria-hidden />
+            <div className="m-picker-head"><h3>{picker === "model" ? "Model" : "Reasoning"}</h3><button className="icon" aria-label="Close picker" onClick={() => setPicker(null)}><Icon name="x" size={16} /></button></div>
             {picker === "model" && <input type="search" aria-label="Search models" placeholder="Search models" value={modelSearch} onChange={(e) => setModelSearch(e.target.value)} />}
             <div className="m-picker-options">
               {(activeOption.options ?? []).filter((v) => picker !== "model" || `${v.name ?? ""} ${v.value}`.toLowerCase().includes(modelSearch.trim().toLowerCase())).map((v) => (
-                <button key={v.value} className="m-picker-option" aria-pressed={v.value === activeOption.currentValue} disabled={settingOption} onClick={() => void chooseOption(activeOption.id, v.value)}>
+                <button key={v.value} className="m-picker-option" aria-pressed={v.value === activeOption.currentValue} disabled={settingOption} onClick={() => { haptic(); void chooseOption(activeOption.id, v.value); }}>
                   <span>{v.name ?? v.value}</span>{v.name && v.name !== v.value && <small>{v.value}</small>}{v.value === activeOption.currentValue && <span aria-hidden="true">✓</span>}
                 </button>
               ))}
@@ -396,13 +513,14 @@ export default function MobileApp() {
         </div>
       )}
       {perm && (
-        <div className="m-sheet-bg">
+        <div className="m-sheet-bg top">
           <div className="m-sheet" role="dialog" aria-label="Permission request" data-testid="m-perm">
+            <div className="m-grabber" aria-hidden />
             <h3>Allow this tool call?</h3>
             <p>{perm.req.toolCall.title ?? perm.req.toolCall.toolCallId}</p>
             {perm.req.toolCall.rawInput != null && <pre className="mono">{JSON.stringify(perm.req.toolCall.rawInput, null, 2)}</pre>}
             {perm.req.options.map((o) => (
-              <button key={o.optionId} className={`m-big ${o.kind.startsWith("reject") ? "secondary" : ""}`} onClick={() => { perm.resolve({ outcome: "selected", optionId: o.optionId }); setPermQueue((pending) => pending.filter((item) => item !== perm)); }}>{o.name}</button>
+              <button key={o.optionId} className={`m-big ${o.kind.startsWith("reject") ? "secondary" : ""}`} onClick={() => { haptic(12); perm.resolve({ outcome: "selected", optionId: o.optionId }); setPermQueue((pending) => pending.filter((item) => item !== perm)); }}>{o.name}</button>
             ))}
           </div>
         </div>

@@ -45,6 +45,7 @@ const hub: GatewayHub = new GatewayHub((d, m) => conns.get(d)?.(m), {
   async prompt(sid, text, _from, extra: any[] = []) {
     if (extra.length) lastAttachments = extra;
     hub.update(sid, { sessionUpdate: "user_message_chunk", content: { type: "text", text } });
+    if (extra.length) hub.update(sid, { sessionUpdate: "user_message_chunk", content: { type: "text", text: `${text ? "\n" : ""}📎 ${extra.map((b: any) => b.name).join(", ")}` } });
     if (extra.length) hub.update(sid, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Got ${extra.length} attachment(s): ${extra.map((b: any) => b.name ?? b.type).join(", ")}. ` } });
     if (/perm/.test(text)) {
       const { answer } = hub.requestPermission(sid, { toolCall: { toolCallId: "t9", title: "Run npm test", rawInput: { command: "npm test" } }, options: [{ optionId: "y", name: "Allow once", kind: "allow_once" }, { optionId: "n", name: "Reject", kind: "reject_once" }] });

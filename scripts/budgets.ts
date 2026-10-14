@@ -9,7 +9,8 @@ const KB = 1024;
 const budgets: { dir: string; label: string; entry: RegExp; entryMax: number; totalJsMax: number; cssMax: number }[] = [
   // Includes CLI session sync, browser tools, per-chat model and permission controls, Local/Public, background settings and attachments.
   { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 54 * KB, totalJsMax: 63 * KB, cssMax: 11 * KB },
-  { dir: "dist-mobile/assets", label: "mobile", entry: /^mobile-.*\.js$/, entryMax: 26 * KB, totalJsMax: 30 * KB, cssMax: 11 * KB },
+  // Redesigned chat UI with attachments and sheets.
+  { dir: "dist-mobile/assets", label: "mobile", entry: /^mobile-.*\.js$/, entryMax: 30 * KB, totalJsMax: 33 * KB, cssMax: 13 * KB },
 ];
 let failed = false;
 for (const b of budgets) {

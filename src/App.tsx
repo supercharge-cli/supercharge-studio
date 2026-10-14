@@ -631,6 +631,9 @@ export default function App() {
       let sid = await ensureSession(projectId, chatId);
       if (!sid) throw new Error("No session");
       hub.update(sid, { sessionUpdate: "user_message_chunk", content: { type: "text", text }, _meta: { supercharge: { from: from ?? "desktop" } } });
+      const sentFiles = (extra as any[]).filter((b) => ["image", "resource", "resource_link"].includes(b?.type)).map((b) => b.name ?? decodeURIComponent(String(b.resource?.uri ?? b.uri ?? "").split("/").pop() || "") ?? b.type);
+      if (from && sentFiles.length) hub.update(sid, { sessionUpdate: "user_message_chunk", content: { type: "text", text: `${text ? "\n" : ""}📎 ${sentFiles.map((n) => n || "image").join(", ")}` } });
+      if (from && sentFiles.length) pushItem(chatId, { kind: "system", text: `📎 ${from} attached ${sentFiles.map((n) => n || "image").join(", ")}` });
       let r;
       turnUsage.current.delete(sid);
       const cwdNow = chat?.cwd ?? normCwd(findProject(dataRef.current, projectId)!.project.cwd);
