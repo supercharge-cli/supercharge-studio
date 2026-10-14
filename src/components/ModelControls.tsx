@@ -22,7 +22,7 @@ export function ModelControls({ options, onSelect }: { options: ConfigOption[]; 
           <input autoFocus data-testid="model-search" aria-label="Search models" placeholder="Search models…" value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }} />
           <div className="model-picker-list">
             {choices.map((choice) => <button key={choice.value} className={`model-choice ${choice.value === model.currentValue ? "selected" : ""}`} data-testid="model-choice" onClick={() => { onSelect(model.id, choice.value); setOpen(false); }}>
-              <span><strong>{choice.name ?? choice.value}</strong>{choice.name && choice.name !== choice.value && <small>{choice.value}</small>}</span>
+              <span><strong>{choice.name || choice.value}</strong></span>
               {choice.value === model.currentValue && <Icon name="check" size={14} />}
             </button>)}
             {!choices.length && <p className="muted">No matching models</p>}
