@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { gateway, GwPairing, GwStatus } from "../lib/desktop";
+import { useEffect, useRef, useState } from "react";
+import { gateway, GwPairing, GwStatus, listen } from "../lib/desktop";
 import { Icon } from "./Icon";
 import { defaultGatewayPrefs, GatewayPrefs } from "../lib/store";
 export { defaultGatewayPrefs };
@@ -18,7 +18,25 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
   const [pair, setPair] = useState<GwPairing | null>(null);
   const [err, setErr] = useState("");
   const [now, setNow] = useState(Date.now());
+  const pairShown = useRef(false);
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
   const refresh = () => desktop && void gateway.status().then(setSt).catch((e) => setErr(String(e)));
+  async function showCode() {
+    const p = prefsRef.current;
+    const next = await gateway.pairBegin(p.publicUrl || undefined, undefined, relayConnectUrl(p));
+    setPair(next);
+  }
+  useEffect(() => {
+    if (!desktop) return;
+    let stop = () => {};
+    // A scan consumes the code. Replace it immediately so the next phone can scan.
+    void listen("gateway://pair-request", () => {
+      if (!pairShown.current) return;
+      void showCode().catch((e) => setErr(String(e?.message ?? e)));
+    }).then((un) => { stop = un; });
+    return () => stop();
+  }, [desktop]);
   useEffect(() => {
     refresh();
     const t = setInterval(() => { setNow(Date.now()); refresh(); }, 1000);
@@ -26,6 +44,7 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
   }, []);
   if (!desktop) return <p className="muted">The mobile gateway runs in the desktop app.</p>;
   const left = pair ? Math.max(0, Math.round((pair.expiresAt - now) / 1000)) : 0;
+  pairShown.current = !!(pair && left > 0);
 
   async function toggle(on: boolean) {
     setErr("");
@@ -117,7 +136,7 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
         <div className="row between">
           <strong>Pair a phone</strong>
           {reachSwitch}
-          <button data-testid="gw-pair" disabled={!st?.running} onClick={() => void gateway.pairBegin(prefs.publicUrl || undefined, undefined, relayConnectUrl(prefs)).then(setPair).catch((e) => setErr(String(e)))}>
+          <button data-testid="gw-pair" disabled={!st?.running} onClick={() => void showCode().catch((e) => setErr(String(e?.message ?? e)))}>
             <Icon name="qr" /> {pair && left > 0 ? "New code" : "Show pairing code"}
           </button>
         </div>
@@ -128,7 +147,7 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
           <div className="pair">
             <div className="qr" dangerouslySetInnerHTML={{ __html: pair.svg }} />
             <div className="stack">
-              <p>Scan with Supercharge Studio on your phone, or open/paste the link there. Expires in <b data-testid="gw-countdown">{left}s</b>, single use.</p>
+              <p>Scan with Supercharge Studio on your phone, or open/paste the link there. Expires in <b data-testid="gw-countdown">{left}s</b>. After a phone scans it, a new code appears for the next device.</p>
               <p className="muted small" data-testid="gw-pair-route">{reach === "public" ? "Public: works on any network (direct on the same Wi-Fi, otherwise through the relay)." : "Local: the phone must be on the same Wi-Fi."}</p>
               <p className="muted">No camera? Copy the code and paste it in the app.</p>
               <button className="secondary" onClick={() => void navigator.clipboard?.writeText(pair.uri)}>Copy pairing code</button>
