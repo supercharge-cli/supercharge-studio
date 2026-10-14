@@ -361,12 +361,12 @@ export default function MobileApp() {
   const isBusy = !!(open && busy[open]);
   const sessionOptions = (open && configBySession[open]) || [];
   const modelOption = sessionOptions.find((o) => o.id === "model" && o.options?.length);
-  const reasoningOption = sessionOptions.find((o) => o.id === "reasoning_effort" && o.options?.length);
+  const thinkingOption = sessionOptions.find((o) => (o.id === "reasoning_effort" || o.id === "thinking" || o.id === "thinking_level") && o.options?.length);
   const permissionOption = sessionOptions.find((o) => o.id === "permission_mode" && o.options?.length);
   const sessionModes = open ? modesBySession[open] : undefined;
   const activeOption = sessionOptions.find((o) => o.id === picker);
   const optionLabel = (option: ConfigOption) => option.options?.find((v) => v.value === option.currentValue)?.name ?? option.currentValue ?? option.name ?? option.id;
-  const hasSettings = !!(modelOption || reasoningOption || permissionOption || sessionModes);
+  const hasSettings = !!(modelOption || thinkingOption || permissionOption || sessionModes);
   const renderItem = (m: ChatItem, i: number) =>
     m.kind === "tool" ? (sess.toolCalls[m.toolCallId] ? <ToolCard key={i} tc={sess.toolCalls[m.toolCallId]} compact /> : null)
       : m.kind === "agent" ? <div key={i} className="bubble agent"><Markdown text={m.text} /></div>
@@ -529,7 +529,14 @@ export default function MobileApp() {
             <div className="m-grabber" aria-hidden />
             <div className="m-picker-head"><h3>Chat settings</h3><button className="icon" aria-label="Close" data-testid="m-sheet-close" onClick={() => setSheet(false)}><Icon name="x" size={16} /></button></div>
             {modelOption && <button className="m-row" data-testid="m-model" aria-label={`Model: ${optionLabel(modelOption)}`} onClick={() => { setModelSearch(""); setPicker("model"); }}><span>Model</span><b>{optionLabel(modelOption)}</b><Icon name="chevronRight" size={14} /></button>}
-            {reasoningOption && <button className="m-row" data-testid="m-reasoning" aria-label={`Reasoning: ${optionLabel(reasoningOption)}`} onClick={() => setPicker("reasoning_effort")}><span>Reasoning</span><b>{optionLabel(reasoningOption)}</b><Icon name="chevronRight" size={14} /></button>}
+            {thinkingOption && (
+              <label className="m-row m-thinking">
+                <span>Thinking</span>
+                <select aria-label="Thinking level" data-testid="m-thinking" value={thinkingOption.currentValue ?? ""} disabled={settingOption} onChange={(e) => { haptic(); void chooseOption(thinkingOption.id, e.target.value); }}>
+                  {thinkingOption.options!.map((v) => <option key={v.value} value={v.value}>{v.name ?? v.value}</option>)}
+                </select>
+              </label>
+            )}
             {(sessionModes || permissionOption) && <div className="m-row m-row-mode"><span>Mode</span>
               <ModeControl key={open} modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={async (id) => {
                 try {

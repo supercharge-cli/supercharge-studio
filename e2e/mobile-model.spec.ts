@@ -42,7 +42,7 @@ test("per-chat model and reasoning pickers follow load, changes, and live update
   await page.getByTestId("m-chat-settings").click();
   await expect(page.getByTestId("m-settings-sheet")).toBeVisible();
   await expect(page.getByTestId("m-model")).toContainText("Fast");
-  await expect(page.getByTestId("m-reasoning")).toContainText("low");
+  await expect(page.getByTestId("m-thinking")).toHaveValue("low");
   await page.getByTestId("mode-trigger").click();
   await page.getByTestId("mode-plan").click();
   await expect(page.getByTestId("mode-trigger")).toContainText("Plan");
@@ -60,15 +60,14 @@ test("per-chat model and reasoning pickers follow load, changes, and live update
   await page.getByTestId("m-config-picker").getByRole("button", { name: /Deep/ }).click();
   await expect(page.getByTestId("m-model")).toContainText("Deep");
   expect(await page.evaluate(() => (window as any).lastConfig)).toEqual({ sid: "s1", id: "model", value: "deep" });
-  await page.getByTestId("m-reasoning").click();
-  await page.getByRole("button", { name: "high" }).click();
+  await page.getByTestId("m-thinking").selectOption("high");
   expect(await page.evaluate(() => (window as any).lastConfig)).toEqual({ sid: "s1", id: "reasoning_effort", value: "high" });
   await page.getByTestId("m-sheet-close").click();
   await page.getByTestId("m-back").click();
   await page.getByTestId("m-chat").nth(1).click();
   await page.getByTestId("m-chat-settings").click();
   await expect(page.getByTestId("m-model")).toContainText("Deep");
-  await expect(page.getByTestId("m-reasoning")).toHaveCount(0);
+  await expect(page.getByTestId("m-thinking")).toHaveCount(0);
   await expect(page.getByTestId("mode-trigger")).toContainText("Agent");
   await expect(page.getByTestId("mode-trigger")).toContainText("Ask");
   await page.evaluate(() => (window as any).pushConfig("s1", [{ id: "model", currentValue: "fast", options: [{ value: "fast", name: "Fast" }] }]));

@@ -91,6 +91,7 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-row>span:first-child{flex:1}.m-row b{font-weight:500;color:var(--muted);max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .m-row:active{background:var(--hover)}
 .m-row-mode .mode-anchor{margin-left:auto}.m-row-mode .mode-menu{left:auto;right:0;bottom:auto;top:calc(100% + 6px)}
+.m-thinking select{margin-left:auto;max-width:58%;font-size:15px;padding:8px 28px 8px 10px}
 .m-picker-head{display:flex;align-items:center;justify-content:space-between}
 .m-config-sheet input[type=search]{width:100%;font-size:16px}
 .m-project-search{margin:0}
