@@ -50,14 +50,19 @@ test("desktop model and thinking controls follow the selected chat", async ({ pa
 
 test("streams a reply with thought and plan", async ({ page }) => {
   await boot(page);
+  await page.getByTestId("plan-tab").click();
+  await expect(page.getByTestId("plan-panel")).toContainText("plan for this chat");
+  await page.getByRole("button", { name: "Browser", exact: true }).click();
   await ask(page, "stream please");
   await expect(page.locator(".bubble.agent").last()).toHaveText("Hello from the fake agent.");
   await expect(page.locator(".bubble.thought")).toContainText("Thinking");
-  await expect(page.locator(".plan")).toContainText("Say bye");
+  await expect(page.getByTestId("plan-panel")).toContainText("Say bye");
+  await expect(page.getByTestId("plan-tab")).toHaveClass(/on/);
+  await expect(page.locator(".messages .plan")).toHaveCount(0);
   await expect(page.getByTestId("chat-title").first()).toHaveText("stream please");
 });
 
-test("renders tool cards and the tools panel", async ({ page }) => {
+test("renders tool cards in chat without a tools tab", async ({ page }) => {
   await boot(page);
   await ask(page, "tool run");
   const card = page.locator(".messages .toolcard");
@@ -65,8 +70,52 @@ test("renders tool cards and the tools panel", async ({ page }) => {
   await expect(card).toContainText("Run ls -la");
   await card.locator(".tc-summary").click();
   await expect(card).toContainText("README.md");
-  await page.getByRole("button", { name: /Tools \(1\)/ }).click();
-  await expect(page.locator(".toollist .toolcard")).toContainText("Run ls -la");
+  await expect(page.getByRole("button", { name: /Tools \(/ })).toHaveCount(0);
+});
+
+test("mode button below the composer changes only the selected chat", async ({ page }) => {
+  await boot(page);
+  await ask(page, "first chat");
+  await page.getByTestId("mode-trigger").click();
+  await expect(page.getByTestId("mode-menu")).toContainText("Plan");
+  await page.getByTestId("mode-plan").click();
+  await expect(page.getByTestId("mode-trigger")).toContainText("Plan");
+  await page.getByTestId("mode-trigger").click();
+  await page.getByTestId("mode-permission-ask").click();
+  await expect(page.getByTestId("mode-trigger")).toContainText("Ask");
+  await page.getByTestId("new-chat").first().click();
+  await expect(page.getByTestId("mode-trigger")).toContainText("Agent");
+  await ask(page, "second chat");
+  await expect(page.getByTestId("mode-trigger")).toContainText("Agent");
+  await page.getByTestId("chat").filter({ hasText: "first chat" }).click();
+  await expect(page.getByTestId("mode-trigger")).toContainText("Plan");
+  await expect(page.getByTestId("mode-trigger")).toContainText("Ask");
+});
+
+test("approval choices govern tool prompts independently per chat", async ({ page }) => {
+  await boot(page);
+  await ask(page, "first chat");
+  await page.getByTestId("mode-trigger").click();
+  await page.getByTestId("mode-permission-always-approve").click();
+  await ask(page, "perm check");
+  await expect(page.locator(".bubble.agent").last()).toContainText("auto-approved");
+  await expect(page.getByTestId("perm-modal")).toHaveCount(0);
+  await page.getByTestId("new-chat").first().click();
+  await expect(page.getByTestId("mode-trigger")).toContainText("Ask");
+  await ask(page, "perm check");
+  await expect(page.getByTestId("perm-modal")).toBeVisible();
+  await page.getByRole("button", { name: "Reject", exact: true }).click();
+  await expect(page.locator(".bubble.agent").last()).toContainText("selected:deny");
+});
+
+test("queues simultaneous permission requests without dropping either", async ({ page }) => {
+  await boot(page);
+  await ask(page, "two perm");
+  await expect(page.getByTestId("perm-modal")).toContainText("Delete build folder");
+  await page.getByRole("button", { name: "Allow once" }).click();
+  await expect(page.getByTestId("perm-modal")).toContainText("Write config file");
+  await page.getByRole("button", { name: "Reject", exact: true }).click();
+  await expect(page.locator(".bubble.agent").last()).toContainText("selected:deny (p2)");
 });
 
 test("permission dialog answers the agent", async ({ page }) => {

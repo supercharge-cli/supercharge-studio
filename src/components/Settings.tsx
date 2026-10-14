@@ -145,7 +145,8 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
               <label>Server key<input type="password" value={s.secret} data-testid="agent-secret" onChange={(e) => set({ ...s, secret: e.target.value, agentChoice: "key" })} onBlur={(e) => splitUrl(e.target.value)} onPaste={(e) => { const t = e.clipboardData.getData("text"); if (splitUrl(t)) e.preventDefault(); }} /></label>
             </div>
             <label className="check"><input type="checkbox" checked={s.autoStart} onChange={(e) => set({ ...s, autoStart: e.target.checked })} /> Start the agent automatically if it is not running</label>
-            <label className="check"><input type="checkbox" checked={s.alwaysApprove} onChange={(e) => set({ ...s, alwaysApprove: e.target.checked })} /> Always approve tool calls</label>
+            <label className="check"><input type="checkbox" checked={s.alwaysApprove} onChange={(e) => set({ ...s, alwaysApprove: e.target.checked })} /> Always approve by default for new chats</label>
+            <p className="muted small">Change tool permissions for an existing chat with the mode button below its message box.</p>
             <label className="check"><input type="checkbox" data-testid="steer-default" checked={!!s.steerByDefault} onChange={(e) => set({ ...s, steerByDefault: e.target.checked })} /> Messages sent while the agent works steer the current turn (otherwise they wait in a queue)</label>
             <p className="muted">{desktop ? "The server key is stored in the OS keychain." : "Web mode: settings are stored in this browser."}</p>
             {desktop && <AgentLog />}

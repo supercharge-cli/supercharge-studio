@@ -50,7 +50,7 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-thread{overscroll-behavior-y:contain}
 .m-thread .row-wrap,.m-thread .bubble{content-visibility:auto;contain-intrinsic-size:auto 56px}
 .no-vt .m-view,.no-vt .m-list{animation:rise .26s var(--spring-soft) both}
-.m-config-bar{display:flex;gap:8px;padding:7px 10px;border-top:1px solid var(--line);background:var(--panel);overflow-x:auto}
+.m-config-bar{display:flex;gap:8px;padding:7px 10px;border-top:1px solid var(--line);background:var(--panel);overflow:visible;flex-wrap:wrap}.m-config-bar .mode-anchor{margin-left:auto}.m-config-bar .mode-menu{left:auto;right:0}.m-plan{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:12px;margin-bottom:12px;font-size:13px}.m-plan ol{padding-left:22px;margin:8px 0 0}.m-plan li{margin:5px 0}.m-plan li.completed{color:var(--muted)}.m-plan small{color:var(--muted);margin-left:5px}
 .m-config-chip{flex:none;display:flex;align-items:center;gap:6px;max-width:65%;padding:5px 10px;border-radius:20px;background:var(--hover);color:var(--fg);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .m-config-sheet input[type=search]{width:100%;font-size:16px}
 .m-picker-head{display:flex;align-items:center;justify-content:space-between}

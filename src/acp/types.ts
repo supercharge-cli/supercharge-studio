@@ -93,9 +93,14 @@ export type ConfigOption = {
   [k: string]: unknown;
 };
 
+export type SessionModes = {
+  currentModeId: string;
+  availableModes: { id: string; name: string; description?: string }[];
+};
+
 export type NewSessionResult = {
   sessionId: string;
   configOptions?: ConfigOption[];
-  modes?: unknown;
+  modes?: SessionModes;
   models?: unknown;
 };

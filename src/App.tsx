@@ -2,7 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { combineSteer, makeSteerer, type Queued } from "./acp/steer";
 import { AcpClient, ConnectionState, isAuthError, isModelError, pickConfiguredModel } from "./acp/client";
 import { applyUpdate, ChatItem, emptySession, SessionState } from "./acp/session";
-import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionUpdate } from "./acp/types";
+import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionModes, SessionUpdate } from "./acp/types";
+import { ModeControl } from "./components/ModeControl";
 import { StdioTransport } from "./acp/tauriStdio";
 import { browser, browserClientMeta } from "./browser/bridge";
 import { BrowserPanel } from "./components/BrowserPanel";
@@ -61,10 +62,18 @@ export default function App() {
   const [loadingChats, setLoadingChats] = useState<Set<string>>(() => new Set());
   const [settingsSection, setSettingsSection] = useState<"connection" | "devices" | "providers" | "agent" | "appearance" | undefined>();
   const [palette, setPalette] = useState(false);
-  const [perm, setPerm] = useState<PermState | null>(null);
+  const [permQueue, setPermQueue] = useState<PermState[]>([]);
+  const perm = permQueue[0] ?? null;
   const [pairReq, setPairReq] = useState<{ pairingId: string; name: string } | null>(null);
   const [devicesOnline, setDevicesOnline] = useState(0);
   const [optionsBySession, setOptionsBySession] = useState<Record<string, ConfigOption[]>>({});
+  const [modesBySession, setModesBySession] = useState<Record<string, SessionModes>>({});
+  const modesRef = useRef<Record<string, SessionModes>>({});
+  const rememberModes = (sid: string, modes?: SessionModes) => {
+    if (!modes?.availableModes?.length) return;
+    modesRef.current = { ...modesRef.current, [sid]: modes };
+    setModesBySession(modesRef.current);
+  };
   const optionsRef = useRef<Record<string, ConfigOption[]>>({});
   const rememberOptions = (sid: string, options: ConfigOption[]) => {
     optionsRef.current = updateSessionOptions(optionsRef.current, sid, options);
@@ -101,6 +110,7 @@ export default function App() {
   /** Sessions whose current turn already reported usage via a notification. */
   const turnUsage = useRef(new Set<string>());
   const loaded = useRef(new Set<string>());
+  const failedLoads = useRef(new Set<string>());
   /** Synchronous data update: keeps dataRef current for async flows. */
   const update = useCallback((fn: (d: AppData) => AppData) => {
     dataRef.current = fn(dataRef.current);
@@ -168,6 +178,18 @@ export default function App() {
         },
         cancel: (sid) => void clientRef.current?.cancel(sid),
         configOptions: (sid) => optionsRef.current[sid] ?? [],
+        modes: (sid) => modesRef.current[sid],
+        setMode: async (sid, mode) => {
+          const c = clientRef.current;
+          if (!c) throw new Error("Agent not connected");
+          await c.setMode(sid, mode);
+          modesRef.current = { ...modesRef.current, [sid]: { ...modesRef.current[sid], currentModeId: mode } };
+          setModesBySession(modesRef.current);
+          const update: SessionUpdate = { sessionUpdate: "current_mode_update", currentModeId: mode };
+          const found = chatForSession(sid);
+          if (found) enqueue(found.chat.id, update);
+          hubRef.current?.update(sid, update);
+        },
         setConfigOption: async (sid, id, value) => {
           const c = clientRef.current;
           if (!c) throw new Error("Agent not connected");
@@ -269,6 +291,8 @@ export default function App() {
     attached.current.clear();
     optionsRef.current = {};
     setOptionsBySession({});
+    modesRef.current = {};
+    setModesBySession({});
     const client = new AcpClient({
       ...(s.transport === "stdio" ? { transportFactory: () => new StdioTransport(s.alwaysApprove) } : { url: wsUrl(s) }),
       clientMeta: browserClientMeta(),
@@ -283,8 +307,13 @@ export default function App() {
         if (!f) return;
         const cid = f.chat.id;
         enqueue(cid, u);
+        if (u.sessionUpdate === "plan" && Array.isArray(u.entries) && u.entries.length && dataRef.current.activeChatId === cid) setPanel(true);
         const x = u as any;
         if (u.sessionUpdate === "config_option_update" && Array.isArray(x.configOptions)) rememberOptions(sid, x.configOptions);
+        if (u.sessionUpdate === "current_mode_update" && modesRef.current[sid]) {
+          modesRef.current = { ...modesRef.current, [sid]: { ...modesRef.current[sid], currentModeId: x.currentModeId } };
+          setModesBySession(modesRef.current);
+        }
         if (u.sessionUpdate === "session_info_update" && typeof x.title === "string" && x.title)
           update((d) => ({ ...d, groups: d.groups.map((g) => ({ ...g, projects: g.projects.map((p) => ({ ...p, chats: p.chats.map((c) => (c.id === cid ? { ...c, title: String(x.title).slice(0, 60) } : c)) })) })) }));
         if (x.usage) {
@@ -304,12 +333,12 @@ export default function App() {
             if (done) return;
             done = true;
             if (from === "desktop" && token != null) hub.resolved(token, o);
-            setPerm((p) => (p?.req === req ? null : p));
+            setPermQueue((pending) => pending.filter((p) => p.req !== req));
             resolve(o);
           };
           const fan = hub.deviceCount > 0 ? hub.requestPermission(req.sessionId, req) : null;
           fan?.answer.then((o) => finish(o, "device"));
-          setPerm({ req, resolve: (o) => finish(o, "desktop", fan?.token), token: fan?.token });
+          setPermQueue((pending) => [...pending, { req, resolve: (o) => finish(o, "desktop", fan?.token), token: fan?.token }]);
         }),
       onReconnected: () => {
         setStatus("Reconnected");
@@ -472,6 +501,7 @@ export default function App() {
       try { result = await c.loadSession(sid, cwd, mcp); } finally { replaying.current.delete(sid); }
     } else return;
     if (Array.isArray(result?.configOptions)) rememberOptions(sid, result.configOptions);
+    rememberModes(sid, result?.modes);
     attached.current.add(sid);
     void chatId;
   }
@@ -509,20 +539,28 @@ export default function App() {
     if (pid) newChat(pid);
   }
 
+  const creatingSession = useRef(new Map<string, Promise<string | null>>());
   async function ensureSession(projectId: string, chatId: string): Promise<string | null> {
     const c = clientRef.current;
     const found = findProject(dataRef.current, projectId);
     const chat = found?.project.chats.find((x) => x.id === chatId);
     if (!c || !found || !chat) return null;
     if (chat.sessionId) return chat.sessionId;
-    const mcpServers = await browserMcp(c);
-    const res = await c.newSession(normCwd(found.project.cwd), { yoloMode: dataRef.current.settings.alwaysApprove }, mcpServers);
-    rememberOptions(res.sessionId, res.configOptions ?? []);
-    loaded.current.add(res.sessionId);
-    attached.current.add(res.sessionId);
-    update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, sessionId: res.sessionId } : x)) })));
-    hub.sessionsChanged();
-    return res.sessionId;
+    const pending = creatingSession.current.get(chatId);
+    if (pending) return pending;
+    const create = (async () => {
+      const mcpServers = await browserMcp(c);
+      const res = await c.newSession(normCwd(found.project.cwd), { yoloMode: dataRef.current.settings.alwaysApprove }, mcpServers);
+      rememberOptions(res.sessionId, res.configOptions ?? []);
+      rememberModes(res.sessionId, res.modes);
+      loaded.current.add(res.sessionId);
+      attached.current.add(res.sessionId);
+      update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, sessionId: res.sessionId } : x)) })));
+      hub.sessionsChanged();
+      return res.sessionId;
+    })();
+    creatingSession.current.set(chatId, create);
+    try { return await create; } finally { creatingSession.current.delete(chatId); }
   }
 
   function newChat(projectId: string, focus = true) {
@@ -531,6 +569,7 @@ export default function App() {
     if (focus) {
       setView("chat");
       setTimeout(() => composerRef.current?.focus(), 0);
+      if (clientRef.current) void ensureSession(projectId, chat.id).catch((e: any) => setNotice(`Could not create chat: ${e?.message ?? e}`));
     }
     return chat.id;
   }
@@ -542,7 +581,7 @@ export default function App() {
     }
     const c = clientRef.current;
     const chat = findProject(dataRef.current, projectId)?.project.chats.find((x) => x.id === chatId);
-    if (c && chat?.sessionId && !sessionsRef.current[chatId] && !loaded.current.has(chat.sessionId) && c.initResult?.agentCapabilities?.loadSession) {
+    if (c && chat?.sessionId && (!sessionsRef.current[chatId] || failedLoads.current.has(chat.sessionId)) && !loaded.current.has(chat.sessionId) && c.initResult?.agentCapabilities?.loadSession) {
       loaded.current.add(chat.sessionId);
       hub.seed(chat.sessionId, []);
       setSessions((all) => ({ ...all, [chatId]: emptySession() }));
@@ -553,8 +592,8 @@ export default function App() {
       const sid = chat.sessionId;
       await c.loadSession(sid, cwd, mcp)
         .catch(async (e: any) => { if (await recoverModel(c, sid, chatId, e)) return c.loadSession(sid, cwd, mcp); throw e; })
-        .then((r: any) => { attached.current.add(sid); if (Array.isArray(r?.configOptions)) rememberOptions(sid, r.configOptions); })
-        .catch((e: any) => pushItem(chatId, { kind: "system", text: `Could not load this chat's history: ${e?.message ?? e}`, error: "load" } as any));
+        .then((r: any) => { failedLoads.current.delete(sid); attached.current.add(sid); if (Array.isArray(r?.configOptions)) rememberOptions(sid, r.configOptions); rememberModes(sid, r?.modes); })
+        .catch((e: any) => { loaded.current.delete(sid); failedLoads.current.add(sid); pushItem(chatId, { kind: "system", text: `Could not load this chat's history: ${e?.message ?? e}`, error: "load" } as any); });
       flush();
       setLoadingChats((l) => { const n = new Set(l); n.delete(chatId); return n; });
     } else if (c && chat?.sessionId && !optionsRef.current[chat.sessionId]) {
@@ -687,7 +726,6 @@ export default function App() {
   }, [browserVisible]);
 
   const isBusy = !!(activeChat && busy[activeChat.id]);
-  const tools = Object.values(sess.toolCalls).reverse();
   const commands: { name: string; description?: string }[] =
     sess.commands.length > 0 ? sess.commands : ((clientRef.current?.initResult?._meta as any)?.availableCommands ?? []);
 
@@ -696,6 +734,27 @@ export default function App() {
 
   // ---- Composer: slash commands ----
   const modelOption = optionFor(configOptions, "model");
+  const permissionOption = optionFor(configOptions, "permission_mode");
+  const sessionModes = activeChat?.sessionId ? modesBySession[activeChat.sessionId] : undefined;
+  const changeMode = async (mode: string) => {
+    const sid = activeChat?.sessionId;
+    if (!sid || !sessionModes?.availableModes.some((m) => m.id === mode)) return;
+    try {
+      await clientRef.current?.setMode(sid, mode);
+      const next = { ...sessionModes, currentModeId: mode };
+      rememberModes(sid, next);
+      enqueue(activeChat!.id, { sessionUpdate: "current_mode_update", currentModeId: mode });
+      hub.update(sid, { sessionUpdate: "current_mode_update", currentModeId: mode });
+    } catch (e: any) { setNotice(`Could not change work mode: ${e?.message ?? e}`); throw e; }
+  };
+  const changePermission = async (id: string, value: string) => {
+    const sid = activeChat?.sessionId;
+    if (!sid || id !== "permission_mode" || !permissionOption?.options?.some((v) => v.value === value)) return;
+    try {
+      const result = await clientRef.current?.setConfigOption(sid, id, value);
+      if (Array.isArray(result?.configOptions)) rememberOptions(sid, result.configOptions);
+    } catch (e: any) { setNotice(`Could not change tool permissions: ${e?.message ?? e}`); throw e; }
+  };
   const changeOption = (sid: string, id: string, value: string) => {
     const option = optionsRef.current[sid]?.find((o) => o.id === id);
     if (!option?.options?.some((v) => v.value === value)) return;
@@ -841,7 +900,7 @@ export default function App() {
       { id: "theme", title: `Switch to ${theme === "light" ? "dark" : "light"} theme`, icon: theme === "light" ? "moon" : "sun", run: () => setTheme(theme === "light" ? "dark" : "light") },
       ...themeList.map((t) => ({ id: `theme-${t.id}`, title: `Theme: ${t.name}`, group: "Themes", icon: t.dark ? "moon" : "sun", run: () => setTheme(t.id) })),
       { id: "sidebar", title: "Toggle sidebar", hint: "Ctrl B", icon: "panelLeft", run: () => setSideCollapsed((x) => !x) },
-      { id: "panel", title: "Toggle browser & tools panel", hint: "Ctrl \\", icon: "panelRight", run: () => setPanel((x) => !x) },
+      { id: "panel", title: "Toggle browser & plan panel", hint: "Ctrl \\", icon: "panelRight", run: () => setPanel((x) => !x) },
       { id: "focus", title: "Focus message box", hint: "Ctrl L", icon: "chat", run: () => composerRef.current?.focus() },
       { id: "reconnect", title: "Reconnect to agent", icon: "refresh", run: () => void connect() },
       { id: "pair", title: "Pair a phone", icon: "phone", run: () => openSettings("devices") },
@@ -978,7 +1037,7 @@ export default function App() {
             <span className={`status ${conn === "open" ? "ok" : "bad"}`} title={status}><i className="dot" />{conn}</span>
             {conn !== "open" && <button className="secondary" onClick={() => void connect()}><Icon name="refresh" /> Connect</button>}
             <button className="icon" title="Command palette (Ctrl K)" onClick={() => setPalette(true)}><Icon name="search" size={17} /></button>
-            <button className="icon" title={panel ? "Hide browser & tools (Ctrl \\)" : "Show browser & tools (Ctrl \\)"} onClick={() => setPanel((x) => !x)}><Icon name="panelRight" size={18} /></button>
+            <button className="icon" title={panel ? "Hide browser & plan (Ctrl \\)" : "Show browser & plan (Ctrl \\)"} onClick={() => setPanel((x) => !x)}><Icon name="panelRight" size={18} /></button>
           </header>
           {agentMissing && (
             <div className="agent-setup" data-testid="agent-setup">
@@ -1066,12 +1125,7 @@ export default function App() {
                     {conn !== "open" && <p className="muted">Agent status: {status || conn}</p>}
                   </div>
                 )}
-                {sess.plan.length > 0 && (
-                  <div className="plan">
-                    <div className="plan-title">Plan</div>
-                    {sess.plan.map((e, i) => <div key={i} className={`plan-item plan-${e.status}`}><span className="box">{e.status === "completed" && <Icon name="check" size={12} />}</span>{e.content}</div>)}
-                  </div>
-                )}
+
               </>
             }
             footer={isBusy && <div className="typing" aria-label="Agent is working"><i /><i /><i /></div>}
@@ -1138,11 +1192,11 @@ export default function App() {
                 <button className="round" aria-label="Send" title="Send (Enter)" onClick={() => void send()} disabled={conn !== "open" || !active || !draft.trim()}><Icon name="send" /><span className="sr">Send</span></button>
               )}
             </div>
-            <div className="hint">{active ? <>cwd <code>{active.project.cwd}</code> · Enter to send, Shift+Enter for a new line · / commands · @ files</> : " "}</div>
+            <div className="hint">{active ? <><span>cwd <code>{active.project.cwd}</code> · Enter to send, Shift+Enter for a new line · / commands · @ files</span>{activeChat?.sessionId && <ModeControl key={activeChat.sessionId} modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} />}</> : " "}</div>
           </div>
         </main>
       )}
-      {view === "chat" && panel && <BrowserPanel tools={tools} onClose={() => setPanel(false)} />}
+      {view === "chat" && panel && <BrowserPanel plan={sess.plan} sessionId={activeChat?.sessionId} onClose={() => setPanel(false)} />}
       {palette && <CommandPalette commands={paletteCommands} onClose={() => setPalette(false)} />}
       {pairReq && (
         <div className="modal-bg">

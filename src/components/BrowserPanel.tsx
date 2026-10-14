@@ -1,15 +1,20 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { browser } from "../browser/bridge";
 import { isDesktop } from "../lib/desktop";
-import type { ToolCall } from "../acp/types";
-import { ToolCard } from "./ToolCard";
+import type { PlanEntry } from "../acp/types";
 import { Icon } from "./Icon";
 
-/** Right panel: side browser (native child webview on desktop) + live tool calls. */
-export function BrowserPanel({ tools, onClose }: { tools: ToolCall[]; onClose: () => void }) {
+/** Right panel: browser and the selected chat's live plan. */
+export function BrowserPanel({ plan, sessionId, onClose }: { plan: PlanEntry[]; sessionId?: string; onClose: () => void }) {
   const slot = useRef<HTMLDivElement>(null);
   const [url, setUrl] = useState(browser.url === "about:blank" ? "https://superchargeai.in" : browser.url);
-  const [tab, setTab] = useState<"browser" | "tools">("browser");
+  const [tab, setTab] = useState<"browser" | "plan">(plan.length ? "plan" : "browser");
+  useEffect(() => { setTab(plan.length ? "plan" : "browser"); }, [sessionId]);
+  const hadPlan = useRef(plan.length > 0);
+  useEffect(() => {
+    if (plan.length > 0 && !hadPlan.current) setTab("plan");
+    hadPlan.current = plan.length > 0;
+  }, [plan]);
 
   useEffect(() => {
     // The agent used a browser tool while the Tools tab was showing: switch to the browser.
@@ -37,9 +42,11 @@ export function BrowserPanel({ tools, onClose }: { tools: ToolCall[]; onClose: (
     void browser.open(url, rect()).catch(() => {});
     const ro = new ResizeObserver(() => void browser.setBounds(rect()));
     ro.observe(el);
-    window.addEventListener("resize", () => void browser.setBounds(rect()));
+    const resize = () => void browser.setBounds(rect());
+    window.addEventListener("resize", resize);
     return () => {
       ro.disconnect();
+      window.removeEventListener("resize", resize);
       void browser.hide();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -49,7 +56,7 @@ export function BrowserPanel({ tools, onClose }: { tools: ToolCall[]; onClose: (
     <aside className="rpanel">
       <div className="tabs">
         <button className={tab === "browser" ? "on" : ""} onClick={() => setTab("browser")}><Icon name="globe" size={14} /> Browser</button>
-        <button className={tab === "tools" ? "on" : ""} onClick={() => setTab("tools")}><Icon name="tool" size={14} /> Tools ({tools.length})</button>
+        <button data-testid="plan-tab" className={tab === "plan" ? "on" : ""} onClick={() => setTab("plan")}><Icon name="file" size={14} /> Plan{plan.length ? ` (${plan.length})` : ""}</button>
         <div style={{ flex: 1 }} />
         <button className="icon" onClick={onClose} title="Close panel"><Icon name="x" /></button>
       </div>
@@ -70,9 +77,9 @@ export function BrowserPanel({ tools, onClose }: { tools: ToolCall[]; onClose: (
           </div>
         </>
       ) : (
-        <div className="toollist">
-          {tools.length === 0 && <div className="empty small"><Icon name="tool" size={22} /><p>Tool calls from the agent appear here.</p></div>}
-          {tools.map((t) => <ToolCard key={t.toolCallId} tc={t} compact />)}
+        <div className="plan-panel" data-testid="plan-panel">
+          {plan.length === 0 ? <div className="empty small"><Icon name="file" size={22} /><p>The agent's plan for this chat will appear here.</p></div> :
+            <ol>{plan.map((entry, index) => <li key={`${index}-${entry.content}`} className={`plan-step ${entry.status}`}><span className="plan-mark">{entry.status === "completed" ? <Icon name="check" size={13} /> : index + 1}</span><div><span>{entry.content}</span><small>{(entry.status ?? "pending").replaceAll("_", " ")}</small></div></li>)}</ol>}
         </div>
       )}
     </aside>

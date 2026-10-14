@@ -45,10 +45,13 @@ const RUST_FRAME = "00000000000000019a5c67de7d49a6a5a8c6cd26d05da1de57c8cff4";
 function makeHub() {
   const sent: { d: string; m: any }[] = [];
   const options = new Map<string, ConfigOption[]>([
-    ["s1", [{ id: "model", currentValue: "fast", options: [{ value: "fast", name: "Fast" }, { value: "deep", name: "Deep" }] }, { id: "reasoning_effort", currentValue: "low", options: [{ value: "low" }, { value: "high" }] }, { id: "secret", options: [{ value: "private" }] }]],
+    ["s1", [{ id: "model", currentValue: "fast", options: [{ value: "fast", name: "Fast" }, { value: "deep", name: "Deep" }] }, { id: "reasoning_effort", currentValue: "low", options: [{ value: "low" }, { value: "high" }] }, { id: "permission_mode", currentValue: "ask", options: [{ value: "ask" }, { value: "always-approve" }] }, { id: "secret", options: [{ value: "private" }] }]],
     ["s2", [{ id: "model", currentValue: "deep", options: [{ value: "deep", name: "Deep" }] }]],
   ]);
+  const modes = new Map(["s1", "s2"].map((sid) => [sid, { currentModeId: "default", availableModes: [{ id: "default", name: "Agent" }, { id: "plan", name: "Plan" }] }] as const));
   const host: HubHost = {
+    modes: (sid) => modes.get(sid),
+    setMode: vi.fn(async (sid, modeId) => { modes.set(sid, { ...modes.get(sid)!, currentModeId: modeId }); }),
     sessions: () => [{ sessionId: "s1", title: "Fix bug", cwd: "/w", project: "w", projectId: "p1", group: "Personal" }, { sessionId: "s2", title: "New chat", cwd: "/w", project: "w", projectId: "p1", group: "Personal" }],
     configOptions: (sid) => options.get(sid) ?? [],
     setConfigOption: vi.fn(async (sid, configId, value) => {
@@ -126,6 +129,23 @@ describe("gateway hub", () => {
     await hub.receive("A", { id: 9, method: "session/set_config_option", params: { sessionId: "s1", configId: "reasoning_effort", value: "high" } });
     expect(host.setConfigOption).toHaveBeenCalledWith("s1", "reasoning_effort", "high");
   });
+  it("validates per-chat work and permission modes", async () => {
+    const { hub, host, sent } = makeHub();
+    await hub.receive("A", { id: 1, method: "session/load", params: { sessionId: "s1" } });
+    expect(sent.at(-1)!.m.result.modes.currentModeId).toBe("default");
+    await hub.receive("A", { id: 2, method: "session/set_mode", params: { sessionId: "s1", modeId: "plan" } });
+    expect(host.setMode).toHaveBeenCalledWith("s1", "plan");
+    await hub.receive("A", { id: 3, method: "session/set_mode", params: { sessionId: "s2", modeId: "unknown" } });
+    expect(sent.at(-1)!.m.error.code).toBe(-32602);
+    await hub.receive("A", { id: 4, method: "session/set_config_option", params: { sessionId: "s1", configId: "permission_mode", value: "always-approve" } });
+    expect(host.setConfigOption).toHaveBeenCalledWith("s1", "permission_mode", "always-approve");
+    await hub.receive("A", { id: 5, method: "session/set_config_option", params: { sessionId: "s2", configId: "permission_mode", value: "always-approve" } });
+    expect(sent.at(-1)!.m.error.code).toBe(-32602);
+    await hub.receive("A", { id: 6, method: "session/load", params: { sessionId: "s1" } });
+    expect(sent.at(-1)!.m.result).toMatchObject({ modes: { currentModeId: "plan" }, configOptions: expect.arrayContaining([{ id: "permission_mode", currentValue: "always-approve", options: expect.any(Array) }]) });
+    await hub.receive("A", { id: 7, method: "session/load", params: { sessionId: "s2" } });
+    expect(sent.at(-1)!.m.result.modes.currentModeId).toBe("default");
+  });
   it("fans out permission requests: first device answer wins, others are dismissed", async () => {
     const { hub, sent } = makeHub();
     hub.connected("A");
@@ -137,6 +157,18 @@ describe("gateway hub", () => {
     await hub.receive("B", { id: b.m.id, result: { outcome: { outcome: "selected", optionId: "ok" } } });
     expect(await answer).toEqual({ outcome: "selected", optionId: "ok" });
     expect(sent.at(-1)).toMatchObject({ d: "A", m: { method: "_supercharge/permission/resolved", params: { by: "dev-B" } } });
+  });
+  it("identifies simultaneous permission requests separately when another device answers", async () => {
+    const { hub, sent } = makeHub();
+    hub.connected("A"); hub.connected("B");
+    const first = hub.requestPermission("s1", { toolCall: { toolCallId: "t1" }, options: [] });
+    const second = hub.requestPermission("s1", { toolCall: { toolCallId: "t2" }, options: [] });
+    const bFirst = sent.find((x) => x.d === "B" && x.m.params?.toolCall?.toolCallId === "t1")!;
+    await hub.receive("B", { id: bFirst.m.id, result: { outcome: { outcome: "selected", optionId: "yes" } } });
+    expect(await first.answer).toEqual({ outcome: "selected", optionId: "yes" });
+    expect(sent.at(-1)!.m.params).toMatchObject({ toolCallId: "t1", by: "dev-B" });
+    hub.resolved(second.token, { outcome: "cancelled" });
+    expect(sent.at(-1)!.m.params.toolCallId).toBe("t2");
   });
   it("desktop answering first dismisses device prompts", () => {
     const { hub, sent } = makeHub();

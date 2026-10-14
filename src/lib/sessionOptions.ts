@@ -4,7 +4,7 @@ export function updateSessionOptions(current: Record<string, ConfigOption[]>, se
   return { ...current, [sessionId]: options };
 }
 
-export function optionFor(options: ConfigOption[] | undefined, id: "model" | "reasoning_effort"): ConfigOption | undefined {
+export function optionFor(options: ConfigOption[] | undefined, id: "model" | "reasoning_effort" | "permission_mode"): ConfigOption | undefined {
   const option = options?.find((entry) => entry.id === id);
   return option?.options?.length ? option : undefined;
 }

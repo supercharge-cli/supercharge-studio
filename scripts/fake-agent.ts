@@ -71,9 +71,13 @@ wss.on("connection", (ws: WebSocket) => {
   const cancelled = new Set<string>();
   const modelChoices = new Map<string, string>();
   const reasoningChoices = new Map<string, string>();
+  const permissionChoices = new Map<string, string>();
+  const modeChoices = new Map<string, string>();
+  const modesFor = (sid: string) => ({ currentModeId: modeChoices.get(sid) ?? "default", availableModes: [{ id: "default", name: "Agent", description: "Work on the task" }, { id: "plan", name: "Plan", description: "Plan before changing files" }] });
   const optionsFor = (sid: string) => [
     { id: "model", name: "Model", currentValue: modelChoices.get(sid) ?? "studio-test-1", options: [{ value: "studio-test-1", name: "First" }, { value: "studio-test-2", name: "Second" }] },
     { id: "reasoning_effort", name: "Reasoning Effort", currentValue: reasoningChoices.get(sid) ?? "high", options: [{ value: "high", name: "High" }, { value: "low", name: "Low" }] },
+    { id: "permission_mode", name: "Tool permissions", currentValue: permissionChoices.get(sid) ?? "ask", options: [{ value: "ask", name: "Ask" }, { value: "always-approve", name: "Always approve" }] },
   ];
   const send = (m: any) => ws.send(JSON.stringify({ jsonrpc: "2.0", ...m }));
   const update = (sessionId: string, u: any) => send({ method: "session/update", params: { sessionId, update: u } });
@@ -119,7 +123,7 @@ wss.on("connection", (ws: WebSocket) => {
         attach(sid);
         update(sid, { sessionUpdate: "user_message_chunk", content: { type: "text", text: `earlier question in ${sid}` } });
         say(sid, `History of ${sid} in ${m.params?.cwd}`);
-        return reply({ configOptions: optionsFor(sid) });
+        return reply({ configOptions: optionsFor(sid), modes: modesFor(sid) });
       }
       case "_supercharge/session/steer": {
         if (process.env.FAKE_AGENT_STEER !== "1") return send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });
@@ -131,7 +135,7 @@ wss.on("connection", (ws: WebSocket) => {
         if (!CLI) return send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });
         if (!known.has(m.params?.sessionId)) return send({ id: m.id, error: { code: -32602, message: "unknown session id" } });
         attach(m.params.sessionId);
-        return reply({});
+        return reply({ configOptions: optionsFor(m.params.sessionId), modes: modesFor(m.params.sessionId) });
       }
       case "session/set_model":
         if (!CLI) return send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });
@@ -148,15 +152,27 @@ wss.on("connection", (ws: WebSocket) => {
         return reply({
           sessionId: `fake-${st.n}`,
           configOptions: optionsFor(`fake-${st.n}`),
+          modes: modesFor(`fake-${st.n}`),
         });
       case "session/set_config_option": {
         const sid = m.params?.sessionId;
         if (!known.has(sid)) return send({ id: m.id, error: { code: -32602, message: "unknown session id" } });
         if (m.params?.configId === "model") modelChoices.set(sid, m.params.value);
         if (m.params?.configId === "reasoning_effort") reasoningChoices.set(sid, m.params.value);
+        if (m.params?.configId === "permission_mode") {
+          if (!["ask", "always-approve"].includes(m.params.value)) return send({ id: m.id, error: { code: -32602, message: "Invalid permission mode" } });
+          permissionChoices.set(sid, m.params.value);
+        }
         const options = optionsFor(sid);
         update(sid, { sessionUpdate: "config_option_update", configOptions: options });
         return reply({ configOptions: options });
+      }
+      case "session/set_mode": {
+        const sid = m.params?.sessionId;
+        if (!known.has(sid) || !["default", "plan"].includes(m.params?.modeId)) return send({ id: m.id, error: { code: -32602, message: "Invalid work mode" } });
+        modeChoices.set(sid, m.params.modeId);
+        update(sid, { sessionUpdate: "current_mode_update", currentModeId: m.params.modeId });
+        return reply({});
       }
       case "session/cancel":
         cancelled.add(m.params.sessionId);
@@ -198,17 +214,24 @@ wss.on("connection", (ws: WebSocket) => {
           say(sid, "Tool finished.");
         }
         if (/perm/.test(text)) {
-          const r = await call("session/request_permission", {
-            sessionId: sid,
-            toolCall: { toolCallId: "p1", title: "Delete build folder", rawInput: { path: "dist" } },
-            options: [
-              { optionId: "allow", name: "Allow once", kind: "allow_once" },
-              { optionId: "deny", name: "Reject", kind: "reject_once" },
-              { optionId: "deny-why", name: "No, and tell Zed what to do differently", kind: "reject_once" },
-            ],
-          });
-          const o = r.result?.outcome;
-          say(sid, `Permission outcome: ${o?.outcome}${o?.optionId ? `:${o.optionId}` : ""}`);
+          if (permissionChoices.get(sid) === "always-approve") {
+            say(sid, "Permission outcome: auto-approved");
+          } else {
+            const request = async (id: string, title: string) => {
+              const r = await call("session/request_permission", {
+                sessionId: sid,
+                toolCall: { toolCallId: id, title, rawInput: { path: "dist" } },
+                options: [
+                  { optionId: "allow", name: "Allow once", kind: "allow_once" },
+                  { optionId: "deny", name: "Reject", kind: "reject_once" },
+                  { optionId: "deny-why", name: "No, and tell Zed what to do differently", kind: "reject_once" },
+                ],
+              });
+              const o = r.result?.outcome;
+              say(sid, `Permission outcome: ${o?.outcome}${o?.optionId ? `:${o.optionId}` : ""} (${id})`);
+            };
+            await Promise.all([request("p1", "Delete build folder"), ...(/two perm/.test(text) ? [request("p2", "Write config file")] : [])]);
+          }
         }
         if (/slow/.test(text) && !/no-slow/.test(text)) {
           for (let i = 0; i < 200 && !cancelled.has(sid); i++) {

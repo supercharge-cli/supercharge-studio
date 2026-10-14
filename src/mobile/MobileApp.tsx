@@ -2,7 +2,8 @@ import { cleanPermission } from "../lib/labels";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AcpClient, ConnectionState } from "../acp/client";
 import { applyUpdate, ChatItem, emptySession, SessionState } from "../acp/session";
-import type { ConfigOption, PermissionOutcome, PermissionRequest } from "../acp/types";
+import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionModes } from "../acp/types";
+import { ModeControl } from "../components/ModeControl";
 import { Icon } from "../components/Icon";
 import { Markdown } from "../components/Markdown";
 import { ToolCard } from "../components/ToolCard";
@@ -84,12 +85,17 @@ export default function MobileApp() {
   const [state, setState] = useState<Record<string, SessionState>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState("");
-  const [perm, setPerm] = useState<{ req: PermissionRequest; resolve: (o: PermissionOutcome) => void } | null>(null);
+  const [permQueue, setPermQueue] = useState<{ req: PermissionRequest; resolve: (o: PermissionOutcome) => void }[]>([]);
+  const perm = permQueue[0] ?? null;
   const [handoff, setHandoff] = useState<string | null>(null);
   const [toast, setToast] = useState("");
   const [listed, setListed] = useState(false);
   const [loadingSess, setLoadingSess] = useState<string | null>(null);
   const [configBySession, setConfigBySession] = useState<Record<string, ConfigOption[]>>({});
+  const [modesBySession, setModesBySession] = useState<Record<string, SessionModes>>({});
+  const rememberModes = (sid: string, modes?: SessionModes) => {
+    if (modes?.availableModes?.length) setModesBySession((all) => ({ ...all, [sid]: modes }));
+  };
   const [picker, setPicker] = useState<string | null>(null);
   const [modelSearch, setModelSearch] = useState("");
   const [settingOption, setSettingOption] = useState(false);
@@ -131,6 +137,8 @@ export default function MobileApp() {
       onUpdate: (sid, u) => {
         if (u.sessionUpdate === "config_option_update" && Array.isArray(u.configOptions))
           setConfigBySession((all) => ({ ...all, [sid]: u.configOptions as ConfigOption[] }));
+        if (u.sessionUpdate === "current_mode_update")
+          setModesBySession((all) => all[sid] ? { ...all, [sid]: { ...all[sid], currentModeId: u.currentModeId as string } } : all);
         pending.push({ sid, u });
         if (!raf) raf = requestAnimationFrame(() => {
           raf = 0;
@@ -140,17 +148,20 @@ export default function MobileApp() {
       },
       onNotification: (method, p: any) => {
         if (method === "_supercharge/permission/resolved") {
-          setPerm((cur) => {
-            if (cur && cur.req.sessionId === p?.sessionId) { cur.resolve({ outcome: "cancelled" }); setToast(`Answered on ${p?.by ?? "another device"}`); return null; }
-            return cur;
-          });
+          setPermQueue((pending) => pending.filter((item) => {
+            if (item.req.sessionId !== p?.sessionId || (p?.toolCallId && item.req.toolCall.toolCallId !== p.toolCallId)) return true;
+            item.resolve({ outcome: "cancelled" });
+            setToast(`Answered on ${p?.by ?? "another device"}`);
+            return false;
+          }));
         } else if (method === "_supercharge/handoff") setHandoff(String(p?.sessionId ?? ""));
         else if (method === "_supercharge/sessions/changed") void refresh();
       },
-      onPermissionRequest: (req) => new Promise((resolve) => setPerm({ req: cleanPermission(req), resolve })),
+      onPermissionRequest: (req) => new Promise((resolve) => setPermQueue((pending) => [...pending, { req: cleanPermission(req), resolve }])),
       onReconnected: () => {
         loadedRef.current.clear();
         setConfigBySession({});
+        setModesBySession({});
         void refresh();
         const sid = activeSessionRef.current;
         if (sid) {
@@ -160,6 +171,7 @@ export default function MobileApp() {
             .then((r: any) => {
               loadedRef.current.add(sid);
               if (Array.isArray(r?.configOptions)) setConfigBySession((all) => ({ ...all, [sid]: r.configOptions }));
+              rememberModes(sid, r?.modes);
             })
             .catch((e) => setErr(`Could not reload this chat: ${e?.message ?? e}`))
             .finally(() => setLoadingSess(null));
@@ -198,7 +210,7 @@ export default function MobileApp() {
     setState((all) => ({ ...all, [sid]: emptySession() }));
     setLoadingSess(sid);
     await c.loadSession(sid, list.find((s) => s.sessionId === sid)?.cwd ?? "")
-      .then((r: any) => { if (Array.isArray(r?.configOptions)) setConfigBySession((all) => ({ ...all, [sid]: r.configOptions })); })
+      .then((r: any) => { if (Array.isArray(r?.configOptions)) setConfigBySession((all) => ({ ...all, [sid]: r.configOptions })); rememberModes(sid, r?.modes); })
       .catch((e) => { loadedRef.current.delete(sid); setErr(`Could not load this chat: ${e?.message ?? e}`); });
     setLoadingSess(null);
   }
@@ -210,6 +222,7 @@ export default function MobileApp() {
     loadedRef.current.add(r.sessionId);
     activeSessionRef.current = r.sessionId;
     setConfigBySession((all) => ({ ...all, [r.sessionId]: r.configOptions ?? [] }));
+    rememberModes(r.sessionId, r.modes);
     setPicker(null);
     setModelSearch("");
     await refresh();
@@ -243,7 +256,7 @@ export default function MobileApp() {
       setPicker(null);
       setModelSearch("");
     } catch (e: any) {
-      setToast(`Could not change ${configId === "model" ? "model" : "reasoning"}: ${e?.message ?? e}`);
+      setToast(`Could not change ${configId === "model" ? "model" : configId === "permission_mode" ? "tool permissions" : "reasoning"}: ${e?.message ?? e}`);
     } finally {
       setSettingOption(false);
     }
@@ -277,6 +290,8 @@ export default function MobileApp() {
   const sessionOptions = (open && configBySession[open]) || [];
   const modelOption = sessionOptions.find((o) => o.id === "model" && o.options?.length);
   const reasoningOption = sessionOptions.find((o) => o.id === "reasoning_effort" && o.options?.length);
+  const permissionOption = sessionOptions.find((o) => o.id === "permission_mode" && o.options?.length);
+  const sessionModes = open ? modesBySession[open] : undefined;
   const activeOption = sessionOptions.find((o) => o.id === picker);
   const optionLabel = (option: ConfigOption) => option.options?.find((v) => v.value === option.currentValue)?.name ?? option.currentValue ?? option.name ?? option.id;
   const renderItem = (m: ChatItem, i: number) =>
@@ -339,13 +354,25 @@ export default function MobileApp() {
                 </div>
               )}
               {loadingSess !== open && sess.items.length === 0 && !isBusy && <div className="empty"><p className="muted">Say something to start.</p></div>}
+              {sess.plan.length > 0 && <section className="m-plan" data-testid="m-plan"><strong>Plan</strong><ol>{sess.plan.map((step, i) => <li key={`${i}-${step.content}`} className={step.status === "completed" ? "completed" : ""}>{step.content} <small>{step.status?.replaceAll("_", " ")}</small></li>)}</ol></section>}
               {sess.items.map(renderItem)}
               {isBusy && <div className="typing"><i /><i /><i /></div>}
             </div>
           </div>
-          {(modelOption || reasoningOption) && <div className="m-config-bar">
+          {(modelOption || reasoningOption || permissionOption || sessionModes) && <div className="m-config-bar">
             {modelOption && <button className="m-config-chip" data-testid="m-model" aria-label={`Model: ${optionLabel(modelOption)}`} onClick={() => { setModelSearch(""); setPicker("model"); }}><Icon name="bolt" size={14} />{optionLabel(modelOption)}</button>}
             {reasoningOption && <button className="m-config-chip" data-testid="m-reasoning" aria-label={`Reasoning: ${optionLabel(reasoningOption)}`} onClick={() => setPicker("reasoning_effort")}>Reasoning: {optionLabel(reasoningOption)}</button>}
+            <ModeControl key={open} modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={async (id) => {
+              try {
+                await client.current?.setMode(open!, id);
+                if (sessionModes) rememberModes(open!, { ...sessionModes, currentModeId: id });
+              } catch (e: any) { setToast(`Could not change work mode: ${e?.message ?? e}`); throw e; }
+            }} onPermission={async (id, value) => {
+              try {
+                const result = await client.current?.setConfigOption(open!, id, value);
+                if (Array.isArray(result?.configOptions)) setConfigBySession((all) => ({ ...all, [open!]: result.configOptions }));
+              } catch (e: any) { setToast(`Could not change tool permissions: ${e?.message ?? e}`); throw e; }
+            }} />
           </div>}
           <div className="m-composer">
             <textarea rows={1} value={draft} placeholder="Message Supercharge…" data-testid="m-input" onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!isBusy) void send(); } }} />
@@ -375,7 +402,7 @@ export default function MobileApp() {
             <p>{perm.req.toolCall.title ?? perm.req.toolCall.toolCallId}</p>
             {perm.req.toolCall.rawInput != null && <pre className="mono">{JSON.stringify(perm.req.toolCall.rawInput, null, 2)}</pre>}
             {perm.req.options.map((o) => (
-              <button key={o.optionId} className={`m-big ${o.kind.startsWith("reject") ? "secondary" : ""}`} onClick={() => { perm.resolve({ outcome: "selected", optionId: o.optionId }); setPerm(null); }}>{o.name}</button>
+              <button key={o.optionId} className={`m-big ${o.kind.startsWith("reject") ? "secondary" : ""}`} onClick={() => { perm.resolve({ outcome: "selected", optionId: o.optionId }); setPermQueue((pending) => pending.filter((item) => item !== perm)); }}>{o.name}</button>
             ))}
           </div>
         </div>
