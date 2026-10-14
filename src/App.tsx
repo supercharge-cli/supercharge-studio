@@ -37,6 +37,7 @@ import { FileEntry, projectFiles, projectReadText } from "./lib/desktop";
 import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type CliStatus, agentLogNote, agentRestart, appConfig, background, ensureAgent, gateway, invoke, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
 import { AppData, applyTree, ensureFolderProject, findProject, load, mergeCliSessions, normCwd, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
+import { APP_VERSION, checkUpdate, type AvailableUpdate } from "./lib/updates";
 
 type View = "chat" | "settings" | "usage";
 type PermState = { req: PermissionRequest; resolve: (o: PermissionOutcome) => void; token?: number };
@@ -48,6 +49,16 @@ export default function App() {
   const [conn, setConn] = useState<ConnectionState>("idle");
   const [status, setStatus] = useState("");
   const [notice, setNotice] = useState("");
+  const [update, setUpdate] = useState<AvailableUpdate | null>(null);
+  useEffect(() => {
+    let stop = false;
+    void (async () => {
+      const format = isDesktop() ? await invoke<string>("host_package").catch(() => undefined) : undefined;
+      const next = await checkUpdate(APP_VERSION, "desktop", format).catch(() => null);
+      if (!stop && next) setUpdate(next);
+    })();
+    return () => { stop = true; };
+  }, []);
   const [sessions, setSessions] = useState<Record<string, SessionState>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState("");
@@ -1008,6 +1019,13 @@ export default function App() {
 
   return (
     <div className={`app ${panel && view === "chat" ? "with-panel" : ""} view-${view}`}>
+      {update && (
+        <div className="notice update-banner" data-testid="update-banner">
+          <span>Supercharge Studio {update.version} is available.</span>
+          <button onClick={() => window.open(update.asset || update.page, "_blank")}>Install</button>
+          <button className="ghost" onClick={() => setUpdate(null)}>Later</button>
+        </div>
+      )}
       {cliSetup && (
         <Suspense fallback={null}><CliSetup
           status={cli}

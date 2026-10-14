@@ -55,6 +55,22 @@ fn app_config() -> serde_json::Value {
     })
 }
 
+/// Which installer the update prompt should offer: rpm, deb, exe, or dmg.
+#[tauri::command]
+fn host_package() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        let os = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
+        return if os.contains("fedora") || os.contains("rhel") || os.contains("centos") || os.contains("suse") { "rpm".into() } else { "deb".into() };
+    }
+    #[cfg(target_os = "windows")]
+    { return "exe".into(); }
+    #[cfg(target_os = "macos")]
+    { return "dmg".into(); }
+    #[allow(unreachable_code)]
+    "page".into()
+}
+
 /// True if something is listening on the agent address.
 #[tauri::command]
 async fn agent_probe(addr: String) -> bool {
@@ -380,7 +396,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            app_config, agent_probe, agent_start, agent_stop, agent::agent_info, agent::agent_log, agent::agent_install, cliinstall::cli_status, cliinstall::cli_install, agent::agent_check, agent::agent_free_port, agent::agent_log_note,
+            app_config, host_package, agent_probe, agent_start, agent_stop, agent::agent_info, agent::agent_log, agent::agent_install, cliinstall::cli_status, cliinstall::cli_install, agent::agent_check, agent::agent_free_port, agent::agent_log_note,
             stdio_start, stdio_send, stdio_stop,
             browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible, browser_screenshot,
             secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info,

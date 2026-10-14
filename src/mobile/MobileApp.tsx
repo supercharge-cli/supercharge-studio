@@ -14,6 +14,7 @@ import { defaultDeviceName, loadCreds, pendingCredsFromCode, saveCreds } from ".
 import { canScan, onPairLink, scanQr } from "./scan";
 import { parsePairUri } from "../gateway/crypto";
 import { type Attachment, deviceBlocks, fmtSize, fromFile, isImage, rejectReason } from "../lib/attachments";
+import { APP_VERSION, checkUpdate, type AvailableUpdate } from "../lib/updates";
 
 /** Light haptic tick where the platform allows it. */
 const haptic = (ms = 8) => { try { navigator.vibrate?.(ms); } catch { /* not supported */ } };
@@ -123,6 +124,10 @@ export default function MobileApp() {
   const perm = permQueue[0] ?? null;
   const [handoff, setHandoff] = useState<string | null>(null);
   const [toast, setToast] = useState("");
+  const [update, setUpdate] = useState<AvailableUpdate | null>(null);
+  useEffect(() => {
+    void checkUpdate(APP_VERSION, "mobile").then((next) => next && setUpdate(next)).catch(() => {});
+  }, []);
   const [listed, setListed] = useState(false);
   const [loadingSess, setLoadingSess] = useState<string | null>(null);
   const [configBySession, setConfigBySession] = useState<Record<string, ConfigOption[]>>({});
@@ -405,6 +410,17 @@ export default function MobileApp() {
 
   return (
     <div className="m-app">
+      {update && (
+        <div className="m-sheet-bg top" data-testid="m-update">
+          <div className="m-sheet" role="dialog" aria-label="Update available" onClick={(e) => e.stopPropagation()}>
+            <div className="m-grabber" aria-hidden />
+            <h3>Update {update.version} is available</h3>
+            <p className="muted">Install the new phone app. Pairing stays when the update is signed with the same key.</p>
+            <button className="m-big" onClick={() => window.open(update.asset || update.page, "_blank")}>Install</button>
+            <button className="m-big secondary" onClick={() => setUpdate(null)}>Later</button>
+          </div>
+        </div>
+      )}
       <header className="m-top">
         {open ? <button className="icon" aria-label="Chats" data-testid="m-menu" onClick={() => { haptic(); setDrawer(true); }}><Icon name="panelLeft" size={20} /></button> : <div className="logo"><Icon name="bolt" size={16} /></div>}
         {open && <button className="icon" aria-label="Back" onClick={back} data-testid="m-back"><Icon name="arrowLeft" size={20} /></button>}
