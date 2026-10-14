@@ -144,6 +144,7 @@ export default function MobileApp() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [thinkPop, setThinkPop] = useState(false);
   const [permPop, setPermPop] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [search, setSearch] = useState("");
   const [historyView, setHistoryView] = useState<HistoryView>(() => (localStorage.getItem(HISTORY_KEY) === "chats" ? "chats" : "projects"));
   const [drawer, setDrawer] = useState(false);
@@ -480,11 +481,13 @@ export default function MobileApp() {
               </section>
             )}
             {q && shown.length === 0 && <p className="muted m-none">No chats match “{search}”.</p>}
-            <button className="ghost m-unpair" onClick={() => { saveCreds(null); setCreds(null); }}>Unpair this device</button>
+            </div>
+          <div className="m-fab-row">
+            <button className="m-fab m-disconnect" data-testid="m-disconnect" onClick={() => { haptic(); setConfirmDisconnect(true); }}>Disconnect</button>
+            {listed && allProjects.length > 0 && (
+              <button className="m-fab" data-testid="m-fab" aria-label="New chat" onClick={() => { haptic(); setDrawer(false); if (allProjects.length === 1) void newChat(allProjects[0]); else setNewSheet(true); }}><Icon name="compose" size={18} /> New chat</button>
+            )}
           </div>
-          {listed && allProjects.length > 0 && (
-            <button className="m-fab" data-testid="m-fab" aria-label="New chat" onClick={() => { haptic(); setDrawer(false); if (allProjects.length === 1) void newChat(allProjects[0]); else setNewSheet(true); }}><Icon name="compose" size={18} /> New chat</button>
-          )}
         </div>
       )}
       {open && (
@@ -598,6 +601,17 @@ export default function MobileApp() {
               }} />
             </div>}
             <button className="m-row" onClick={() => { setSheet(false); void client.current?.ext("_supercharge/focus", { sessionId: open }); setToast("Opened on your computer"); }}><span>Open on computer</span><Icon name="panelRight" size={15} /></button>
+          </div>
+        </div>
+      )}
+      {confirmDisconnect && (
+        <div className="m-sheet-bg top" onClick={() => setConfirmDisconnect(false)}>
+          <div className="m-sheet" role="dialog" aria-label="Disconnect" data-testid="m-disconnect-confirm" onClick={(e) => e.stopPropagation()}>
+            <div className="m-grabber" aria-hidden />
+            <h3>Disconnect this phone?</h3>
+            <p className="muted">It forgets this computer. Connecting again needs a new pairing code.</p>
+            <button className="m-big danger" data-testid="m-disconnect-yes" onClick={() => { saveCreds(null); setCreds(null); setConfirmDisconnect(false); setDrawer(false); }}>Disconnect</button>
+            <button className="m-big secondary" onClick={() => setConfirmDisconnect(false)}>Cancel</button>
           </div>
         </div>
       )}

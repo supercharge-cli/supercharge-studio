@@ -18,7 +18,7 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-list-wrap{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .m-drawer-open{position:fixed;inset:0;z-index:25;flex:none;display:block;background:rgba(0,0,0,.42)}
 .m-drawer-open .m-list{position:absolute;left:0;top:0;bottom:0;width:min(86vw,340px);height:auto;background:var(--bg);box-shadow:12px 0 40px rgba(0,0,0,.35);animation:drawerIn .32s var(--spring-soft) both}
-.m-drawer-open .m-fab{left:16px;right:auto}
+.m-drawer-open .m-fab-row{left:12px;right:auto;width:min(86vw,340px)}
 .m-views{display:flex;gap:4px;padding:3px;margin:2px 0 10px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
 .m-views button{flex:1;border:0;border-radius:9px;padding:8px 10px;background:none;color:var(--muted);font-weight:600;font-size:13px}
 .m-views button.on{background:var(--raise);color:var(--fg)}
@@ -41,7 +41,9 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-list .empty{margin-top:14vh}
 .m-skel{padding:8px}
 .m-unpair{margin:18px auto 0;display:flex;color:var(--muted)}
-.m-fab{position:absolute;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:8px;padding:14px 20px;border-radius:18px;font-weight:600;box-shadow:0 10px 30px -10px rgba(0,0,0,.55);animation:pop .32s var(--spring) both}
+.m-fab-row{position:absolute;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));display:flex;justify-content:flex-end;gap:8px;z-index:2}
+.m-fab{position:static;display:flex;align-items:center;gap:8px;padding:14px 18px;border-radius:18px;font-weight:600;box-shadow:0 10px 30px -10px rgba(0,0,0,.55);animation:pop .32s var(--spring) both}
+.m-disconnect{background:var(--panel);color:var(--fg);border:1px solid var(--line)}
 .m-fab:active{transform:scale(.96)}
 .m-ptr{position:absolute;left:50%;top:0;z-index:2;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--raise);border:1px solid var(--line);box-shadow:var(--shadow);color:var(--acc);opacity:0;transform:translate3d(-50%,-36px,0);pointer-events:none}
 .m-ptr.spin svg{animation:spin .8s linear infinite}
