@@ -19,6 +19,42 @@ async function ask(page: Page, text: string) {
   await page.locator(".composer textarea").press("Enter");
 }
 
+test("new gateway settings use the public relay in pairing and support local-only pairing", async ({ page }) => {
+  await boot(page);
+  const gateway = await page.evaluate(() => JSON.parse(localStorage.getItem("supercharge-studio/v1")!).settings.gateway);
+  expect(gateway).toMatchObject({ enabled: false, relayUrl: "wss://relay.superchargeai.in" });
+  expect(gateway.hostId).toMatch(/^[0-9a-f]{24}$/);
+  await page.evaluate(() => {
+    const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
+    (window as any).__gatewayCalls = calls;
+    let running = false;
+    (window as any).__TAURI_INTERNALS__ = { invoke: async (cmd: string, args?: Record<string, unknown>) => {
+      calls.push({ cmd, args });
+      if (cmd === "gateway_status") return { running, url: "ws://127.0.0.1:2420/gw", urls: ["ws://127.0.0.1:2420/gw"], relay: running ? "online" : "off" };
+      if (cmd === "gateway_start") { running = true; return "ws://127.0.0.1:2420/gw"; }
+      if (cmd === "gateway_pair_begin") return { uri: "supercharge-studio://pair?test=1", svg: "<svg></svg>", expiresAt: Date.now() + 120000 };
+      if (cmd === "gateway_relay_set") return;
+      throw new Error(`Unexpected native call: ${cmd}`);
+    } };
+  });
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByTestId("tab-devices").click();
+  await expect(page.getByTestId("gw-relay")).toHaveValue("wss://relay.superchargeai.in");
+  await page.getByTestId("gw-toggle").locator("..").click();
+  await expect.poll(() => page.evaluate(() => (window as any).__gatewayCalls.find((c: any) => c.cmd === "gateway_relay_set")?.args)).toMatchObject({ relayUrl: "wss://relay.superchargeai.in", hostId: gateway.hostId });
+  await page.getByTestId("gw-pair").click();
+  await expect.poll(() => page.evaluate(() => (window as any).__gatewayCalls.find((c: any) => c.cmd === "gateway_pair_begin")?.args)).toMatchObject({ relayUrl: `wss://relay.superchargeai.in/v1/connect/${gateway.hostId}` });
+  await page.getByTestId("gw-reach-local").first().click();
+  await expect(page.getByTestId("gw-reach").first()).toHaveAttribute("data-reach", "local");
+  await expect.poll(() => page.evaluate(() => (window as any).__gatewayCalls.filter((c: any) => c.cmd === "gateway_relay_set").at(-1)?.args.relayUrl ?? null)).toBeNull();
+  expect(await page.evaluate(() => (window as any).__gatewayCalls.filter((c: any) => c.cmd === "gateway_relay_set").at(-1)?.args.hostId)).toBe(gateway.hostId);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("supercharge-studio/v1")!).settings.gateway.reach)).toBe("local");
+  await page.getByTestId("gw-reach-public").first().click();
+  await expect(page.getByTestId("gw-reach").first()).toHaveAttribute("data-reach", "public");
+  await expect.poll(() => page.evaluate(() => (window as any).__gatewayCalls.filter((c: any) => c.cmd === "gateway_relay_set").at(-1)?.args)).toMatchObject({ relayUrl: "wss://relay.superchargeai.in", hostId: gateway.hostId });
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("supercharge-studio/v1")!).settings.gateway.relayUrl)).toBe("wss://relay.superchargeai.in");
+});
+
 test("chat model control opens a searchable per-session picker", async ({ page }) => {
   await boot(page);
   await ask(page, "hello");

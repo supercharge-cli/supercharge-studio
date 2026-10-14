@@ -1,4 +1,5 @@
 /** Local app data: groups → projects → chats. Persisted to localStorage. */
+import { DEFAULT_RELAY, ensureHostId, reachOf, type Reach } from "./reach";
 /** `updatedAt`: last activity (ms). `cli`: discovered from the agent's session list (the CLI owns it). `cwd`: the session's own folder. */
 export type Chat = { id: string; title: string; sessionId?: string; createdAt: number; updatedAt?: number; cli?: boolean; cwd?: string };
 export type Project = { id: string; name: string; cwd: string; chats: Chat[] };
@@ -7,6 +8,10 @@ export type ApiFormat = "responses" | "chat_completions" | "messages";
 export type Provider = { id: string; name: string; baseUrl: string; format: ApiFormat; models: string[] };
 /** A theme id from lib/themes (or "system"). */
 export type Theme = string;
+
+export type GatewayPrefs = { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string; relayUrl?: string; hostId?: string; reach?: Reach };
+export const defaultGatewayPrefs: GatewayPrefs = { enabled: false, mode: "lan", port: 2420, publicUrl: "", relayUrl: DEFAULT_RELAY, reach: "public" };
+const gatewayPrefs = (saved?: GatewayPrefs): GatewayPrefs => ensureHostId({ ...defaultGatewayPrefs, ...saved, reach: saved ? reachOf(saved) : "public" });
 
 export type Settings = {
   bind: string;
@@ -25,7 +30,7 @@ export type Settings = {
   /** When the agent at `bind` rejects our key: "own" = run our own managed agent on `ownBind` (default), "key" = use the key the user entered. */
   agentChoice?: "own" | "key";
   ownBind?: string;
-  gateway?: { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string; relayUrl?: string; hostId?: string; reach?: "local" | "public" };
+  gateway?: GatewayPrefs;
 };
 export type AppData = {
   groups: Group[];
@@ -57,11 +62,16 @@ export const defaultData = (): AppData => ({
 export function load(): AppData {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return migrate({ ...defaultData(), ...JSON.parse(raw) });
+    const data = raw ? migrate({ ...defaultData(), ...JSON.parse(raw) }) : defaultData();
+    const gateway = gatewayPrefs(data.settings.gateway);
+    if (JSON.stringify(data.settings.gateway) !== JSON.stringify(gateway)) {
+      data.settings = { ...data.settings, gateway };
+      try { save(data); } catch { /* storage may be unavailable */ }
+    }
+    return data;
   } catch {
-    /* ignore */
+    return defaultData();
   }
-  return defaultData();
 }
 /** Upgrade older saved data in place; never drops chats, projects or groups. */
 export function migrate(d: AppData): AppData {

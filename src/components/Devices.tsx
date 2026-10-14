@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { gateway, GwPairing, GwStatus } from "../lib/desktop";
 import { Icon } from "./Icon";
+import { defaultGatewayPrefs, GatewayPrefs } from "../lib/store";
+export { defaultGatewayPrefs };
+export type { GatewayPrefs };
 import { BackgroundSetting } from "./Background";
 import { DEFAULT_RELAY, effectiveRelay, ensureHostId, newHostId, reachOf, relayConnect, type Reach } from "../lib/reach";
 
-export type GatewayPrefs = { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string; relayUrl?: string; hostId?: string; reach?: Reach };
 /** Device-facing connect URL on the relay for this computer (see docs/MOBILE-PLAN.md, Relay). */
 export const relayConnectUrl = (p: GatewayPrefs) => relayConnect(p);
-export const defaultGatewayPrefs: GatewayPrefs = { enabled: false, mode: "lan", port: 2420, publicUrl: "", reach: "public" };
 /** Port in a gateway URL such as ws://192.168.1.5:2421/gw. */
 export const urlPort = (u: string) => { try { return Number(new URL(u).port) || 0; } catch { return 0; } };
 export const gatewayBind = (p: GatewayPrefs) => `${p.mode === "lan" ? "0.0.0.0" : "127.0.0.1"}:${p.port}`;

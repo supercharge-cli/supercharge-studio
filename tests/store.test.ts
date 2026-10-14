@@ -1,5 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { parseAgentUrl } from "../src/lib/store";
+import { defaultGatewayPrefs, load, parseAgentUrl, mergeCliSessions, migrate, projectsByCwd, relTime, ensureFolderProject, applyTree as tree2, CLI_GROUP } from "../src/lib/store";
+
+describe("gateway defaults", () => {
+  it("seeds the public relay and persists a stable host ID for existing settings", () => {
+    const saved = new Map<string, string>();
+    const previous = globalThis.localStorage;
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => { saved.set(key, value); },
+    } });
+    try {
+      saved.set("supercharge-studio/v1", JSON.stringify({ settings: { gateway: { enabled: true, mode: "lan", port: 2422, publicUrl: "" } }, groups: [] }));
+      const first = load().settings.gateway!;
+      expect(first.relayUrl).toBe("wss://relay.superchargeai.in");
+      expect(first.hostId).toMatch(/^[0-9a-f]{24}$/);
+      expect(load().settings.gateway!.hostId).toBe(first.hostId);
+      expect(defaultGatewayPrefs.enabled).toBe(false);
+
+      saved.set("supercharge-studio/v1", JSON.stringify({ settings: { gateway: { enabled: true, mode: "lan", port: 2422, publicUrl: "", relayUrl: "" } }, groups: [] }));
+      expect(load().settings.gateway).toMatchObject({ relayUrl: "", reach: "local" });
+      expect(load().settings.gateway!.hostId).toBeUndefined();
+      saved.set("supercharge-studio/v1", JSON.stringify({ settings: { gateway: { enabled: true, mode: "lan", port: 2422, publicUrl: "", relayUrl: "wss://other.example", hostId: "existing-id" } }, groups: [] }));
+      expect(load().settings.gateway).toMatchObject({ relayUrl: "wss://other.example", hostId: "existing-id" });
+      saved.delete("supercharge-studio/v1");
+      expect(load().settings.gateway).toMatchObject({ relayUrl: "wss://relay.superchargeai.in", enabled: false });
+    } finally {
+      if (previous === undefined) delete (globalThis as { localStorage?: Storage }).localStorage;
+      else Object.defineProperty(globalThis, "localStorage", { configurable: true, value: previous });
+    }
+  });
+});
 
 describe("parseAgentUrl", () => {
   it("splits a pasted agent URL into address and key", () => {
@@ -12,7 +42,6 @@ describe("parseAgentUrl", () => {
   });
 });
 
-import { mergeCliSessions, migrate, projectsByCwd, relTime, ensureFolderProject, applyTree as tree2, CLI_GROUP } from "../src/lib/store";
 describe("CLI session sync", () => {
   const base: any = { settings: {}, groups: [{ id: "g", name: "Personal", projects: [{ id: "p", name: "app", cwd: "/a/", chats: [{ id: "c", title: "New chat", sessionId: "s1", createdAt: 1 }] }] }] };
   it("migrates v1 data without losing anything", () => {
