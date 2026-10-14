@@ -9,15 +9,15 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
-const REPO: &str = "https://github.com/iotserver24/supercharge-releases";
+const REPO: &str = "https://github.com/supercharge-cli/supercharge-releases";
 /// Oldest CLI the app runs with.
 pub const MIN_VERSION: &str = "1.3.30";
 
 pub fn fallback_command() -> &'static str {
     if cfg!(windows) {
-        "irm https://raw.githubusercontent.com/iotserver24/supercharge-releases/main/scripts/install.ps1 | iex"
+        "irm https://raw.githubusercontent.com/supercharge-cli/supercharge-releases/main/scripts/install.ps1 | iex"
     } else {
-        "curl -fsSL https://raw.githubusercontent.com/iotserver24/supercharge-releases/main/scripts/install.sh | bash"
+        "curl -fsSL https://raw.githubusercontent.com/supercharge-cli/supercharge-releases/main/scripts/install.sh | bash"
     }
 }
 

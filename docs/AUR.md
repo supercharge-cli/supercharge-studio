@@ -10,7 +10,7 @@ push (`AUR package` job, which also runs `namcap`).
 
 ```sh
 mkdir supercharge-studio-bin && cd supercharge-studio-bin
-curl -fLO https://github.com/iotserver24/supercharge-studio/releases/latest/download/PKGBUILD
+curl -fLO https://github.com/supercharge-cli/supercharge-studio/releases/latest/download/PKGBUILD
 makepkg -si
 ```
 
@@ -19,8 +19,8 @@ makepkg -si
 ```sh
 git clone ssh://aur@aur.archlinux.org/supercharge-studio-bin.git
 cd supercharge-studio-bin
-curl -fLo PKGBUILD   https://github.com/iotserver24/supercharge-studio/releases/download/vX.Y.Z/PKGBUILD
-curl -fLo .SRCINFO   https://github.com/iotserver24/supercharge-studio/releases/download/vX.Y.Z/SRCINFO.txt
+curl -fLo PKGBUILD   https://github.com/supercharge-cli/supercharge-studio/releases/download/vX.Y.Z/PKGBUILD
+curl -fLo .SRCINFO   https://github.com/supercharge-cli/supercharge-studio/releases/download/vX.Y.Z/SRCINFO.txt
 makepkg -f && git add PKGBUILD .SRCINFO && git commit -m "Update to X.Y.Z" && git push
 ```
 

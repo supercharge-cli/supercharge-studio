@@ -8,7 +8,7 @@ RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 FROM node:22-alpine
 LABEL org.opencontainers.image.title="Supercharge Studio relay" \
       org.opencontainers.image.description="Self-hostable public relay for Supercharge Studio mobile pairing. End-to-end encrypted; the relay sees only opaque frames." \
-      org.opencontainers.image.source="https://github.com/iotserver24/supercharge-studio" \
+      org.opencontainers.image.source="https://github.com/supercharge-cli/supercharge-studio" \
       org.opencontainers.image.licenses="Apache-2.0"
 WORKDIR /relay
 ENV NODE_ENV=production PORT=8080 HOST=0.0.0.0 RELAY_DATA=/data/bindings.json

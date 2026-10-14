@@ -21,7 +21,7 @@ fi
   echo "	pkgdesc = Lightweight desktop app for the Supercharge coding agent (ACP client)"
   echo "	pkgver = $ver"
   echo "	pkgrel = 1"
-  echo "	url = https://github.com/iotserver24/supercharge-studio"
+  echo "	url = https://github.com/supercharge-cli/supercharge-studio"
   echo "	arch = x86_64"
   echo "	license = Apache-2.0"
   echo "	depends = webkit2gtk-4.1"

@@ -13,7 +13,7 @@ key with an HMAC challenge and every frame is authenticated).
 ## Quick start (Docker)
 
 ```sh
-git clone https://github.com/iotserver24/supercharge-studio && cd supercharge-studio/relay
+git clone https://github.com/supercharge-cli/supercharge-studio && cd supercharge-studio/relay
 # Automatic HTTPS with Caddy (ports 80 and 443 must reach this machine, DNS must point here):
 RELAY_DOMAIN=relay.example.com RELAY_TRUST_PROXY=1 docker compose --profile tls up -d
 # …or plain, behind your own TLS proxy / load balancer:
@@ -21,12 +21,12 @@ docker compose up -d          # listens on :8080
 curl https://relay.example.com/healthz   # {"ok":true,...}
 ```
 
-Image: `ghcr.io/iotserver24/supercharge-studio-relay` (`latest`, `X.Y.Z`, `X.Y`; amd64 and arm64),
+Image: `ghcr.io/supercharge-cli/supercharge-studio-relay` (`latest`, `X.Y.Z`, `X.Y`; amd64 and arm64),
 built and published by `.github/workflows/relay-image.yml`. Without Compose:
 
 ```sh
 docker run -d --name relay --restart unless-stopped -p 8080:8080 -v relay-data:/data \
-  ghcr.io/iotserver24/supercharge-studio-relay:latest
+  ghcr.io/supercharge-cli/supercharge-studio-relay:latest
 ```
 
 ## Local / Public
