@@ -21,6 +21,8 @@ describe("attachments", () => {
     expect(rejectReason({ name: "a", size: MAX_FILE + 1, type: "" }, 0)).toMatch(/limit/);
     expect(rejectReason({ name: "a.png", size: MAX_IMAGE + 1, type: "image/png" }, 0)).toMatch(/images/);
     expect(rejectReason({ name: "a.pdf", size: 1000, type: "application/pdf" }, 0)).toBeNull();
+    expect(rejectReason({ name: "src.zip", size: 1000, type: "application/zip" }, 0)).toBeNull();
+    expect(rejectReason({ name: "notes.txt", size: 1000, type: "text/plain" }, 0)).toBeNull();
   });
 
   it("images become image blocks, small text is embedded, others are uploaded links", async () => {

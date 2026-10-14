@@ -1229,7 +1229,7 @@ export default function App() {
               </div>
             )}
             <div className="composer">
-              <input ref={fileInput} type="file" multiple hidden data-testid="attach-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
+              <input ref={fileInput} type="file" multiple hidden accept="*/*" data-testid="attach-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
               <button className="icon attach" data-testid="attach" aria-label="Attach files" title="Attach files (or drop / paste them)" disabled={conn !== "open" || !active} onClick={() => fileInput.current?.click()}><Icon name="clip" /></button>
               <textarea
                 onPaste={(e) => { const fs = [...(e.clipboardData?.files ?? [])]; if (fs.length) { e.preventDefault(); void addFiles(fs); } }}

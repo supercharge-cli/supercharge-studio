@@ -31,6 +31,7 @@ pub fn sanitize(name: &str) -> String {
         .trim_start_matches('.')
         .to_string();
     let s = if s.is_empty() { "file".to_string() } else { s };
+    let s = if s.len() >= 5 && s[..5].eq_ignore_ascii_case("grok_") { format!("supercharge_{}", &s[5..]) } else { s };
     s.chars().rev().take(100).collect::<Vec<_>>().into_iter().rev().collect()
 }
 
@@ -186,6 +187,8 @@ mod tests {
         assert!(u.chunk(&base, &chunk("d", 2, 3, b"x", 2)).is_err()); // out of order
         assert!(u.chunk(&base, &chunk("e", 0, 1, b"toolong", 2)).is_err()); // bigger than announced
         assert_eq!(sanitize("..."), "file");
+        assert_eq!(sanitize("grok_photo.png"), "supercharge_photo.png");
+        assert_eq!(sanitize("notes.zip"), "notes.zip");
         assert_eq!(file_uri(Path::new("/tmp/a b.txt")), "file:///tmp/a%20b.txt");
         let _ = std::fs::remove_dir_all(base);
     }

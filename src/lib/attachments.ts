@@ -38,10 +38,16 @@ export function b64(bytes: Uint8Array): string {
 
 const rid = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, "0")).join("");
 
+/** Keep the picked name. A `grok_` prefix (cache or share sheet) becomes `supercharge_`. */
+export function attachmentName(name: string, mime: string): string {
+  const base = (name || (isImage(mime) ? `pasted-image.${mime.split("/")[1] || "png"}` : "file")).replace(/^grok_/i, "supercharge_");
+  return base.replace(/[/\\]/g, "_");
+}
+
 export async function fromFile(f: File): Promise<Attachment> {
   const bytes = new Uint8Array(await f.arrayBuffer());
   const mime = f.type || (isText(f.name, "") ? "text/plain" : "application/octet-stream");
-  return { id: rid(), name: f.name || (isImage(mime) ? `pasted-image.${mime.split("/")[1]}` : "file"), mime, size: bytes.length, bytes, preview: isImage(mime) ? URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime })) : undefined };
+  return { id: rid(), name: attachmentName(f.name, mime), mime, size: bytes.length, bytes, preview: isImage(mime) ? URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime })) : undefined };
 }
 
 /** Upload one attachment in ordered chunks; resolves with where it was saved. */

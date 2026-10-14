@@ -533,7 +533,7 @@ export default function MobileApp() {
                 onPaste={(e) => { const fs = [...(e.clipboardData?.files ?? [])]; if (fs.length) { e.preventDefault(); void addFiles(fs); } }}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!isBusy) void send(); } }} />
               <div className="m-compose-row">
-                <input ref={fileInput} type="file" multiple hidden data-testid="m-attach-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
+                <input ref={fileInput} type="file" multiple hidden accept="*/*" data-testid="m-attach-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
                 <button className="icon m-attach" aria-label="Attach files" data-testid="m-attach" onClick={() => fileInput.current?.click()}><Icon name="plus" size={20} /></button>
                 {permissionOption && (
                   <span className="m-think-anchor">
