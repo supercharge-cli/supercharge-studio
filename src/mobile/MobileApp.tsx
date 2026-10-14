@@ -539,7 +539,7 @@ export default function MobileApp() {
                   <span className="m-think-anchor">
                     <button type="button" className="m-chip m-chip-accent" onClick={() => { haptic(); setPermPop((v) => !v); setThinkPop(false); }}>{optionLabel(permissionOption)}</button>
                     {permPop && (
-                      <div className="m-think-pop" role="dialog" aria-label="Access">
+                      <div className="m-think-pop m-pop-start" role="dialog" aria-label="Access">
                         {permissionOption.options!.map((v) => (
                           <button key={v.value} type="button" className="m-pop-item" aria-pressed={v.value === permissionOption.currentValue} onClick={() => { setPermPop(false); void chooseOption(permissionOption.id, v.value); }}>{v.name ?? v.value}</button>
                         ))}
@@ -625,7 +625,7 @@ export default function MobileApp() {
             <div className="m-picker-options">
               {(activeOption.options ?? []).filter((v) => picker !== "model" || `${v.name ?? ""} ${v.value}`.toLowerCase().includes(modelSearch.trim().toLowerCase())).map((v) => (
                 <button key={v.value} className="m-picker-option" aria-pressed={v.value === activeOption.currentValue} disabled={settingOption} onClick={() => { haptic(); void chooseOption(activeOption.id, v.value); }}>
-                  <span>{v.name ?? v.value}</span>{v.name && v.name !== v.value && <small>{v.value}</small>}{v.value === activeOption.currentValue && <span aria-hidden="true">✓</span>}
+                  <span>{v.name || v.value}</span>{v.value === activeOption.currentValue && <span aria-hidden="true">✓</span>}
                 </button>
               ))}
             </div>
