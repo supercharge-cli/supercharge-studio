@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sign the unsigned APKs of a published release with your own keystore and upload the signed
 # copies to the same release (for when the signing secrets are not set in GitHub Actions).
-#   scripts/sign-release.sh v0.1.4 [keystore] [password-file] [alias]
+#   scripts/sign-release.sh v0.1.5 [keystore] [password-file] [alias]
 set -euo pipefail
 TAG=${1:?usage: sign-release.sh <tag> [keystore] [password-file] [alias]}
 KS=${2:-$HOME/.supercharge-studio-keys/release.jks}

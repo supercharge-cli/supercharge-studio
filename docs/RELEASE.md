@@ -34,7 +34,7 @@ gh secret set ANDROID_KEY_ALIAS --body supercharge-studio
 ```
 
 Until then, sign a published release's APKs locally and upload the signed copies to it with
-`scripts/sign-release.sh v0.1.4` (uses the keystore in `~/.supercharge-studio-keys/`).
+`scripts/sign-release.sh v0.1.5` (uses the keystore in `~/.supercharge-studio-keys/`).
 
 Keep the keystore out of the repository. Losing it means existing installs cannot be updated.
 
