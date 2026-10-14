@@ -23,7 +23,8 @@ test.beforeAll(async () => {
   await new Promise<void>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error("server did not reach the relay")), 45000);
     const t0 = Date.now();
-    server!.stderr!.on("data", (d) => { process.stderr.write(`[+${Date.now() - t0}ms] ` + d); if (String(d).includes("relay: online")) { clearTimeout(t); resolve(); } });
+    let log = ""; // stderr can arrive split mid-line ("relay: " + "online")
+    server!.stderr!.on("data", (d) => { process.stderr.write(`[+${Date.now() - t0}ms] ` + d); log += String(d); if (log.includes("relay: online")) { clearTimeout(t); resolve(); } });
   });
 });
 test.afterAll(() => server?.kill());
