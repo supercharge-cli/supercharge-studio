@@ -40,7 +40,7 @@ function ago(ms: number, now = Date.now()): string {
   return new Date(ms).toLocaleDateString();
 }
 
-/** ChatGPT-style buckets: today, yesterday, the last week, then everything older. */
+/** Chat history buckets: today, yesterday, the last week, then everything older. */
 function chatBucket(ms: number, now = Date.now()): string {
   if (!ms) return "Older";
   const start = new Date(now);

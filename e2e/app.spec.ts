@@ -86,14 +86,18 @@ test("desktop model and thinking controls follow the selected chat", async ({ pa
 
 test("streams a reply with thought and plan", async ({ page }) => {
   await boot(page);
-  await page.getByTestId("plan-tab").click();
+  // The side panel starts closed; open the plan from the + menu.
+  await page.getByTitle("Open a side panel").click();
+  await page.getByRole("menu").getByRole("button", { name: "Plan" }).click();
   await expect(page.getByTestId("plan-panel")).toContainText("plan for this chat");
   await page.getByRole("button", { name: "Browser", exact: true }).click();
   await ask(page, "stream please");
   await expect(page.locator(".bubble.agent").last()).toHaveText("Hello from the fake agent.");
   await expect(page.locator(".bubble.thought")).toContainText("Thinking");
+  // The panel no longer jumps to the plan on its own; the user opens it.
+  await page.getByTitle("Open a side panel").click();
+  await page.getByRole("menu").getByRole("button", { name: "Plan" }).click();
   await expect(page.getByTestId("plan-panel")).toContainText("Say bye");
-  await expect(page.getByTestId("plan-tab")).toHaveClass(/on/);
   await expect(page.locator(".messages .plan")).toHaveCount(0);
   await expect(page.getByTestId("chat-title").first()).toHaveText("stream please");
 });

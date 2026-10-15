@@ -6,6 +6,9 @@ import { readdirSync, readFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 
 const KB = 1024;
+// Opt-in heavy panels (the xterm terminal) load on demand and have their own budget.
+const LAZY = /^TerminalPane-/;
+const LAZY_MAX = 90 * KB;
 const budgets: { dir: string; label: string; entry: RegExp; entryMax: number; totalJsMax: number; cssMax: number }[] = [
   // Includes CLI session sync, browser tools, per-chat model and permission controls, Local/Public, background settings and attachments.
   { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 54 * KB, totalJsMax: 63 * KB, cssMax: 11 * KB },
@@ -14,7 +17,9 @@ const budgets: { dir: string; label: string; entry: RegExp; entryMax: number; to
 ];
 let failed = false;
 for (const b of budgets) {
-  const files = readdirSync(b.dir).map((f) => ({ f, gz: gzipSync(readFileSync(`${b.dir}/${f}`), { level: 9 }).length }));
+  const all = readdirSync(b.dir).map((f) => ({ f, gz: gzipSync(readFileSync(`${b.dir}/${f}`), { level: 9 }).length }));
+  const files = all.filter((x) => !LAZY.test(x.f));
+  const lazy = all.filter((x) => LAZY.test(x.f)).reduce((a, x) => a + x.gz, 0);
   const entry = files.filter((x) => b.entry.test(x.f)).reduce((a, x) => a + x.gz, 0);
   const js = files.filter((x) => x.f.endsWith(".js")).reduce((a, x) => a + x.gz, 0);
   const css = files.filter((x) => x.f.endsWith(".css")).reduce((a, x) => a + x.gz, 0);
@@ -26,5 +31,6 @@ for (const b of budgets) {
   row("entry js", entry, b.entryMax);
   row("all js", js, b.totalJsMax);
   row("css", css, b.cssMax);
+  if (lazy) row("terminal", lazy, LAZY_MAX);
 }
 if (failed) process.exit(1);

@@ -31,8 +31,26 @@ pub fn sanitize(name: &str) -> String {
         .trim_start_matches('.')
         .to_string();
     let s = if s.is_empty() { "file".to_string() } else { s };
-    let s = if s.len() >= 5 && s[..5].eq_ignore_ascii_case("grok_") { format!("supercharge_{}", &s[5..]) } else { s };
+    let s = if is_opaque_cache_name(&s) { upload_name(&s) } else { s };
     s.chars().rev().take(100).collect::<Vec<_>>().into_iter().rev().collect()
+}
+
+/// Share sheets and app caches hand over names like `<app>_<random id>.png`.
+/// Those carry no meaning for the user, so they become `upload-<time>.<ext>`.
+fn is_opaque_cache_name(s: &str) -> bool {
+    let stem = s.rsplit_once('.').map(|(a, _)| a).unwrap_or(s);
+    match stem.split_once('_') {
+        Some((pre, id)) => !pre.is_empty() && pre.chars().all(|c| c.is_ascii_alphabetic()) && id.len() >= 8 && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-' || c == '_'),
+        None => false,
+    }
+}
+
+fn upload_name(s: &str) -> String {
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    match s.rsplit_once('.') {
+        Some((_, ext)) if !ext.is_empty() => format!("upload-{secs}.{ext}"),
+        _ => format!("upload-{secs}"),
+    }
 }
 
 pub fn file_uri(p: &Path) -> String {
@@ -187,7 +205,9 @@ mod tests {
         assert!(u.chunk(&base, &chunk("d", 2, 3, b"x", 2)).is_err()); // out of order
         assert!(u.chunk(&base, &chunk("e", 0, 1, b"toolong", 2)).is_err()); // bigger than announced
         assert_eq!(sanitize("..."), "file");
-        assert_eq!(sanitize("grok_photo.png"), "supercharge_photo.png");
+        let n = sanitize("app_1734567890123.png");
+        assert!(n.starts_with("upload-") && n.ends_with(".png"), "{n}");
+        assert_eq!(sanitize("my_holiday.png"), "my_holiday.png");
         assert_eq!(sanitize("notes.zip"), "notes.zip");
         assert_eq!(file_uri(Path::new("/tmp/a b.txt")), "file:///tmp/a%20b.txt");
         let _ = std::fs::remove_dir_all(base);

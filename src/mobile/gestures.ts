@@ -19,6 +19,8 @@ export function useSwipeBack(el: React.RefObject<HTMLElement | null>, enabled: b
       if (t.clientX > 24 || !el.current) return;
       n = el.current;
       active = true; x0 = t.clientX; y0 = t.clientY; t0 = performance.now(); dx = 0;
+      // A fill-mode entry animation would pin `transform` and swallow the drag.
+      n.style.animation = "none";
       n.style.transition = "none";
     };
     const move = (e: TouchEvent) => {
@@ -35,8 +37,10 @@ export function useSwipeBack(el: React.RefObject<HTMLElement | null>, enabled: b
       const go = dx > n.clientWidth * 0.3 || v > 0.6;
       n.style.transition = "transform .28s var(--spring-soft)";
       n.style.transform = go ? `translate3d(${n.clientWidth}px,0,0)` : "";
-      const done = () => { n.removeEventListener("transitionend", done); n.style.transition = ""; n.style.transform = ""; if (go) cb.current(); };
-      if (dx > 0) n.addEventListener("transitionend", done); else done();
+      let fired = false;
+      const done = () => { if (fired) return; fired = true; n.removeEventListener("transitionend", done); n.style.transition = ""; n.style.transform = ""; if (go) cb.current(); };
+      // Fall back to a timer in case transitionend never fires.
+      if (dx > 0) { n.addEventListener("transitionend", done); setTimeout(done, 400); } else done();
     };
     const d = document;
     d.addEventListener("touchstart", start, { passive: true });

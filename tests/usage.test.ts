@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { aggregate, bucketKey, bucketRange, cost, recordsFromUsage, toCounts, usageFromNotification } from "../src/lib/usage";
 
-const U = { inputTokens: 39771, outputTokens: 231, totalTokens: 40002, cachedReadTokens: 24903, reasoningTokens: 133, modelCalls: 3, modelUsage: { "gpt-6-luna": { inputTokens: 39771, outputTokens: 231, cachedReadTokens: 24903, reasoningTokens: 133, modelCalls: 3 } } };
+const U = { inputTokens: 39771, outputTokens: 231, totalTokens: 40002, cachedReadTokens: 24903, reasoningTokens: 133, modelCalls: 3, modelUsage: { "test-model-1": { inputTokens: 39771, outputTokens: 231, cachedReadTokens: 24903, reasoningTokens: 133, modelCalls: 3 } } };
 
 describe("usage", () => {
   it("normalizes field names", () => {
@@ -10,7 +10,7 @@ describe("usage", () => {
   it("splits per model", () => {
     const rs = recordsFromUsage(U, { provider: "Test", ts: 1 });
     expect(rs).toHaveLength(1);
-    expect(rs[0]).toMatchObject({ model: "gpt-6-luna", provider: "Test", input: 39771, output: 231, cached: 24903, reasoning: 133, calls: 3 });
+    expect(rs[0]).toMatchObject({ model: "test-model-1", provider: "Test", input: 39771, output: 231, cached: 24903, reasoning: 133, calls: 3 });
     expect(recordsFromUsage({ inputTokens: 0 }, {})).toEqual([]);
   });
   it("reads turn reports from extension notifications only", () => {
@@ -31,7 +31,7 @@ describe("usage", () => {
     expect(bucketRange("year", 2, now)).toEqual(["2025", "2026"]);
     expect(bucketKey(new Date(2026, 0, 1).getTime(), "month")).toBe("2026-01");
     const rs = [...recordsFromUsage(U, { provider: "A", ts: now }), ...recordsFromUsage({ inputTokens: 10, outputTokens: 5 }, { model: "x", provider: "B", ts: now - 86400e3 })];
-    const a = aggregate(rs, { "gpt-6-luna": { input: 1, output: 1 } }, "day", bucketRange("day", 7, now));
+    const a = aggregate(rs, { "test-model-1": { input: 1, output: 1 } }, "day", bucketRange("day", 7, now));
     expect(a.total.input).toBe(39781);
     expect(a.byProvider.map(([k]) => k).sort()).toEqual(["A", "B"]);
     expect(a.buckets.at(-1)!.output).toBe(231);

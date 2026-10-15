@@ -38,9 +38,16 @@ export function b64(bytes: Uint8Array): string {
 
 const rid = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, "0")).join("");
 
-/** Keep the picked name. A `grok_` prefix (cache or share sheet) becomes `supercharge_`. */
+/** Opaque cache or share-sheet names such as `<app>_<random id>.png`. */
+const OPAQUE = /^[a-z]+_[0-9a-f_-]{8,}(\.[^.]+)?$/i;
+
+/** Keep the picked name; opaque cache names become `upload-<time>.<ext>`. */
 export function attachmentName(name: string, mime: string): string {
-  const base = (name || (isImage(mime) ? `pasted-image.${mime.split("/")[1] || "png"}` : "file")).replace(/^grok_/i, "supercharge_");
+  let base = name || (isImage(mime) ? `pasted-image.${mime.split("/")[1] || "png"}` : "file");
+  if (OPAQUE.test(base)) {
+    const ext = base.includes(".") ? base.slice(base.lastIndexOf(".")) : "";
+    base = `upload-${Date.now()}${ext}`;
+  }
   return base.replace(/[/\\]/g, "_");
 }
 
