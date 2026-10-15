@@ -33,32 +33,21 @@ export function canonicalName(name: string): string {
  */
 export class LegacyNotificationDedup {
   private seen = new Map<string, number>();
-  constructor(private max = 256) {}
-
-  private key(method: string, params: unknown) {
-    let p = "";
-    try {
-      p = JSON.stringify(params ?? null);
-    } catch {
-      /* unserialisable params never match */
-    }
-    return `${method}\n${p}`;
-  }
 
   /** Returns false when this frame is the legacy duplicate of one already handled. */
   accept(method: string, params: unknown): boolean {
-    if (!isLegacyName(method)) {
-      if (!method.startsWith(SUPERCHARGE_PREFIX)) return true;
-      const k = this.key(method, params);
-      this.seen.set(k, (this.seen.get(k) ?? 0) + 1);
-      if (this.seen.size > this.max) this.seen.delete(this.seen.keys().next().value!);
+    const legacy = isLegacyName(method);
+    if (!legacy && !method.startsWith(SUPERCHARGE_PREFIX)) return true;
+    let k = canonicalName(method);
+    try { k += JSON.stringify(params ?? null); } catch { /* never matches */ }
+    const n = this.seen.get(k) ?? 0;
+    if (!legacy) {
+      if (this.seen.size > 255) this.seen.clear();
+      this.seen.set(k, n + 1);
       return true;
     }
-    const k = this.key(canonicalName(method), params);
-    const n = this.seen.get(k);
     if (!n) return true;
-    if (n <= 1) this.seen.delete(k);
-    else this.seen.set(k, n - 1);
+    n > 1 ? this.seen.set(k, n - 1) : this.seen.delete(k);
     return false;
   }
 

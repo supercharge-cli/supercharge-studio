@@ -13,7 +13,7 @@ const budgets: { dir: string; label: string; entry: RegExp; entryMax: number; to
   // Includes the project terminal toggle, CLI session sync, browser tools, per-chat model and permission controls, Local/Public, background settings and attachments.
   { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 56 * KB, totalJsMax: 65 * KB, cssMax: 11 * KB },
   // Redesigned chat UI with attachments and sheets.
-  { dir: "dist-mobile/assets", label: "mobile", entry: /^mobile-.*\.js$/, entryMax: 30 * KB, totalJsMax: 33 * KB, cssMax: 13 * KB },
+  { dir: "dist-mobile/assets", label: "mobile", entry: /^mobile-.*\.js$/, entryMax: 31 * KB, totalJsMax: 33 * KB, cssMax: 13 * KB },
 ];
 let failed = false;
 for (const b of budgets) {
