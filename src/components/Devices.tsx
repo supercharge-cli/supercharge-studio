@@ -5,7 +5,7 @@ import { defaultGatewayPrefs, GatewayPrefs } from "../lib/store";
 export { defaultGatewayPrefs };
 export type { GatewayPrefs };
 import { BackgroundSetting } from "./Background";
-import { DEFAULT_RELAY, effectiveRelay, ensureHostId, newHostId, reachOf, relayConnect, type Reach } from "../lib/reach";
+import { DEFAULT_RELAY, effectiveRelay, ensureHostId, needsFirewall, newHostId, reachOf, relayConnect, type Reach } from "../lib/reach";
 
 /** Device-facing connect URL on the relay for this computer (see docs/MOBILE-PLAN.md, Relay). */
 export const relayConnectUrl = (p: GatewayPrefs) => relayConnect(p);
@@ -52,7 +52,7 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
       let port = prefs.port;
       if (on) {
         // The gateway picks another port when the preferred one is taken; keep using that one.
-        port = urlPort(await gateway.start(gatewayBind(prefs))) || prefs.port;
+        port = urlPort(await gateway.start(gatewayBind(prefs), needsFirewall(prefs))) || prefs.port;
         const p = ensureHostId(prefs);
         const r = effectiveRelay(p);
         if (r) await gateway.relaySet(r, p.hostId);
@@ -66,12 +66,16 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
 
   const reach = reachOf(prefs);
   const relay = effectiveRelay(prefs);
+  const fw = needsFirewall(prefs); // never ask about the firewall in Public mode
   async function setReach(r: Reach) {
     setErr("");
     const p = ensureHostId({ ...prefs, reach: r });
     onPrefs(p);
     setPair(null); // old codes carry the old route
-    if (st?.running) await gateway.relaySet(effectiveRelay(p), p.hostId).catch((e) => setErr(String(e)));
+    if (st?.running) {
+      await gateway.relaySet(effectiveRelay(p), p.hostId).catch((e) => setErr(String(e)));
+      await gateway.firewallCheck(needsFirewall(p)).catch(() => {});
+    }
     refresh();
   }
   const reachSwitch = (
@@ -125,8 +129,8 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
             {st.port_note && <span className="small warn-text" data-testid="gw-port-note">The preferred port was in use, so the gateway is on port <b>{st.port}</b> ({st.port_note}). Paired phones find it automatically; new pairing codes use it.</span>}
             <span className="muted small">Phones try {(st.urls ?? []).length > 1 ? "these addresses in order" : "this address"}{relay ? ", then the relay" : ""}:</span>
             <ul className="mono small">{(st.urls ?? [st.url ?? ""]).map((u) => <li key={u}>{u}</li>)}</ul>
-            <span className="muted small">Phone says it can't reach the gateway? Open <code>{(st.urls?.[0] ?? st.url ?? "").replace(/^ws/, "http").replace(/\/gw$/, "/")}</code> in the phone's browser. If that doesn't load, the phone is on another network or the firewall is blocking port {st.port ?? prefs.port}.</span>
-            {st.firewall && <FirewallBox fw={st.firewall} port={st.port ?? prefs.port} onDone={refresh} />}
+            <span className="muted small">Phone says it can't reach the gateway? Open <code>{(st.urls?.[0] ?? st.url ?? "").replace(/^ws/, "http").replace(/\/gw$/, "/")}</code> in the phone's browser. If that doesn't load, the phone is on another network{fw ? <> or the firewall is blocking port {st.port ?? prefs.port}</> : null}.</span>
+            {fw && st.firewall && <FirewallBox fw={st.firewall} port={st.port ?? prefs.port} onDone={refresh} />}
           </div>
         )}
         {err && <div className="error-text">{err}</div>}
@@ -140,7 +144,7 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
             <Icon name="qr" /> {pair && left > 0 ? "New code" : "Show pairing code"}
           </button>
         </div>
-        {pair && left > 0 && st?.firewall && st.firewall.open !== true && prefs.mode === "lan" && (
+        {pair && left > 0 && fw && st?.firewall && st.firewall.open !== true && (
           <div className="fw-warn" data-testid="gw-pair-firewall"><FirewallBox fw={st.firewall} port={st.port ?? prefs.port} onDone={refresh} prominent /></div>
         )}
         {pair && left > 0 && (

@@ -23,3 +23,6 @@ export const relayConnect = (p: ReachPrefs): string | undefined => {
   const r = effectiveRelay(p);
   return r && p.hostId ? `${r}/v1/connect/${p.hostId}` : undefined;
 };
+
+/** Firewall prompts and checks only apply to Local mode on a LAN-bound gateway; Public mode only connects outward. */
+export const needsFirewall = (p: ReachPrefs & { mode?: string }): boolean => reachOf(p) === "local" && p.mode === "lan";

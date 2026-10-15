@@ -31,7 +31,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ToolCard } from "./components/ToolCard";
 import { VirtualList } from "./components/VirtualList";
 import { GatewayHub } from "./gateway/hub";
-import { effectiveRelay, ensureHostId } from "./lib/reach";
+import { effectiveRelay, ensureHostId, needsFirewall } from "./lib/reach";
 import { type Attachment, fmtSize, fromFile, isImage, rejectReason, toBlocks } from "./lib/attachments";
 import { FileEntry, projectFiles, projectReadText } from "./lib/desktop";
 import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type CliStatus, agentLogNote, agentRestart, appConfig, background, ensureAgent, gateway, invoke, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
@@ -434,7 +434,7 @@ export default function App() {
     ];
     const gw = dataRef.current.settings.gateway;
     if (gw?.enabled)
-      void gateway.start(gatewayBind(gw))
+      void gateway.start(gatewayBind(gw), needsFirewall(gw))
         .then((url) => {
           const port = urlPort(url);
           if (port && port !== gw.port) {

@@ -331,7 +331,7 @@ pub async fn gateway_firewall_allow() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn gateway_start(app: AppHandle, bind: Option<String>) -> Result<String, String> {
+pub async fn gateway_start(app: AppHandle, bind: Option<String>, firewall_check: Option<bool>) -> Result<String, String> {
     if let Some(u) = st().url.clone() {
         return Ok(u);
     }
@@ -357,7 +357,8 @@ pub async fn gateway_start(app: AppHandle, bind: Option<String>) -> Result<Strin
     }
     let lan = !addr.ip().is_loopback();
     let port = addr.port();
-    if lan {
+    // Public (relay) mode only makes outgoing connections, so never inspect the firewall there.
+    if should_check_firewall(lan, firewall_check.unwrap_or(false)) {
         std::thread::spawn(move || {
             let hint = crate::firewall::detect(port);
             let mut s = st();
@@ -378,6 +379,37 @@ pub async fn gateway_start(app: AppHandle, bind: Option<String>) -> Result<Strin
         }
     });
     Ok(url)
+}
+
+/// Firewall checks only make sense for direct (Local mode) connections on a LAN-bound gateway.
+pub(crate) fn should_check_firewall(lan_bound: bool, local_mode: bool) -> bool {
+    lan_bound && local_mode
+}
+
+/// Re-run (Local mode) or clear (Public mode) the firewall check after the reach mode changes.
+#[tauri::command]
+pub async fn gateway_firewall_check(local: bool) -> Result<(), String> {
+    let (port, lan) = { let s = st(); (s.port, s.url.as_deref().map(|u| !u.contains("127.0.0.1")).unwrap_or(false)) };
+    if !should_check_firewall(lan, local) {
+        st().firewall = None;
+        return Ok(());
+    }
+    let fw = tauri::async_runtime::spawn_blocking(move || crate::firewall::detect(port)).await.ok().flatten();
+    let mut s = st();
+    if s.port == port && s.url.is_some() { s.firewall = fw; }
+    Ok(())
+}
+
+#[cfg(test)]
+mod firewall_mode_tests {
+    use super::should_check_firewall;
+    #[test]
+    fn public_mode_never_checks_firewall() {
+        assert!(!should_check_firewall(true, false));
+        assert!(!should_check_firewall(false, false));
+        assert!(!should_check_firewall(false, true));
+        assert!(should_check_firewall(true, true));
+    }
 }
 
 #[tauri::command]

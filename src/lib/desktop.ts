@@ -63,11 +63,13 @@ export type GwStatus = { running: boolean; url?: string | null; urls?: string[];
 export type GwPairing = { uri: string; svg: string; expiresAt: number; pairingId: string };
 export const gateway = {
   status: () => invoke<GwStatus>("gateway_status"),
-  start: (bind?: string) => invoke<string>("gateway_start", { bind }),
+  start: (bind?: string, firewallCheck = false) => invoke<string>("gateway_start", { bind, firewallCheck }),
   stop: () => invoke<void>("gateway_stop"),
   pairBegin: (publicUrl?: string, desktopName?: string, relayUrl?: string) => invoke<GwPairing>("gateway_pair_begin", { publicUrl, desktopName, relayUrl }),
   pairAnswer: (pairingId: string, allow: boolean) => invoke<void>("gateway_pair_answer", { pairingId, allow }),
   revoke: (deviceId: string) => invoke<void>("gateway_revoke", { deviceId }),
+  /** Local mode re-checks the firewall; Public mode clears it (relay traffic is outgoing only). */
+  firewallCheck: (local: boolean) => invoke<void>("gateway_firewall_check", { local }),
   firewallAllow: () => invoke<string>("gateway_firewall_allow"),
   relaySet: (relayUrl?: string, hostId?: string) => invoke<void>("gateway_relay_set", { relayUrl, hostId }),
   send: (deviceId: string, msg: unknown) => invoke<boolean>("gateway_send", { deviceId, msg }).catch(() => false),

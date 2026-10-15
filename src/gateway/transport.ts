@@ -46,12 +46,14 @@ export function explainFailure(attempts: Attempt[], port?: string, localIp?: str
   const lines = attempts.map((a) => `• ${a.route === "relay" ? "Relay" : "Direct"} ${hostOf(a.url)}: ${a.reason}`);
   const p = port ?? (attempts.find((a) => a.route === "direct") ? new URL(attempts.find((a) => a.route === "direct")!.url).port || "80" : "");
   const tips: string[] = [];
+  const relayed = attempts.some((a) => a.route === "relay");
   if (mismatch) tips.push(mismatch);
   if (attempts.some((a) => a.route === "direct")) {
     if (!mismatch) tips.push("Make sure this phone is on the same Wi-Fi as the computer (not mobile data or a guest network).");
-    if (p) tips.push(`Allow TCP port ${p} in the computer's firewall (Settings → Devices on the computer shows the exact command).`);
+    // Public mode (a relay route exists) only connects outward, so never ask about the firewall there.
+    if (p && !relayed) tips.push(`Allow TCP port ${p} in the computer's firewall (Settings → Devices on the computer shows the exact command).`);
     const d = attempts.find((a) => a.route === "direct" && isPrivateHost(a.url));
-    if (d) tips.push(`Test it: open http://${hostOf(d.url)}/ in this phone's browser. If it doesn't load, the network or firewall is blocking it.`);
+    if (d) tips.push(`Test it: open http://${hostOf(d.url)}/ in this phone's browser. If it doesn't load, the network${relayed ? "" : " or firewall"} is blocking it.`);
   }
   if (!attempts.some((a) => a.route === "relay")) tips.push("To connect from anywhere, set a relay URL in Settings → Devices on the computer, then show a new code.");
   return `Cannot reach the desktop gateway.\n${lines.join("\n")}\n${tips.join("\n")}`;
