@@ -260,3 +260,11 @@ macOS LaunchAgent, Windows Run key) and closing the window hides it to the syste
 mobile gateway and the relay stay reachable. Use the tray icon's **Open** / **Quit**. Launching the
 app again while it runs shows the existing window. Some Linux desktops (stock GNOME) need an
 AppIndicator extension to show tray icons; relaunch the app from the menu to reopen the window.
+
+## ACP extension names
+
+The app sends only `_supercharge/*` extension names. For older CLIs it still understands the
+legacy names: requests from the CLI are answered under either name, capability keys are read
+under either key (the `_supercharge/` one wins), and a legacy notification is ignored when it is
+the duplicate of a `_supercharge/` one that already arrived. All legacy strings live in
+`src/acp/legacyNames.ts`. `_meta` keys are not renamed.

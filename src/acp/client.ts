@@ -6,6 +6,7 @@
  * backoff, session/update dispatch, agent→client requests (permissions, fs),
  * cancel, and extension method discovery.
  */
+import { LegacyNotificationDedup, canonicalName } from "./legacyNames";
 import type {
   InitializeResult,
   JsonRpcId,
@@ -106,6 +107,7 @@ export class AcpClient {
   private attempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _state: ConnectionState = "idle";
+  private dedup = new LegacyNotificationDedup();
 
   initResult: InitializeResult | null = null;
   extensions: ExtensionInfo = { methods: [], features: [], notifications: [], meta: {} };
@@ -132,7 +134,7 @@ export class AcpClient {
 
   /** Register a handler for an agent → client request method. */
   handle(method: string, handler: RequestHandler) {
-    this.handlers.set(method, handler);
+    this.handlers.set(canonicalName(method), handler);
   }
 
   private makeTransport(): Transport {
@@ -145,6 +147,7 @@ export class AcpClient {
     this.clearReconnect();
     this.setState(this._state === "reconnecting" ? "reconnecting" : "connecting");
     const t = this.makeTransport();
+    this.dedup.reset();
     t.onMessage = (d) => this.handleRaw(d);
     t.onClose = (reason) => this.handleTransportClose(t, reason);
     await t.open();
@@ -251,14 +254,16 @@ export class AcpClient {
       return;
     }
     if (!msg.method) return;
-    if (msg.method.startsWith("_") && !this.extensions.notifications.includes(msg.method)) {
-      this.extensions.notifications = [...this.extensions.notifications, msg.method].sort();
-    }
-    // Agent → client request
+    // Agent → client request: legacy and `_supercharge/` names reach the same handler.
     if (hasId) {
-      void this.answerRequest(msg.id!, msg.method, msg.params);
+      this.noteExtension(canonicalName(msg.method));
+      void this.answerRequest(msg.id!, canonicalName(msg.method), msg.params);
       return;
     }
+    // Dual-sent notifications: skip the legacy copy of one already handled.
+    if (!this.dedup.accept(msg.method, msg.params)) return;
+    const method = canonicalName(msg.method);
+    this.noteExtension(method);
     // Notification
     if (msg.method === "session/update") {
       const sid = msg.params?.sessionId ?? "";
@@ -266,7 +271,13 @@ export class AcpClient {
       if (update && typeof update.sessionUpdate === "string") this.opts.onUpdate?.(sid, update);
       return;
     }
-    this.opts.onNotification?.(msg.method, msg.params);
+    this.opts.onNotification?.(method, msg.params);
+  }
+
+  private noteExtension(method: string) {
+    if (method.startsWith("_") && !this.extensions.notifications.includes(method)) {
+      this.extensions.notifications = [...this.extensions.notifications, method].sort();
+    }
   }
 
   private async answerRequest(id: JsonRpcId, method: string, params: unknown) {
@@ -440,7 +451,7 @@ export function discoverExtensions(init: InitializeResult | null | undefined): E
   const meta: Record<string, unknown> = {};
   const add = (name: unknown) => {
     if (typeof name !== "string" || !name) return;
-    methods.add(name.startsWith("_") ? name : `_${name}`);
+    methods.add(canonicalName(name.startsWith("_") ? name : `_${name}`));
   };
   const scan = (v: unknown) => {
     if (!v || typeof v !== "object") return;
@@ -456,9 +467,14 @@ export function discoverExtensions(init: InitializeResult | null | undefined): E
   };
   for (const block of [init?._meta, init?.agentCapabilities?._meta]) {
     if (block && typeof block === "object") {
-      Object.assign(meta, block);
+      // Capability keys may arrive under a legacy key, the `_supercharge/` key, or both;
+      // the `_supercharge/` value wins.
+      for (const [k, v] of Object.entries(block)) {
+        const c = canonicalName(k);
+        if (c === k || !(c in block)) meta[c] = v;
+      }
       scan(block);
-      for (const [k, v] of Object.entries(block)) if (k.includes("/") && v !== false && v != null) features.add(k);
+      for (const [k, v] of Object.entries(block)) if (k.includes("/") && v !== false && v != null) features.add(canonicalName(k));
     }
   }
   return { methods: [...methods].sort(), features: [...features].sort(), notifications: [], meta };
