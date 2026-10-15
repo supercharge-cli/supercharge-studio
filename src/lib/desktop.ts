@@ -19,6 +19,12 @@ export async function ensureAgent(bind: string, secret: string, alwaysApprove: b
   return invoke("agent_start", { bind, secret, alwaysApprove });
 }
 
+/** System folder picker. Null when the user cancels. */
+export async function pickFolder(): Promise<string | null> {
+  if (!isDesktop()) return null;
+  return invoke<string | null>("pick_folder");
+}
+
 /** Environment overrides from the desktop shell (empty in web mode). */
 export async function appConfig(): Promise<{ bind?: string | null; secret?: string | null }> {
   if (!isDesktop()) return {};

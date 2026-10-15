@@ -30,6 +30,7 @@ mod uploads;
 mod mcp;
 mod providers;
 mod terminal;
+mod pick;
 mod screenshot;
 mod secrets;
 mod agent;
@@ -406,7 +407,8 @@ pub fn run() {
             providers::provider_set_key, providers::provider_has_key, providers::provider_seed_from_env, providers::provider_apply, providers::provider_discover_models, agent_restart,
             gateway::gateway_status, gateway::gateway_start, gateway::gateway_firewall_allow, gateway::gateway_firewall_check, gateway::gateway_stop, gateway::gateway_pair_begin, gateway::gateway_pair_answer, gateway::gateway_revoke, gateway::gateway_send, gateway::gateway_relay_set,
             files::fs_list, files::fs_read_text, background::background_get, background::background_set, upload_chunk, upload_rewrite,
-            terminal::term_open, terminal::term_write, terminal::term_resize, terminal::term_close
+            terminal::term_open, terminal::term_write, terminal::term_resize, terminal::term_close,
+            pick::pick_folder
         ])
         .build(tauri::generate_context!())
         .expect("error while running Supercharge Studio")

@@ -40,7 +40,7 @@ export default function CliSetup({ status, onDone, onSkip, mode }: { status: Cli
   return (
     <div className="cli-setup" data-testid="cli-setup">
       <div className="cli-card">
-        <div className="cli-head"><span className="logo big"><Icon name="bolt" size={22} /></span><div><h2>{title}</h2><p className="muted">{why}</p></div></div>
+        <div className="cli-head"><span className="logo big"><img src="/logo.png" alt="" /></span><div><h2>{title}</h2><p className="muted">{why}</p></div></div>
         <ol className="cli-steps">
           <li className={done ? "ok" : busy ? "on" : ""}><b>Install the CLI</b> <span className="muted small">{status?.latest ? `version ${status.latest}` : "latest release"} · checksum verified · {status?.install_dir}</span></li>
           <li><b>Add a model provider</b> <span className="muted small">your endpoint and API key, next</span></li>

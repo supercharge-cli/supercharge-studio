@@ -16,9 +16,11 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
   const [tab, setTab] = useState<PanelTab>(focus?.tab ?? "browser");
   const [terms, setTerms] = useState<{ id: string; title: string }[]>([{ id: "t1", title: "Terminal 1" }]);
   const [activeTerm, setActiveTerm] = useState("t1");
+  const [picker, setPicker] = useState(false);
   const termFocus = useRef<number | null>(null);
   useEffect(() => {
     if (!focus) return;
+    setPicker(false);
     setTab(focus.tab);
     if (focus.tab !== "terminal") return;
     // The first request only shows the shell. Each later request opens another one.
@@ -59,7 +61,7 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
   // Keep the native webview glued to the placeholder div.
   useLayoutEffect(() => {
     const el = slot.current;
-    if (!el || tab !== "browser") {
+    if (!el || tab !== "browser" || picker) {
       void browser.hide();
       return;
     }
@@ -78,7 +80,7 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
       void browser.hide();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  }, [tab, picker]);
 
   return (
     <aside className="rpanel">
@@ -87,11 +89,31 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
         <button data-testid="plan-tab" className={tab === "plan" ? "on" : ""} onClick={() => setTab("plan")}><Icon name="file" size={14} /> Plan{plan.length ? ` (${plan.length})` : ""}</button>
         {isDesktop() && <button data-testid="files-tab" className={tab === "files" ? "on" : ""} onClick={() => setTab("files")}><Icon name="folder" size={14} /> File tree</button>}
         {isDesktop() && <button data-testid="terminal-tab" className={tab === "terminal" ? "on" : ""} onClick={() => setTab("terminal")}><Icon name="terminal" size={14} /> Terminal</button>}
+        <button className="icon" data-testid="panel-add" title="Open a tab" aria-expanded={picker} onClick={() => setPicker((v) => !v)}><Icon name="plus" size={16} /></button>
         <div style={{ flex: 1 }} />
         <button className="icon" onClick={onClose} title="Close panel"><Icon name="x" /></button>
       </div>
+      {picker && (
+        <div className="tab-picker" data-testid="tab-picker">
+          <h3>Open tab</h3>
+          <p>Choose a tab to open in the side pane.</p>
+          <div className="tab-picker-grid">
+            {([
+              ["files", "folder", "File tree"],
+              ["plan", "file", "Plan"],
+              ["terminal", "terminal", "Terminal"],
+              ["browser", "globe", "Browser"],
+            ] as const).filter(([id]) => isDesktop() || id === "browser" || id === "plan").map(([id, icon, label]) => (
+              <button key={id} onClick={() => { setPicker(false); if (id === "terminal") addTerm(); else setTab(id); }}>
+                <Icon name={icon} size={18} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {isDesktop() && (
-        <div className="term-stack" hidden={tab !== "terminal"}>
+        <div className="term-stack" hidden={picker || tab !== "terminal"}>
           <div className="term-tabs">
             {terms.map((t) => (
               <button key={t.id} className={t.id === activeTerm ? "on" : ""} onClick={() => setActiveTerm(t.id)}>
@@ -106,7 +128,7 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
           </Suspense>
         </div>
       )}
-      {tab === "files" && isDesktop() ? <FilesPane cwd={cwd} /> : tab === "terminal" ? null : tab === "browser" ? (
+      {picker ? null : tab === "files" && isDesktop() ? <FilesPane cwd={cwd} /> : tab === "terminal" ? null : tab === "browser" ? (
         <>
           <form
             className="urlbar"

@@ -289,10 +289,8 @@ test("command palette: search and run commands with the keyboard", async ({ page
   await page.keyboard.press("Control+k");
   await page.getByTestId("palette-input").fill("new chat");
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("onboarding")).toBeVisible();
-  await expect(page.getByTestId("onboard-agent")).toHaveClass(/done/);
-  await page.getByTestId("onboard-dismiss").click();
-  await expect(page.locator(".empty h2")).toContainText("Start a chat");
+  await expect(page.getByTestId("chat-start")).toBeVisible();
+  await expect(page.locator(".empty h2")).toBeVisible();
   await page.keyboard.press("Control+,");
   await expect(page.getByTestId("settings-screen")).toBeVisible();
   await page.getByTestId("tab-devices").click();

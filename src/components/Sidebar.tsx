@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { isDesktop } from "../lib/desktop";
 import { projectsByCwd, relTime, type AppData, type TreeAction } from "../lib/store";
 import { Icon } from "./Icon";
 
@@ -15,6 +16,8 @@ type Props = {
   onPalette?: () => void;
   /** Open a folder as a project (Projects view). */
   onOpenFolder?: (cwd: string) => void;
+  /** Open the system folder picker (desktop). */
+  onBrowse?: () => void;
   onSidebarView?: (v: "projects" | "groups") => void;
   /** Refresh the CLI session list now. */
   onSync?: () => void;
@@ -80,10 +83,10 @@ export function Sidebar(p: Props) {
   return (
     <aside className="sidebar" data-testid="sidebar">
       <div className="side-head">
-        <span className="logo"><Icon name="bolt" size={16} /></span><strong>Supercharge Studio</strong>
+        <span className="logo"><img src="/logo.png" alt="" /></span><strong>Supercharge Studio</strong>
         <div style={{ flex: 1 }} />
         {byFolder
-          ? <button className="icon" title="Open a project folder" data-testid="open-folder" onClick={() => setEd({ kind: "openFolder" })}><Icon name="plus" /></button>
+          ? <button className="icon" title="Open a project folder" data-testid="open-folder" onClick={() => (isDesktop() && p.onBrowse ? p.onBrowse() : setEd({ kind: "openFolder" }))}><Icon name="plus" /></button>
           : <button className="icon" title="New group" data-testid="add-group" onClick={() => setEd({ kind: "newGroup" })}><Icon name="plus" /></button>}
         <button className="icon" title="Collapse sidebar" data-testid="collapse-sidebar" onClick={p.onToggle}><Icon name="panelLeft" /></button>
       </div>

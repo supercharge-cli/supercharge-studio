@@ -39,7 +39,8 @@ select option{background:var(--panel);color:var(--fg)}
 .sidebar{width:264px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .sidebar.collapsed{width:52px;align-items:center;padding-top:10px;gap:6px}
 .side-head{display:flex;align-items:center;gap:8px;padding:12px 10px 10px 14px}
-.logo{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--acc),#c45cff);color:#fff}
+.logo{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;overflow:hidden;background:#000}
+.logo img{width:100%;height:100%;object-fit:cover;display:block}
 .tree{flex:1;overflow:auto;padding:4px 8px 10px}
 .side-empty{color:var(--muted);font-size:12.5px;padding:14px 8px}
 .group{margin:6px 0 10px}
@@ -73,6 +74,13 @@ input.inline{margin:4px 6px;width:calc(100% - 12px);padding:5px 8px;font-size:13
 .thread{max-width:780px;margin:0 auto;padding:24px 22px 12px;display:flex;flex-direction:column;gap:12px}
 .empty{margin:12vh auto 0;text-align:center;color:var(--muted);max-width:440px}
 .empty h2{color:var(--fg);font-size:20px;margin:14px 0 6px}.empty p{margin:6px 0}
+.chat-start{margin:6vh auto 0;max-width:640px}
+.logo-ascii{margin:0 auto 12px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:clamp(5px,0.72vw,8px);line-height:1.05;text-align:left;display:inline-block;user-select:none}
+.chat-start h2{font-size:28px;font-weight:650;letter-spacing:-.03em;margin:0 0 8px}
+.chat-start p{font-size:15px;margin:0}
+.start-pills{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:22px}
+.start-pills button{background:var(--raise);color:var(--fg);border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-size:13px}
+.start-pills button:hover{background:var(--hover)}
 .empty-icon{display:inline-grid;place-items:center;width:56px;height:56px;border-radius:16px;background:var(--acc-bg);color:var(--acc)}
 .empty.small{margin:30px auto;display:flex;flex-direction:column;align-items:center}
 .bubble{white-space:pre-wrap;word-wrap:break-word;line-height:1.6}
@@ -135,10 +143,12 @@ input.inline{margin:4px 6px;width:calc(100% - 12px);padding:5px 8px;font-size:13
 .file-row{display:flex;align-items:center;gap:6px;width:100%;background:none;color:var(--fg);text-align:left;padding:4px 8px;border-radius:6px;font-size:13px}
 .file-row.on,.file-row:hover{background:var(--hover)}
 .file-view{margin:0;overflow:auto;padding:12px;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
-.panel-add-wrap{position:relative}
-.panel-add{position:absolute;top:calc(100% + 6px);right:0;z-index:20;display:flex;flex-direction:column;min-width:160px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--raise);box-shadow:var(--shadow)}
-.panel-add button{display:flex;align-items:center;gap:8px;background:none;color:var(--fg);padding:8px 10px;border-radius:8px;text-align:left}
-.panel-add button:hover{background:var(--hover)}
+.tab-picker{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:28px 20px;text-align:center}
+.tab-picker h3{margin:0;font-size:22px}
+.tab-picker p{margin:0 0 14px;color:var(--muted)}
+.tab-picker-grid{display:grid;grid-template-columns:repeat(3,minmax(0,140px));gap:12px}
+.tab-picker-grid button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:96px;padding:16px 10px;border-radius:16px;background:var(--raise);color:var(--fg);border:1px solid var(--line);font-size:14px}
+.tab-picker-grid button:hover{background:var(--hover)}
 .tabs{display:flex;gap:4px;padding:8px;border-bottom:1px solid var(--line);overflow-x:auto;flex-wrap:wrap}
 .tabs button{background:none;color:var(--muted);padding:6px 10px;flex:none;white-space:nowrap}.tabs button.on{color:var(--fg);background:var(--hover)}.tabs button:hover{background:var(--hover)}
 .urlbar{display:flex;align-items:center;gap:8px;margin:8px;padding:0 10px;background:var(--bg);border:1px solid var(--line);border-radius:10px;color:var(--muted)}

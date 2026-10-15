@@ -124,7 +124,7 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-pair label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
 .m-pair input,.m-pair textarea{font-size:16px;border-radius:12px}
 .m-hero{text-align:center}.m-hero h1{font-size:24px;margin:14px 0 6px}
-.logo.big{width:56px;height:56px;border-radius:18px;margin:0 auto}
+.logo.big{width:56px;height:56px;border-radius:18px;margin:0 auto;background:#000}
 
 /* misc */
 .m-handoff{margin:8px 10px 0;justify-content:center;border-radius:14px;animation:pop .3s var(--spring) both}

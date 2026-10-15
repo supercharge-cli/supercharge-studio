@@ -23,10 +23,10 @@ const idle = (globalThis as any).requestIdleCallback ?? ((f: () => void) => setT
 if (typeof window !== "undefined") idle(() => { void import("./components/Settings"); void import("./components/Usage"); });
 const UsageScreen = lazy(() => import("./components/Usage").then((m) => ({ default: m.UsageScreen })));
 import { transition } from "./lib/motion";
-import { Onboarding } from "./components/Onboarding";
 import { Icon } from "./components/Icon";
 import { Markdown } from "./components/Markdown";
 import { PermissionModal } from "./components/Permission";
+import { LogoMark } from "./components/LogoMark";
 import { PlanApprovalModal } from "./components/PlanApproval";
 import { Sidebar } from "./components/Sidebar";
 import { ToolCard } from "./components/ToolCard";
@@ -35,7 +35,7 @@ import { GatewayHub } from "./gateway/hub";
 import { effectiveRelay, ensureHostId, needsFirewall } from "./lib/reach";
 import { type Attachment, fmtSize, fromFile, isImage, rejectReason, toBlocks } from "./lib/attachments";
 import { FileEntry, projectFiles, projectReadText } from "./lib/desktop";
-import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type CliStatus, agentLogNote, agentRestart, appConfig, background, ensureAgent, gateway, invoke, isDesktop, keychainGet, keychainSet, listen, mcpUrl, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
+import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type CliStatus, agentLogNote, agentRestart, appConfig, ensureAgent, gateway, invoke, isDesktop, keychainGet, keychainSet, listen, mcpUrl, pickFolder, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
 import { AppData, applyTree, ensureFolderProject, findProject, load, mergeCliSessions, normCwd, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
 import { APP_VERSION, checkUpdate, type AvailableUpdate } from "./lib/updates";
@@ -66,9 +66,8 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [sideCollapsed, setSideCollapsed] = useState(false);
   const [panel, setPanel] = useState(false);
-  const [panelAdd, setPanelAdd] = useState(false);
   const [panelPick, setPanelPick] = useState<{ tab: "browser" | "plan" | "terminal" | "files"; n: number } | null>(null);
-  const openPanel = (tab: "browser" | "plan" | "terminal" | "files") => { setPanel(true); setPanelAdd(false); setPanelPick({ tab, n: Date.now() }); };
+  const openPanel = (tab: "browser" | "plan" | "terminal" | "files") => { setPanel(true); setPanelPick({ tab, n: Date.now() }); };
   const [view, setViewNow] = useState<View>("chat");
   const viewRef = useRef<View>("chat");
   const setView = useCallback((v: View) => {
@@ -351,7 +350,6 @@ export default function App() {
       onPlanApproval: (req) =>
         new Promise((resolve) => {
           setPanel(true);
-          setPanelAdd(false);
           setPanelPick({ tab: "plan", n: Date.now() });
           setPlanQueue((pending) => [...pending, { req, resolve }]);
         }),
@@ -571,6 +569,14 @@ export default function App() {
     return () => { window.removeEventListener("focus", onFocus); clearInterval(t); };
   }, []);
 
+  async function browseFolder() {
+    try {
+      const cwd = await pickFolder();
+      if (cwd) openFolder(cwd);
+    } catch (e: any) {
+      setNotice(`Could not open a folder: ${e?.message ?? e}`);
+    }
+  }
   function openFolder(cwd: string) {
     let pid = "";
     update((d) => { const r = ensureFolderProject(d, cwd); pid = r.projectId; return r.data; });
@@ -980,6 +986,7 @@ export default function App() {
       { id: "panel", title: "Toggle browser & plan panel", hint: "Ctrl \\", icon: "panelRight", run: () => setPanel((x) => !x) },
       { id: "terminal", title: "Open terminal", icon: "terminal", run: () => openPanel("terminal") },
       { id: "files", title: "Open file tree", icon: "folder", run: () => openPanel("files") },
+      { id: "open-project", title: "Open a project folder", icon: "folder", run: () => void browseFolder() },
       { id: "focus", title: "Focus message box", hint: "Ctrl L", icon: "chat", run: () => composerRef.current?.focus() },
       { id: "reconnect", title: "Reconnect to agent", icon: "refresh", run: () => void connect() },
       { id: "pair", title: "Pair a phone", icon: "phone", run: () => openSettings("devices") },
@@ -1059,6 +1066,7 @@ export default function App() {
         onNewChat={(p) => void newChat(p)}
         onTree={(a) => update((d) => applyTree(d, a))}
         onOpenFolder={openFolder}
+        onBrowse={() => void browseFolder()}
         onSidebarView={(v) => update((d) => ({ ...d, sidebarView: v }))}
         onSync={() => void syncCli()}
         syncing={syncBusy}
@@ -1122,17 +1130,6 @@ export default function App() {
             <span className={`status ${conn === "open" ? "ok" : "bad"}`} title={status}><i className="dot" />{conn}</span>
             {conn !== "open" && <button className="secondary" onClick={() => void connect()}><Icon name="refresh" /> Connect</button>}
             <button className="icon" title="Command palette (Ctrl K)" onClick={() => setPalette(true)}><Icon name="search" size={17} /></button>
-            <span className="panel-add-wrap">
-              <button className="icon" title="Open a side panel" aria-expanded={panelAdd} onClick={() => setPanelAdd((v) => !v)}><Icon name="plus" size={18} /></button>
-              {panelAdd && (
-                <div className="panel-add" role="menu">
-                  <button onClick={() => openPanel("terminal")}><Icon name="terminal" size={14} /> New terminal</button>
-                  <button onClick={() => openPanel("files")}><Icon name="folder" size={14} /> File tree</button>
-                  <button onClick={() => openPanel("browser")}><Icon name="globe" size={14} /> Browser</button>
-                  <button onClick={() => openPanel("plan")}><Icon name="file" size={14} /> Plan</button>
-                </div>
-              )}
-            </span>
             <button className="icon" title={panel ? "Hide side panel (Ctrl \\)" : "Show side panel (Ctrl \\)"} onClick={() => setPanel((x) => !x)}><Icon name="panelRight" size={18} /></button>
           </header>
           {agentMissing && (
@@ -1199,26 +1196,22 @@ export default function App() {
                     <div className="skeleton" style={{ width: "70%", height: 48 }} />
                   </div>
                 )}
-                {sess.items.length === 0 && !isBusy && !(activeChat && loadingChats.has(activeChat.id)) && !data.settings.onboarded && (
-                  <Onboarding
-                    connected={conn === "open"}
-                    connecting={conn === "connecting" || conn === "reconnecting"}
-                    status={status}
-                    hasProvider={(data.settings.providers ?? []).length > 0}
-                    hasProject={!!active}
-                    onConnect={() => void connect()}
-                    onConnection={() => openSettings("connection")}
-                    onProviders={() => openSettings("providers")}
-                    onDismiss={() => update((d) => ({ ...d, settings: { ...d.settings, onboarded: true } }))}
-                    onBackground={isDesktop() ? (on) => void background.set(on).catch((e) => setNotice(`Start at login: ${e}`)) : undefined}
-                  />
-                )}
-                {sess.items.length === 0 && !isBusy && !(activeChat && loadingChats.has(activeChat.id)) && data.settings.onboarded && (
-                  <div className="empty fade-in">
-                    <div className="empty-icon"><Icon name="bolt" size={28} /></div>
-                    <h2>{active ? `Start a chat in ${active.project.name}` : "Welcome to Supercharge Studio"}</h2>
-                    <p>{active ? <>The agent works in <code>{active.project.cwd}</code>. Type a message below, or use <code>/</code> for commands.</> : "Pick or add a project in the sidebar to begin."}</p>
-                    <p className="muted keys"><kbd>Ctrl K</kbd> commands · <kbd>Ctrl N</kbd> new chat · <kbd>Ctrl ,</kbd> settings</p>
+                {sess.items.length === 0 && !isBusy && !(activeChat && loadingChats.has(activeChat.id)) && (
+                  <div className="empty chat-start fade-in" data-testid="chat-start">
+                    <LogoMark />
+                    <h2>{active ? active.project.name : "No project open"}</h2>
+                    <p>{active ? "What should we work on?" : "Add a project in the sidebar, then start a chat."}</p>
+                    {active && (
+                      <div className="start-pills">
+                        {[
+                          ["Explain this project", "Explain how this project is structured."],
+                          ["Find a bug", "Look for a bug in the current project and tell me what is wrong."],
+                          ["Review changes", "Review the uncommitted changes and summarize them."],
+                        ].map(([label, text]) => (
+                          <button key={label} type="button" onClick={() => setDraftCaret(text)}>{label}</button>
+                        ))}
+                      </div>
+                    )}
                     {conn !== "open" && <p className="muted">Agent status: {status || conn}</p>}
                   </div>
                 )}

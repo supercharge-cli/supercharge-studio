@@ -100,7 +100,7 @@ function Pair({ onPaired }: { onPaired: (c: DeviceCreds) => void }) {
   }
   return (
     <div className="m-pair" data-testid="m-pair">
-      <div className="m-hero"><div className="logo big"><Icon name="bolt" size={26} /></div><h1>Supercharge Studio</h1><p className="muted">Pair with Supercharge Studio on your computer: Settings → Devices → Show pairing code.</p></div>
+      <div className="m-hero"><div className="logo big"><img src="/logo.png" alt="" /></div><h1>Supercharge Studio</h1><p className="muted">Pair with Supercharge Studio on your computer: Settings → Devices → Show pairing code.</p></div>
       {canScan() && <button className="m-big" disabled={!!stage || scanBusy} onClick={() => void onScan()} data-testid="m-scan"><Icon name="qr" /> Scan QR code</button>}
       <label>Device name<input value={name} onChange={(e) => setName(e.target.value)} data-testid="m-name" /></label>
       <label>Pairing code<textarea rows={3} value={code} placeholder="scstudio://pair?…" onChange={(e) => setCode(e.target.value)} data-testid="m-code" /></label>
@@ -422,7 +422,7 @@ export default function MobileApp() {
         </div>
       )}
       <header className="m-top">
-        {open ? <button className="icon" aria-label="Chats" data-testid="m-menu" onClick={() => { haptic(); setDrawer(true); }}><Icon name="panelLeft" size={20} /></button> : <div className="logo"><Icon name="bolt" size={16} /></div>}
+        {open ? <button className="icon" aria-label="Chats" data-testid="m-menu" onClick={() => { haptic(); setDrawer(true); }}><Icon name="panelLeft" size={20} /></button> : <div className="logo"><img src="/logo.png" alt="" /></div>}
         {open && <button className="icon" aria-label="Back" onClick={back} data-testid="m-back"><Icon name="arrowLeft" size={20} /></button>}
         {open ? (
           <button className="m-head-title" data-testid="m-chat-settings" aria-label="Chat settings" disabled={!hasSettings} onClick={() => { haptic(); setSheet(true); }}>
@@ -519,7 +519,7 @@ export default function MobileApp() {
               )}
               {loadingSess !== open && sess.items.length === 0 && !isBusy && (
                 <div className="m-welcome" data-testid="m-welcome">
-                  <div className="logo big"><Icon name="bolt" size={24} /></div>
+                  <div className="logo big"><img src="/logo.png" alt="" /></div>
                   <h2>What can I help with?</h2>
                 </div>
               )}
