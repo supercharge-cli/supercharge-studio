@@ -23,7 +23,7 @@ export function TerminalPane({ cwd }: { cwd?: string }) {
     let stopped = false;
     void invoke("term_open", { cwd: cwd || null, cols: term.cols, rows: term.rows }).catch((e) => term.writeln(`\r\n${e}`));
     const typed = term.onData((data) => { void invoke("term_write", { data }).catch(() => {}); });
-    const unlisten = listen<string>("term-data", (e) => { if (!stopped) term.write(e.payload); });
+    const unlisten = listen<string>("term-data", (data) => { if (!stopped) term.write(data); });
     const ro = new ResizeObserver(() => {
       fit.fit();
       void invoke("term_resize", { cols: term.cols, rows: term.rows }).catch(() => {});

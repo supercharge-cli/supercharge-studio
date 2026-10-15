@@ -49,13 +49,13 @@ export default function App() {
   const [conn, setConn] = useState<ConnectionState>("idle");
   const [status, setStatus] = useState("");
   const [notice, setNotice] = useState("");
-  const [update, setUpdate] = useState<AvailableUpdate | null>(null);
+  const [available, setAvailable] = useState<AvailableUpdate | null>(null);
   useEffect(() => {
     let stop = false;
     void (async () => {
       const format = isDesktop() ? await invoke<string>("host_package").catch(() => undefined) : undefined;
       const next = await checkUpdate(APP_VERSION, "desktop", format).catch(() => null);
-      if (!stop && next) setUpdate(next);
+      if (!stop && next) setAvailable(next);
     })();
     return () => { stop = true; };
   }, []);
@@ -1021,11 +1021,11 @@ export default function App() {
 
   return (
     <div className={`app ${panel && view === "chat" ? "with-panel" : ""} view-${view}`}>
-      {update && (
+      {available && (
         <div className="notice update-banner" data-testid="update-banner">
-          <span>Supercharge Studio {update.version} is available.</span>
-          <button onClick={() => window.open(update.asset || update.page, "_blank")}>Install</button>
-          <button className="ghost" onClick={() => setUpdate(null)}>Later</button>
+          <span>Supercharge Studio {available.version} is available.</span>
+          <button onClick={() => window.open(available.asset || available.page, "_blank")}>Install</button>
+          <button className="ghost" onClick={() => setAvailable(null)}>Later</button>
         </div>
       )}
       {cliSetup && (
