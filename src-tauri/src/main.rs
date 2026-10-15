@@ -62,7 +62,7 @@ mod linux_graphics {
         let Ok(exe) = std::env::current_exe() else { return };
         let args: Vec<_> = std::env::args_os().skip(1).collect();
         let started = Instant::now();
-        let status = match std::process::Command::new(&exe).args(&args).env(CHILD, "1").status() {
+        let status = match supercharge_studio_lib::hidden::std_cmd(&exe).args(&args).env(CHILD, "1").status() {
             Ok(s) => s,
             Err(_) => return, // could not spawn: just run in-process
         };
@@ -70,7 +70,7 @@ mod linux_graphics {
             std::process::exit(status.code().unwrap_or(1));
         }
         eprintln!("supercharge-studio: Wayland start failed ({status}); retrying with GDK_BACKEND=x11");
-        let status = std::process::Command::new(&exe)
+        let status = supercharge_studio_lib::hidden::std_cmd(&exe)
             .args(&args)
             .env(CHILD, "1")
             .env("GDK_BACKEND", "x11")

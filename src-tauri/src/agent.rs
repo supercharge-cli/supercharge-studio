@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 
 pub(crate) static BIN: Mutex<Option<PathBuf>> = Mutex::new(None);
 static CHILD: Mutex<Option<Child>> = Mutex::new(None);
@@ -50,7 +50,7 @@ pub fn candidate_dirs() -> Vec<PathBuf> {
 #[cfg(unix)]
 fn login_shell_lookup() -> Option<PathBuf> {
     let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/sh".into());
-    let mut c = std::process::Command::new(shell)
+    let mut c = crate::hidden::std_cmd(shell)
         .args(["-lic", "command -v supercharge"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -139,7 +139,7 @@ fn status(app: &AppHandle, s: &str) {
 
 async fn spawn_once(bind: &str, secret: &str, approve: bool) -> Result<(), String> {
     let exe = resolve().ok_or("AGENT_NOT_FOUND")?;
-    let mut cmd = Command::new(&exe);
+    let mut cmd = crate::hidden::cmd(&exe);
     cmd.arg("agent");
     if approve {
         cmd.arg("--always-approve");
@@ -312,7 +312,7 @@ pub async fn agent_install() -> Result<String, String> {
     }
     log_line("running the Supercharge CLI installer");
     let (Some(o), Some(e)) = (open_log(), open_log()) else { return Err("cannot open the log".into()) };
-    let st = Command::new("sh")
+    let st = crate::hidden::cmd("sh")
         .args(["-c", "curl -fsSL https://superchargeai.in/install.sh | bash"])
         .stdin(Stdio::null())
         .stdout(Stdio::from(o))

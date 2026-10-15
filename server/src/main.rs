@@ -522,7 +522,11 @@ async fn ensure_agent(c: &mut Config) -> Option<tokio::process::Child> {
     }
     let bin = std::env::var("SUPERCHARGE_BIN").unwrap_or_else(|_| "supercharge".into());
     eprintln!("starting `{bin} agent serve --bind {addr}`");
-    let child = tokio::process::Command::new(bin).args(["agent", "serve", "--bind", &addr, "--secret", &c.agent_secret]).kill_on_drop(true).spawn().map_err(|e| eprintln!("could not start the agent: {e}")).ok();
+    #[allow(unused_mut)]
+    let mut cmd = tokio::process::Command::new(bin); // hidden-ok
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: never pop a console window
+    let child = cmd.args(["agent", "serve", "--bind", &addr, "--secret", &c.agent_secret]).kill_on_drop(true).spawn().map_err(|e| eprintln!("could not start the agent: {e}")).ok();
     for _ in 0..50 {
         if TcpStream::connect(&addr).await.is_ok() {
             break;

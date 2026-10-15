@@ -73,7 +73,7 @@ pub fn latest_version() -> Result<String, String> {
 }
 
 fn installed_version(bin: &std::path::Path) -> Option<String> {
-    let o = std::process::Command::new(bin).arg("--version").stdin(std::process::Stdio::null()).output().ok()?;
+    let o = crate::hidden::std_cmd(bin).arg("--version").stdin(std::process::Stdio::null()).output().ok()?;
     parse_version(&String::from_utf8_lossy(&o.stdout)).or_else(|| parse_version(&String::from_utf8_lossy(&o.stderr)))
 }
 
@@ -218,7 +218,7 @@ fn add_to_path(dir: &std::path::Path) {
     {
         let d = dir.display().to_string().replace('\'', "''");
         let ps = format!("$d='{d}'; $p=[Environment]::GetEnvironmentVariable('Path','User'); if (-not (($p -split ';') -contains $d)) {{ [Environment]::SetEnvironmentVariable('Path', ($(if ($p) {{ $p + ';' }} else {{ '' }}) + $d), 'User') }}");
-        let _ = std::process::Command::new("powershell").args(["-NoProfile", "-NonInteractive", "-Command", &ps]).status();
+        let _ = crate::hidden::std_cmd("powershell").args(["-NoProfile", "-NonInteractive", "-Command", &ps]).status();
     }
 }
 

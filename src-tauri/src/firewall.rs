@@ -17,7 +17,7 @@ pub struct Firewall {
 }
 
 fn out(cmd: &str, args: &[&str]) -> Option<(bool, String)> {
-    let o = Command::new(cmd).args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+    let o = crate::hidden::std_cmd(cmd).args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
     Some((o.status.success(), String::from_utf8_lossy(&o.stdout).trim().to_string()))
 }
 
@@ -115,14 +115,14 @@ pub fn allow(port: u16) -> Result<String, String> {
         "firewalld" => {
             let p = format!("{port}/tcp");
             // One prompt: runtime (takes effect now) and permanent (survives reboot).
-            run(Command::new("pkexec").args(["sh", "-c", &format!("firewall-cmd --add-port={p} && firewall-cmd --permanent --add-port={p}")]))?;
+            run(crate::hidden::std_cmd("pkexec").args(["sh", "-c", &format!("firewall-cmd --add-port={p} && firewall-cmd --permanent --add-port={p}")]))?;
         }
-        "ufw" => run(Command::new("pkexec").args(["ufw", "allow", &format!("{port}/tcp")]))?,
+        "ufw" => run(crate::hidden::std_cmd("pkexec").args(["ufw", "allow", &format!("{port}/tcp")]))?,
         "windows" => {
             let name = format!("Supercharge Studio gateway {port}");
             let args = format!("advfirewall firewall add rule name=\"\"{name}\"\" dir=in action=allow protocol=TCP localport={port} profile=private,domain");
             let ps = format!("$p = Start-Process netsh -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList '{args}'; exit $p.ExitCode");
-            run(Command::new("powershell").args(["-NoProfile", "-NonInteractive", "-Command", &ps]))
+            run(crate::hidden::std_cmd("powershell").args(["-NoProfile", "-NonInteractive", "-Command", &ps]))
                 .map_err(|e| if e.contains("canceled") || e.contains("cancelled") { "The administrator prompt was cancelled.".into() } else { e })?;
         }
         _ => return Err(fw.cmd),

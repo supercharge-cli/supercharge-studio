@@ -26,6 +26,17 @@ jobs:
       - name: Bundle size budgets
         run: npx vite-node scripts/budgets.ts
 
+  hidden-spawns:
+    name: No console-window spawns
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every Command::new must go through the hidden helper
+        run: |
+          if grep -rn --include='*.rs' 'Command::new(' src-tauri/src server/src mobile/src-tauri/src | grep -v 'hidden-ok' | grep -v 'contains('; then
+            echo "Use hidden::std_cmd / hidden::cmd (CREATE_NO_WINDOW on Windows) instead of Command::new"; exit 1
+          fi
+
   e2e:
     name: E2E (fake ACP agent + Chromium)
     runs-on: ubuntu-22.04

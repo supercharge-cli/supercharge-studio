@@ -13,9 +13,10 @@ use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, Url, WebviewBuilder, WebviewUrl,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, Command};
+use tokio::process::{Child, ChildStdin};
 use tokio::sync::oneshot;
 
+pub mod hidden;
 mod files;
 mod portbind;
 mod lanaddr;
@@ -112,7 +113,7 @@ async fn agent_stop() -> Result<(), String> {
 /// Start ACP over stdio. Each stdout line is emitted as `acp-stdio://line`.
 #[tauri::command]
 async fn stdio_start(app: AppHandle, state: State<'_, AppState>, always_approve: bool) -> Result<(), String> {
-    let mut cmd = Command::new(agent_bin());
+    let mut cmd = crate::hidden::cmd(agent_bin());
     cmd.arg("agent");
     if always_approve {
         cmd.arg("--always-approve");
