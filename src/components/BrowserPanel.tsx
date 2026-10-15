@@ -6,17 +6,11 @@ import { Icon } from "./Icon";
 import { TerminalPane } from "./TerminalPane";
 
 /** Right panel: browser, the chat plan, and a local terminal. */
-export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: PlanEntry[]; sessionId?: string; cwd?: string; focus?: number | null; onClose: () => void }) {
+export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: PlanEntry[]; sessionId?: string; cwd?: string; focus?: { tab: "browser" | "plan" | "terminal"; n: number } | null; onClose: () => void }) {
   const slot = useRef<HTMLDivElement>(null);
   const [url, setUrl] = useState(browser.url === "about:blank" ? "https://superchargeai.in" : browser.url);
-  const [tab, setTab] = useState<"browser" | "plan" | "terminal">(plan.length ? "plan" : "browser");
-  useEffect(() => { if (focus) setTab("terminal"); }, [focus]);
-  useEffect(() => { setTab(plan.length ? "plan" : "browser"); }, [sessionId]);
-  const hadPlan = useRef(plan.length > 0);
-  useEffect(() => {
-    if (plan.length > 0 && !hadPlan.current) setTab("plan");
-    hadPlan.current = plan.length > 0;
-  }, [plan]);
+  const [tab, setTab] = useState<"browser" | "plan" | "terminal">(focus?.tab ?? "browser");
+  useEffect(() => { if (focus) setTab(focus.tab); }, [focus]);
 
   useEffect(() => {
     // The agent used a browser tool while the Tools tab was showing: switch to the browser.

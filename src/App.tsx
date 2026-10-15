@@ -63,8 +63,10 @@ export default function App() {
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState("");
   const [sideCollapsed, setSideCollapsed] = useState(false);
-  const [panel, setPanel] = useState(true);
-  const [termOpen, setTermOpen] = useState(0);
+  const [panel, setPanel] = useState(false);
+  const [panelAdd, setPanelAdd] = useState(false);
+  const [panelPick, setPanelPick] = useState<{ tab: "browser" | "plan" | "terminal"; n: number } | null>(null);
+  const openPanel = (tab: "browser" | "plan" | "terminal") => { setPanel(true); setPanelAdd(false); setPanelPick({ tab, n: Date.now() }); };
   const [view, setViewNow] = useState<View>("chat");
   const viewRef = useRef<View>("chat");
   const setView = useCallback((v: View) => {
@@ -472,7 +474,7 @@ export default function App() {
 
   useEffect(() => {
     // Browser tools work with zero setup: if the agent needs the browser, show the panel.
-    browser.onNeedPanel = () => { setView("chat"); setPanel(true); };
+    browser.onNeedPanel = () => { setView("chat"); setPanel(true); setPanelPick({ tab: "browser", n: Date.now() }); };
     let off: (() => void) | undefined;
     void browser.serveMcp().then((u) => (off = u));
     return () => off?.();
@@ -965,7 +967,7 @@ export default function App() {
       ...themeList.map((t) => ({ id: `theme-${t.id}`, title: `Theme: ${t.name}`, group: "Themes", icon: t.dark ? "moon" : "sun", run: () => setTheme(t.id) })),
       { id: "sidebar", title: "Toggle sidebar", hint: "Ctrl B", icon: "panelLeft", run: () => setSideCollapsed((x) => !x) },
       { id: "panel", title: "Toggle browser & plan panel", hint: "Ctrl \\", icon: "panelRight", run: () => setPanel((x) => !x) },
-      { id: "terminal", title: "Open terminal", icon: "terminal", run: () => { setPanel(true); setTermOpen((n) => n + 1); } },
+      { id: "terminal", title: "Open terminal", icon: "terminal", run: () => openPanel("terminal") },
       { id: "focus", title: "Focus message box", hint: "Ctrl L", icon: "chat", run: () => composerRef.current?.focus() },
       { id: "reconnect", title: "Reconnect to agent", icon: "refresh", run: () => void connect() },
       { id: "pair", title: "Pair a phone", icon: "phone", run: () => openSettings("devices") },
@@ -1109,8 +1111,17 @@ export default function App() {
             <span className={`status ${conn === "open" ? "ok" : "bad"}`} title={status}><i className="dot" />{conn}</span>
             {conn !== "open" && <button className="secondary" onClick={() => void connect()}><Icon name="refresh" /> Connect</button>}
             <button className="icon" title="Command palette (Ctrl K)" onClick={() => setPalette(true)}><Icon name="search" size={17} /></button>
-            <button className="icon" title="Open terminal" onClick={() => { setPanel(true); setTermOpen((n) => n + 1); }}><Icon name="terminal" size={18} /></button>
-            <button className="icon" title={panel ? "Hide browser & plan (Ctrl \\)" : "Show browser & plan (Ctrl \\)"} onClick={() => setPanel((x) => !x)}><Icon name="panelRight" size={18} /></button>
+            <span className="panel-add-wrap">
+              <button className="icon" title="Open a side panel" aria-expanded={panelAdd} onClick={() => setPanelAdd((v) => !v)}><Icon name="plus" size={18} /></button>
+              {panelAdd && (
+                <div className="panel-add" role="menu">
+                  <button onClick={() => openPanel("terminal")}><Icon name="terminal" size={14} /> Terminal</button>
+                  <button onClick={() => openPanel("browser")}><Icon name="globe" size={14} /> Browser</button>
+                  <button onClick={() => openPanel("plan")}><Icon name="file" size={14} /> Plan</button>
+                </div>
+              )}
+            </span>
+            <button className="icon" title={panel ? "Hide side panel (Ctrl \\)" : "Show side panel (Ctrl \\)"} onClick={() => setPanel((x) => !x)}><Icon name="panelRight" size={18} /></button>
           </header>
           {agentMissing && (
             <div className="agent-setup" data-testid="agent-setup">
@@ -1288,7 +1299,7 @@ export default function App() {
           </div>
         </main>
       )}
-      {view === "chat" && panel && <BrowserPanel plan={sess.plan} sessionId={activeChat?.sessionId} cwd={active?.project.cwd} focus={termOpen || null} onClose={() => setPanel(false)} />}
+      {view === "chat" && panel && <BrowserPanel plan={sess.plan} sessionId={activeChat?.sessionId} cwd={active?.project.cwd} focus={panelPick} onClose={() => setPanel(false)} />}
       {palette && <CommandPalette commands={paletteCommands} onClose={() => setPalette(false)} />}
       {pairReq && (
         <div className="modal-bg">
