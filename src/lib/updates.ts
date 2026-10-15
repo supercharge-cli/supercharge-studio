@@ -1,6 +1,6 @@
 /** Check the public GitHub release. No key is involved; the apps only read the latest tag. */
 export const RELEASE_REPO = "supercharge-cli/supercharge-studio";
-export const APP_VERSION = "0.1.7";
+export const APP_VERSION = "1.0.9";
 
 export type AvailableUpdate = {
   version: string;
@@ -17,8 +17,9 @@ export function isNewer(latest: string, current: string): boolean {
   return false;
 }
 
+// Matches by suffix, so it works with both the old versioned and the new stable asset names.
 function pickAsset(names: { name: string; browser_download_url: string }[], kind: "desktop" | "mobile", format?: string) {
-  const list = names.filter((a) => !a.name.includes("unsigned") && !a.name.endsWith(".txt"));
+  const list = names.filter((a) => !a.name.includes("unsigned") && !a.name.endsWith(".txt") && a.name !== "SHA256SUMS");
   if (kind === "mobile") return list.find((a) => /android-arm64.*\.apk$/i.test(a.name)) ?? list.find((a) => /android-universal.*\.apk$/i.test(a.name));
   if (format === "exe") return list.find((a) => a.name.endsWith("-setup.exe")) ?? list.find((a) => a.name.endsWith(".msi"));
   if (format === "dmg") return list.find((a) => a.name.endsWith(".dmg"));

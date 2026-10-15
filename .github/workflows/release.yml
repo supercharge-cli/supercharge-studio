@@ -16,7 +16,7 @@ on:
       tag:
         description: "Release tag (created if missing)"
         required: true
-        default: v0.1.4
+        default: v1.0.9
 
 permissions:
   contents: write
@@ -58,7 +58,20 @@ jobs:
         shell: bash
         run: |
           mkdir -p rel
-          find src-tauri/target -path '*release/bundle/*' -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) -exec cp {} rel/ \;
+          # Fixed, versionless names so releases/latest/download/<name> never changes.
+          # The version stays inside the package metadata.
+          find src-tauri/target -path '*release/bundle/*' -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) | while read -r f; do
+            case "$f" in
+              *.AppImage)   n=Supercharge-Studio-linux-x86_64.AppImage ;;
+              *.deb)        n=supercharge-studio-linux-amd64.deb ;;
+              *.rpm)        n=supercharge-studio-linux-x86_64.rpm ;;
+              *.dmg)        n=Supercharge-Studio-macos-universal.dmg ;;
+              *.msi)        n=Supercharge-Studio-windows-x64.msi ;;
+              *-setup.exe)  n=Supercharge-Studio-windows-x64-setup.exe ;;
+            esac
+            [ -e "rel/$n" ] && { echo "duplicate bundle for $n: $f"; exit 1; }
+            cp "$f" "rel/$n"
+          done
           ls -l rel
       - uses: actions/upload-artifact@v4
         with: { name: "rel-desktop-${{ matrix.os }}", path: "rel/*", if-no-files-found: error }
@@ -69,10 +82,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
-          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
-          - { os: macos-latest, target: aarch64-apple-darwin }
-          - { os: windows-latest, target: x86_64-pc-windows-msvc, ext: .exe }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, asset: linux-x86_64 }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, asset: linux-arm64 }
+          - { os: macos-latest, target: aarch64-apple-darwin, asset: macos-arm64 }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, asset: windows-x64, ext: .exe }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -84,7 +97,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p rel
-          cp server/target/release/supercharge-studio-server${{ matrix.ext }} rel/supercharge-studio-server-${{ matrix.target }}${{ matrix.ext }}
+          cp server/target/release/supercharge-studio-server${{ matrix.ext }} rel/supercharge-studio-server-${{ matrix.asset }}${{ matrix.ext }}
           if [ "${{ matrix.target }}" = x86_64-unknown-linux-gnu ]; then cp server/dist/supercharge-studio-server.service rel/; fi
       - uses: actions/upload-artifact@v4
         with: { name: "rel-server-${{ matrix.target }}", path: "rel/*", if-no-files-found: error }
@@ -112,7 +125,8 @@ jobs:
           mkdir -p ../rel/unsigned
           for f in src-tauri/gen/android/app/build/outputs/apk/*/release/*.apk; do
             abi=$(basename "$(dirname "$(dirname "$f")")")
-            cp "$f" "../rel/unsigned/supercharge-studio-android-$abi.apk"
+            # Gradle flavors are arm64 / arm / x86_64; drop anything else.
+            case "$abi" in arm64|arm|x86_64) cp "$f" "../rel/unsigned/supercharge-studio-android-$abi.apk" ;; esac
           done
           npx tauri android build --apk --target aarch64 armv7 x86_64
           f=$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -1)
@@ -187,8 +201,7 @@ jobs:
         run: |
           deb=$(find bundles -name '*.deb' | head -1)
           ver="${TAG#v}"
-          name=$(basename "$deb" | tr ' ' '-')
-          url="https://github.com/${{ github.repository }}/releases/download/$TAG/$name"
+          url="https://github.com/${{ github.repository }}/releases/download/$TAG/supercharge-studio-linux-amd64.deb"
           useradd -m builder
           # Validate with the local file first, then emit the URL-based PKGBUILD.
           out=$(bash scripts/aur.sh "$ver" "$deb")
@@ -213,7 +226,9 @@ jobs:
           mkdir -p out
           find dist -type f | while read -r f; do n=$(basename "$f" | tr ' ' '-'); cp "$f" "out/$n"; done
           rm -rf dist && mv out dist
-          cd dist && sha256sum * > SHA256SUMS.txt && ls -l
+          cd dist && sha256sum * > SHA256SUMS && ls -l
+          # Every asset name must be versionless so releases/latest/download/<name> is stable.
+          if ls | grep -E '[0-9]+\.[0-9]+\.[0-9]+'; then echo "versioned asset name found"; exit 1; fi
       - name: Create or update the release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -11,7 +11,7 @@ It uses the same code as the desktop gateway (`src-tauri/src/gwcrypto.rs`, `gwre
 
 ## Install
 
-Download `supercharge-studio-server-<target>` from the GitHub Release, or build it:
+Download `supercharge-studio-server-<platform>` (`linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x64.exe`) from the GitHub Release, or build it:
 
 ```sh
 cd server && cargo build --release   # target/release/supercharge-studio-server

@@ -4,13 +4,36 @@
 It runs when you push a `v*` tag, or manually (Actions → Release → Run workflow, with a tag
 input that is created if it does not exist).
 
-| Asset | Built on |
-|---|---|
-| Desktop `.deb`, `.rpm`, `.AppImage` / universal `.dmg` / `.msi` + `-setup.exe` | ubuntu-22.04 / macos / windows |
-| `supercharge-studio-server-<target>` (linux x64 + arm64, macOS arm64, Windows x64) + systemd unit | native runners |
-| Android APKs: per ABI (arm64, arm, x86_64) + universal | ubuntu |
-| `supercharge-studio-ios-simulator.zip` (unsigned simulator `.app`) | macos |
-| `SHA256SUMS.txt` | |
+Every asset has a fixed, versionless name, so the latest build is always at
+`https://github.com/supercharge-cli/supercharge-studio/releases/latest/download/<name>`.
+The version lives inside the packages (deb/rpm/msi metadata, app bundle) and in the tag.
+The publish job fails if any asset name contains a version number.
+
+## Stable download URLs
+
+Base: `https://github.com/supercharge-cli/supercharge-studio/releases/latest/download/`
+
+| Asset | Name | Built on |
+|---|---|---|
+| Linux AppImage | `Supercharge-Studio-linux-x86_64.AppImage` | ubuntu-22.04 |
+| Debian / Ubuntu | `supercharge-studio-linux-amd64.deb` | ubuntu-22.04 |
+| Fedora / openSUSE | `supercharge-studio-linux-x86_64.rpm` | ubuntu-22.04 |
+| macOS (Apple silicon + Intel) | `Supercharge-Studio-macos-universal.dmg` | macos |
+| Windows installer | `Supercharge-Studio-windows-x64-setup.exe` | windows |
+| Windows MSI | `Supercharge-Studio-windows-x64.msi` | windows |
+| Android (all ABIs) | `supercharge-studio-android-universal.apk` | ubuntu |
+| Android per ABI | `supercharge-studio-android-arm64.apk`, `-arm.apk`, `-x86_64.apk` | ubuntu |
+| Headless server | `supercharge-studio-server-linux-x86_64`, `-linux-arm64`, `-macos-arm64`, `-windows-x64.exe` | native runners |
+| Server systemd unit | `supercharge-studio-server.service` | ubuntu |
+| iOS simulator build (unsigned) | `supercharge-studio-ios-simulator.zip` | macos |
+| AUR | `PKGBUILD`, `SRCINFO.txt` | archlinux container |
+| Checksums | `SHA256SUMS` | |
+
+Without signing secrets the APKs are published as `supercharge-studio-android-<abi>-unsigned.apk`;
+`scripts/sign-release.sh` uploads the signed copies under the stable names above.
+
+The AUR `PKGBUILD` pins the tag (`releases/download/vX.Y.Z/supercharge-studio-linux-amd64.deb`)
+and saves it as `supercharge-studio-X.Y.Z.deb`, so each AUR version stays reproducible.
 
 ## Android signing (optional)
 
@@ -34,7 +57,7 @@ gh secret set ANDROID_KEY_ALIAS --body supercharge-studio
 ```
 
 Until then, sign a published release's APKs locally and upload the signed copies to it with
-`scripts/sign-release.sh v0.1.5` (uses the keystore in `~/.supercharge-studio-keys/`).
+`scripts/sign-release.sh vX.Y.Z` (uses the keystore in `~/.supercharge-studio-keys/`).
 
 Keep the keystore out of the repository. Losing it means existing installs cannot be updated.
 

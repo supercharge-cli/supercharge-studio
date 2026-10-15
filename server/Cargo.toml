@@ -1,6 +1,6 @@
 [package]
 name = "supercharge-studio-server"
-version = "0.1.7"
+version = "1.0.9"
 description = "Supercharge Studio Server: headless encrypted mobile gateway for supercharge agent serve"
 license = "Apache-2.0"
 edition = "2021"
