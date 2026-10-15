@@ -86,17 +86,18 @@ test("desktop model and thinking controls follow the selected chat", async ({ pa
 
 test("streams a reply with thought and plan", async ({ page }) => {
   await boot(page);
-  // The side panel starts closed; open the plan from the + menu.
-  await page.getByTitle("Open a side panel").click();
-  await page.getByRole("menu").getByRole("button", { name: "Plan" }).click();
+  // The side panel starts closed; open it from the header and pick the Plan tab.
+  await page.getByTitle("Show side panel (Ctrl \\)").click();
+  await page.getByTestId("plan-tab").click();
   await expect(page.getByTestId("plan-panel")).toContainText("plan for this chat");
-  await page.getByRole("button", { name: "Browser", exact: true }).click();
+  // The + on the tab bar opens the tab picker cards.
+  await page.getByTestId("panel-add").click();
+  await page.getByTestId("tab-picker").getByRole("button", { name: "Browser" }).click();
   await ask(page, "stream please");
   await expect(page.locator(".bubble.agent").last()).toHaveText("Hello from the fake agent.");
   await expect(page.locator(".bubble.thought")).toContainText("Thinking");
-  // The panel no longer jumps to the plan on its own; the user opens it.
-  await page.getByTitle("Open a side panel").click();
-  await page.getByRole("menu").getByRole("button", { name: "Plan" }).click();
+  // The panel stays on the user's tab; they switch to the plan themselves.
+  await page.getByTestId("plan-tab").click();
   await expect(page.getByTestId("plan-panel")).toContainText("Say bye");
   await expect(page.locator(".messages .plan")).toHaveCount(0);
   await expect(page.getByTestId("chat-title").first()).toHaveText("stream please");
@@ -228,7 +229,8 @@ test("slash menu and settings", async ({ page }) => {
   await expect(page.locator(".composer textarea")).toHaveValue("/setup ");
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-agent").click();
-  await expect(page.getByTestId("settings-screen")).toContainText("supercharge/demo");
+  // The Agent tab no longer lists agent extensions; before a chat starts it shows the session-options hint.
+  await expect(page.getByTestId("settings-screen")).toContainText("Session options appear after you start a chat.");
   await page.getByTestId("tab-appearance").click();
   await page.getByTestId("theme-light").click();
   await page.getByTestId("tab-providers").click();
