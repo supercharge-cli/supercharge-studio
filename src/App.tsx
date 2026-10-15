@@ -6,7 +6,7 @@ import type { ConfigOption, PermissionOutcome, PermissionRequest, PlanApprovalRe
 import { ModeControl } from "./components/ModeControl";
 import { StdioTransport } from "./acp/tauriStdio";
 import { browser, browserClientMeta } from "./browser/bridge";
-import { BrowserPanel } from "./components/BrowserPanel";
+const BrowserPanel = lazy(() => import("./components/BrowserPanel").then((m) => ({ default: m.BrowserPanel })));
 const CliSetup = lazy(() => import("./components/CliSetup"));
 import { Command, CommandPalette } from "./components/CommandPalette";
 import { ComposerMenu } from "./components/ComposerMenu";
@@ -1304,7 +1304,7 @@ export default function App() {
           </div>
         </main>
       )}
-      {view === "chat" && panel && <BrowserPanel plan={sess.plan} sessionId={activeChat?.sessionId} cwd={active?.project.cwd} focus={panelPick} onClose={() => setPanel(false)} />}
+      {view === "chat" && panel && <Suspense fallback={null}><BrowserPanel plan={sess.plan} sessionId={activeChat?.sessionId} cwd={active?.project.cwd} focus={panelPick} onClose={() => setPanel(false)} /></Suspense>}
       {palette && <CommandPalette commands={paletteCommands} onClose={() => setPalette(false)} />}
       {pairReq && (
         <div className="modal-bg">
