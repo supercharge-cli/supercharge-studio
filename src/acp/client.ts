@@ -14,6 +14,8 @@ import type {
   NewSessionResult,
   PermissionOutcome,
   PermissionRequest,
+  PlanApprovalRequest,
+  PlanApprovalResult,
   SessionUpdate,
   StopReason,
 } from "./types";
@@ -74,6 +76,8 @@ export type AcpClientOptions = {
   onNotification?: (method: string, params: unknown) => void;
   /** Called for session/request_permission. Defaults to "cancelled". */
   onPermissionRequest?: (req: PermissionRequest) => Promise<PermissionOutcome> | PermissionOutcome;
+  /** Called when the agent finishes a plan and waits for approval. Defaults to approved. */
+  onPlanApproval?: (req: PlanApprovalRequest) => Promise<PlanApprovalResult> | PlanApprovalResult;
   onStateChange?: (state: ConnectionState, info?: { attempt?: number; delayMs?: number; error?: string }) => void;
   /** Called after a successful automatic reconnect + re-initialize. */
   onReconnected?: (init: InitializeResult) => void;
@@ -120,6 +124,11 @@ export class AcpClient {
         ? await this.opts.onPermissionRequest(params)
         : ({ outcome: "cancelled" } as PermissionOutcome);
       return { outcome };
+    });
+    this.handlers.set("_supercharge/exit_plan_mode", async (params: PlanApprovalRequest) => {
+      if (!this.opts.onPlanApproval) return { outcome: "approved" };
+      const result = await this.opts.onPlanApproval(params ?? { sessionId: "" });
+      return { outcome: result.outcome, ...(result.feedback ? { feedback: result.feedback } : {}) };
     });
   }
 

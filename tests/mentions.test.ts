@@ -12,7 +12,11 @@ describe("@ mentions", () => {
     expect(m.map((f) => f.path)).toEqual(["README.md", "src/lib/", "my docs/a b.md"]);
   });
   it("ranks file names, supports path queries", () => {
-    expect(fileItems(files, "")[0].label).toBe("README.md");
+    const all = fileItems(files, "").map((i) => i.value);
+    expect(all).toContain("README.md");
+    expect(all).toContain("src/");
+    expect(all).toContain("src/lib/");
+    expect(all).toContain("src/lib/store.ts");
     expect(fileItems(files, "store")[0].value).toBe("src/lib/store.ts");
     expect(fileItems(files, "src/l").map((i) => i.value)).toEqual(["src/lib/", "src/lib/store.ts"]);
     expect(fileItems(files, "app")[0]).toMatchObject({ label: "App.tsx", detail: "src/", icon: "file" });

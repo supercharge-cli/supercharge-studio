@@ -42,19 +42,19 @@ export async function mentionBlocks(root: string, mentions: FileEntry[], embed: 
   return blocks;
 }
 
-/** Picker rows: basename matches rank above path-only matches; folders get a trailing slash. */
+/** Picker rows: every file and folder, including nested ones. Basename matches rank above path-only matches. */
 export function fileItems(files: FileEntry[], q: string): MenuItem[] {
   const items: MenuItem[] = files.map((f) => {
     const base = f.path.replace(/\/$/, "").split("/").pop()! + (f.dir ? "/" : "");
     const dir = f.path.slice(0, f.path.length - base.length);
     return { id: f.path, label: base, detail: dir || undefined, icon: f.dir ? "folder" : "file", value: f.path };
   });
-  if (!q) return items.filter((i) => !i.detail).slice(0, 60); // top level first
+  if (!q) return items.slice(0, 1000);
   if (q.includes("/")) {
     const ql = q.toLowerCase();
     const pref = items.filter((i) => i.value.toLowerCase().startsWith(ql));
     const rest = filterItems(items.filter((i) => !pref.includes(i)).map((i) => ({ ...i, label: i.value })), q, 60).map((i) => ({ ...i, label: i.value.replace(/\/$/, "").split("/").pop()! + (i.value.endsWith("/") ? "/" : "") }));
-    return [...pref.slice(0, 60), ...rest].slice(0, 60);
+    return [...pref.slice(0, 200), ...rest].slice(0, 200);
   }
-  return filterItems(items, q, 60);
+  return filterItems(items, q, 200);
 }

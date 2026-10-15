@@ -2,16 +2,47 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "re
 import { browser } from "../browser/bridge";
 import { isDesktop } from "../lib/desktop";
 import type { PlanEntry } from "../acp/types";
+import { FilesPane } from "./FilesPane";
 import { Icon } from "./Icon";
 // The terminal pulls in xterm; load it only when the tab is opened.
 const TerminalPane = lazy(() => import("./TerminalPane").then((m) => ({ default: m.TerminalPane })));
 
-/** Right panel: browser, the chat plan, and a local terminal. */
-export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: PlanEntry[]; sessionId?: string; cwd?: string; focus?: { tab: "browser" | "plan" | "terminal"; n: number } | null; onClose: () => void }) {
+type PanelTab = "browser" | "plan" | "terminal" | "files";
+
+/** Right panel: browser, plan, project files, and one or more local terminals. */
+export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: PlanEntry[]; sessionId?: string; cwd?: string; focus?: { tab: PanelTab; n: number } | null; onClose: () => void }) {
   const slot = useRef<HTMLDivElement>(null);
   const [url, setUrl] = useState(browser.url === "about:blank" ? "https://superchargeai.in" : browser.url);
-  const [tab, setTab] = useState<"browser" | "plan" | "terminal">(focus?.tab ?? "browser");
-  useEffect(() => { if (focus) setTab(focus.tab); }, [focus]);
+  const [tab, setTab] = useState<PanelTab>(focus?.tab ?? "browser");
+  const [terms, setTerms] = useState<{ id: string; title: string }[]>([{ id: "t1", title: "Terminal 1" }]);
+  const [activeTerm, setActiveTerm] = useState("t1");
+  const termFocus = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focus) return;
+    setTab(focus.tab);
+    if (focus.tab !== "terminal") return;
+    // The first request only shows the shell. Each later request opens another one.
+    if (termFocus.current == null) { termFocus.current = focus.n; return; }
+    if (termFocus.current === focus.n) return;
+    termFocus.current = focus.n;
+    const id = `t${focus.n}`;
+    setTerms((cur) => cur.some((t) => t.id === id) ? cur : [...cur, { id, title: `Terminal ${cur.length + 1}` }]);
+    setActiveTerm(id);
+  }, [focus]);
+  const addTerm = () => {
+    const id = `t${Date.now()}`;
+    setTerms((cur) => [...cur, { id, title: `Terminal ${cur.length + 1}` }]);
+    setActiveTerm(id);
+    setTab("terminal");
+  };
+  const closeTerm = (id: string) => {
+    setTerms((cur) => {
+      const next = cur.filter((t) => t.id !== id);
+      if (!next.length) return cur;
+      setActiveTerm((on) => (on === id ? next[next.length - 1].id : on));
+      return next;
+    });
+  };
 
   useEffect(() => {
     // The agent used a browser tool while the Tools tab was showing: switch to the browser.
@@ -54,11 +85,28 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
       <div className="tabs">
         <button className={tab === "browser" ? "on" : ""} onClick={() => setTab("browser")}><Icon name="globe" size={14} /> Browser</button>
         <button data-testid="plan-tab" className={tab === "plan" ? "on" : ""} onClick={() => setTab("plan")}><Icon name="file" size={14} /> Plan{plan.length ? ` (${plan.length})` : ""}</button>
+        {isDesktop() && <button data-testid="files-tab" className={tab === "files" ? "on" : ""} onClick={() => setTab("files")}><Icon name="folder" size={14} /> File tree</button>}
         {isDesktop() && <button data-testid="terminal-tab" className={tab === "terminal" ? "on" : ""} onClick={() => setTab("terminal")}><Icon name="terminal" size={14} /> Terminal</button>}
         <div style={{ flex: 1 }} />
         <button className="icon" onClick={onClose} title="Close panel"><Icon name="x" /></button>
       </div>
-      {tab === "terminal" ? <Suspense fallback={null}><TerminalPane cwd={cwd} /></Suspense> : tab === "browser" ? (
+      {isDesktop() && (
+        <div className="term-stack" hidden={tab !== "terminal"}>
+          <div className="term-tabs">
+            {terms.map((t) => (
+              <button key={t.id} className={t.id === activeTerm ? "on" : ""} onClick={() => setActiveTerm(t.id)}>
+                {t.title}
+                {terms.length > 1 && <span className="term-x" onClick={(e) => { e.stopPropagation(); closeTerm(t.id); }} aria-label={`Close ${t.title}`}>×</span>}
+              </button>
+            ))}
+            <button data-testid="term-add" title="New terminal" onClick={addTerm}><Icon name="plus" size={14} /> New</button>
+          </div>
+          <Suspense fallback={null}>
+            {terms.map((t) => <TerminalPane key={t.id} id={t.id} cwd={cwd} active={tab === "terminal" && t.id === activeTerm} />)}
+          </Suspense>
+        </div>
+      )}
+      {tab === "files" && isDesktop() ? <FilesPane cwd={cwd} /> : tab === "terminal" ? null : tab === "browser" ? (
         <>
           <form
             className="urlbar"

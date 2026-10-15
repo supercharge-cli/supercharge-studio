@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { combineSteer, makeSteerer, type Queued } from "./acp/steer";
 import { AcpClient, ConnectionState, isAuthError, isModelError, pickConfiguredModel } from "./acp/client";
 import { applyUpdate, ChatItem, emptySession, SessionState } from "./acp/session";
-import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionModes, SessionUpdate } from "./acp/types";
+import type { ConfigOption, PermissionOutcome, PermissionRequest, PlanApprovalRequest, PlanApprovalResult, SessionModes, SessionUpdate } from "./acp/types";
 import { ModeControl } from "./components/ModeControl";
 import { StdioTransport } from "./acp/tauriStdio";
 import { browser, browserClientMeta } from "./browser/bridge";
@@ -27,6 +27,7 @@ import { Onboarding } from "./components/Onboarding";
 import { Icon } from "./components/Icon";
 import { Markdown } from "./components/Markdown";
 import { PermissionModal } from "./components/Permission";
+import { PlanApprovalModal } from "./components/PlanApproval";
 import { Sidebar } from "./components/Sidebar";
 import { ToolCard } from "./components/ToolCard";
 import { VirtualList } from "./components/VirtualList";
@@ -41,6 +42,7 @@ import { APP_VERSION, checkUpdate, type AvailableUpdate } from "./lib/updates";
 
 type View = "chat" | "settings" | "usage";
 type PermState = { req: PermissionRequest; resolve: (o: PermissionOutcome) => void; token?: number };
+type PlanAsk = { req: PlanApprovalRequest; resolve: (r: PlanApprovalResult) => void };
 
 const mod = (e: KeyboardEvent) => e.ctrlKey || e.metaKey;
 
@@ -65,8 +67,8 @@ export default function App() {
   const [sideCollapsed, setSideCollapsed] = useState(false);
   const [panel, setPanel] = useState(false);
   const [panelAdd, setPanelAdd] = useState(false);
-  const [panelPick, setPanelPick] = useState<{ tab: "browser" | "plan" | "terminal"; n: number } | null>(null);
-  const openPanel = (tab: "browser" | "plan" | "terminal") => { setPanel(true); setPanelAdd(false); setPanelPick({ tab, n: Date.now() }); };
+  const [panelPick, setPanelPick] = useState<{ tab: "browser" | "plan" | "terminal" | "files"; n: number } | null>(null);
+  const openPanel = (tab: "browser" | "plan" | "terminal" | "files") => { setPanel(true); setPanelAdd(false); setPanelPick({ tab, n: Date.now() }); };
   const [view, setViewNow] = useState<View>("chat");
   const viewRef = useRef<View>("chat");
   const setView = useCallback((v: View) => {
@@ -80,6 +82,8 @@ export default function App() {
   const [palette, setPalette] = useState(false);
   const [permQueue, setPermQueue] = useState<PermState[]>([]);
   const perm = permQueue[0] ?? null;
+  const [planQueue, setPlanQueue] = useState<PlanAsk[]>([]);
+  const planAsk = planQueue[0] ?? null;
   const [pairReq, setPairReq] = useState<{ pairingId: string; name: string } | null>(null);
   const [devicesOnline, setDevicesOnline] = useState(0);
   const [optionsBySession, setOptionsBySession] = useState<Record<string, ConfigOption[]>>({});
@@ -344,6 +348,13 @@ export default function App() {
         const n = usageFromNotification(method, params);
         if (n) recordUsage(n.sessionId, n.usage, `${n.sessionId}:${params?.update?.prompt_id ?? params?._meta?.eventId ?? Date.now()}`);
       },
+      onPlanApproval: (req) =>
+        new Promise((resolve) => {
+          setPanel(true);
+          setPanelAdd(false);
+          setPanelPick({ tab: "plan", n: Date.now() });
+          setPlanQueue((pending) => [...pending, { req, resolve }]);
+        }),
       onPermissionRequest: (req) =>
         new Promise((resolve) => {
           let done = false;
@@ -968,6 +979,7 @@ export default function App() {
       { id: "sidebar", title: "Toggle sidebar", hint: "Ctrl B", icon: "panelLeft", run: () => setSideCollapsed((x) => !x) },
       { id: "panel", title: "Toggle browser & plan panel", hint: "Ctrl \\", icon: "panelRight", run: () => setPanel((x) => !x) },
       { id: "terminal", title: "Open terminal", icon: "terminal", run: () => openPanel("terminal") },
+      { id: "files", title: "Open file tree", icon: "folder", run: () => openPanel("files") },
       { id: "focus", title: "Focus message box", hint: "Ctrl L", icon: "chat", run: () => composerRef.current?.focus() },
       { id: "reconnect", title: "Reconnect to agent", icon: "refresh", run: () => void connect() },
       { id: "pair", title: "Pair a phone", icon: "phone", run: () => openSettings("devices") },
@@ -1064,7 +1076,6 @@ export default function App() {
           desktop={isDesktop()}
           onProviderKey={(id, key) => providerSetKey(id, key)}
           onActivate={activateProvider}
-          extensions={clientRef.current ? [...clientRef.current.extensions.methods, ...clientRef.current.extensions.features, ...clientRef.current.extensions.notifications] : []}
           onClose={() => setView("chat")}
           devices={<DevicesSection desktop={isDesktop()} prefs={gwPrefs} onPrefs={(g) => update((d) => ({ ...d, settings: { ...d.settings, gateway: g } }))} />}
           onConfig={(id, v) => { if (activeChat?.sessionId) changeOption(activeChat.sessionId, id, v); }}
@@ -1115,7 +1126,8 @@ export default function App() {
               <button className="icon" title="Open a side panel" aria-expanded={panelAdd} onClick={() => setPanelAdd((v) => !v)}><Icon name="plus" size={18} /></button>
               {panelAdd && (
                 <div className="panel-add" role="menu">
-                  <button onClick={() => openPanel("terminal")}><Icon name="terminal" size={14} /> Terminal</button>
+                  <button onClick={() => openPanel("terminal")}><Icon name="terminal" size={14} /> New terminal</button>
+                  <button onClick={() => openPanel("files")}><Icon name="folder" size={14} /> File tree</button>
                   <button onClick={() => openPanel("browser")}><Icon name="globe" size={14} /> Browser</button>
                   <button onClick={() => openPanel("plan")}><Icon name="file" size={14} /> Plan</button>
                 </div>
@@ -1314,6 +1326,15 @@ export default function App() {
         </div>
       )}
       {perm && <PermissionModal req={perm.req} onAnswer={(o) => perm.resolve(o)} />}
+      {planAsk && (
+        <PlanApprovalModal
+          plan={planAsk.req.planContent ?? ""}
+          onAnswer={(r) => {
+            planAsk.resolve(r);
+            setPlanQueue((pending) => pending.slice(1));
+          }}
+        />
+      )}
     </div>
   );
 }

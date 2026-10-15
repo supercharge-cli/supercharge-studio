@@ -9,7 +9,6 @@ import { agentInfo, agentLog, providerDiscoverModels, type AgentInfo, type Disco
 type Props = {
   value: S;
   configOptions: ConfigOption[];
-  extensions: string[];
   desktop: boolean;
   onSave: (s: S) => void;
   onConfig: (id: string, v: string) => void;
@@ -98,7 +97,7 @@ function ProviderEditor({ p, desktop, onChange, onKey, onRemove }: { p: Provider
 }
 
 export function SettingsScreen(props: Props & { initial?: Section }) {
-  const { value, configOptions, extensions, desktop, onSave, onConfig, onClose } = props;
+  const { value, configOptions, desktop, onSave, onConfig, onClose } = props;
   const [s, set] = useState<S>({ ...value, providers: value.providers ?? [] });
   const [tab, setTab] = useState<Section>(props.initial ?? "connection");
   const [editing, setEditing] = useState<string | null>(null);
@@ -221,16 +220,10 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
             {configOptions.map((o) => (
               <label key={o.id}>{o.name ?? o.id}
                 <select defaultValue={o.currentValue} onChange={(e) => onConfig(o.id, e.target.value)}>
-                  {(o.options ?? []).map((v) => <option key={v.value} value={v.value}>{v.name && v.name !== v.value ? `${v.name} (${v.value})` : v.value}</option>)}
+                  {(o.options ?? []).map((v) => <option key={v.value} value={v.value}>{v.name || v.value}</option>)}
                 </select>
               </label>
             ))}
-            {extensions.length > 0 && (
-              <>
-                <h4>Agent extensions</h4>
-                <div className="mono muted">{extensions.join("\n")}</div>
-              </>
-            )}
           </div>
         )}
 

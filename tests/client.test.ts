@@ -100,6 +100,20 @@ describe("AcpClient", () => {
     expect(r.result).toEqual({ outcome: { outcome: "selected", optionId: "allow" } });
   });
 
+  it("approves exit_plan_mode under the legacy method name", async () => {
+    const c = mk({
+      onPlanApproval: async (req) => ({ outcome: "cancelled", feedback: req.planContent ?? "" }),
+    });
+    await c.connect();
+    send(agent.sockets[0], {
+      id: 9,
+      method: "_x.ai/exit_plan_mode",
+      params: { sessionId: "sess-1", toolCallId: "call-1", planContent: "1. Do the thing" },
+    });
+    await until(() => agent.received.some((m) => m.id === 9));
+    expect(agent.received.find((m) => m.id === 9).result).toEqual({ outcome: "cancelled", feedback: "1. Do the thing" });
+  });
+
   it("answers unknown agent requests with method-not-found", async () => {
     const c = mk();
     await c.connect();

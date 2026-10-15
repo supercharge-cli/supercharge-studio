@@ -4,9 +4,11 @@ import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
 import { invoke, listen } from "../lib/desktop";
 
-/** Interactive shell for the project folder, shown in the right panel. */
-export function TerminalPane({ cwd }: { cwd?: string }) {
+/** One local shell. Several of these can run at once; each has its own id. */
+export function TerminalPane({ id, cwd, active }: { id: string; cwd?: string; active: boolean }) {
   const host = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
   useEffect(() => {
     const el = host.current;
     if (!el) return;
@@ -20,13 +22,18 @@ export function TerminalPane({ cwd }: { cwd?: string }) {
     term.loadAddon(fit);
     term.open(el);
     fit.fit();
+    termRef.current = term;
+    fitRef.current = fit;
     let stopped = false;
-    void invoke("term_open", { cwd: cwd || null, cols: term.cols, rows: term.rows }).catch((e) => term.writeln(`\r\n${e}`));
-    const typed = term.onData((data) => { void invoke("term_write", { data }).catch(() => {}); });
-    const unlisten = listen<string>("term-data", (data) => { if (!stopped) term.write(data); });
+    void invoke("term_open", { id, cwd: cwd || null, cols: term.cols, rows: term.rows }).catch((e) => term.writeln(`\r\n${e}`));
+    const typed = term.onData((data) => { void invoke("term_write", { id, data }).catch(() => {}); });
+    const unlisten = listen<{ id: string; data: string }>("term-data", (msg) => {
+      if (!stopped && msg?.id === id) term.write(msg.data);
+    });
     const ro = new ResizeObserver(() => {
+      if (!active) return;
       fit.fit();
-      void invoke("term_resize", { cols: term.cols, rows: term.rows }).catch(() => {});
+      void invoke("term_resize", { id, cols: term.cols, rows: term.rows }).catch(() => {});
     });
     ro.observe(el);
     return () => {
@@ -34,9 +41,22 @@ export function TerminalPane({ cwd }: { cwd?: string }) {
       typed.dispose();
       ro.disconnect();
       void unlisten.then((f) => f());
-      void invoke("term_close").catch(() => {});
+      void invoke("term_close", { id }).catch(() => {});
       term.dispose();
+      termRef.current = null;
+      fitRef.current = null;
     };
-  }, [cwd]);
-  return <div ref={host} className="term-host" data-testid="terminal-pane" />;
+    // A shell stays in the folder it was opened in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+  useEffect(() => {
+    if (!active) return;
+    const term = termRef.current;
+    const fit = fitRef.current;
+    if (!term || !fit) return;
+    fit.fit();
+    term.focus();
+    void invoke("term_resize", { id, cols: term.cols, rows: term.rows }).catch(() => {});
+  }, [active, id]);
+  return <div ref={host} className="term-host" data-testid="terminal-pane" hidden={!active} />;
 }

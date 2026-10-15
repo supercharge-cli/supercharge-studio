@@ -42,6 +42,18 @@ export type ToolCall = {
 
 export type PlanEntry = { content: string; priority?: string; status?: string };
 
+/** Agent → client request when a plan is ready to leave plan mode. */
+export type PlanApprovalRequest = {
+  sessionId: string;
+  toolCallId?: string;
+  planContent?: string | null;
+};
+
+export type PlanApprovalResult = {
+  outcome: "approved" | "cancelled" | "abandoned";
+  feedback?: string;
+};
+
 export type SessionUpdate =
   | { sessionUpdate: "user_message_chunk"; content: ContentBlock }
   | { sessionUpdate: "agent_message_chunk"; content: ContentBlock }
