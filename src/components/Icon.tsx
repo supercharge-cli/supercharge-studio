@@ -34,6 +34,7 @@ const P: Record<string, string> = {
   file: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8ZM14 2v6h6",
   qr: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM18 18h3v3h-3z",
   arrowLeft: "M19 12H5M12 19l-7-7 7-7",
+  terminal: "M4 17l6-5-6-5M12 19h8",
 };
 
 export function Icon({ name, size = 16, title, className }: { name: keyof typeof P | string; size?: number; title?: string; className?: string }) {

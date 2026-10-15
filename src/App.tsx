@@ -64,6 +64,7 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [sideCollapsed, setSideCollapsed] = useState(false);
   const [panel, setPanel] = useState(true);
+  const [termOpen, setTermOpen] = useState(0);
   const [view, setViewNow] = useState<View>("chat");
   const viewRef = useRef<View>("chat");
   const setView = useCallback((v: View) => {
@@ -964,6 +965,7 @@ export default function App() {
       ...themeList.map((t) => ({ id: `theme-${t.id}`, title: `Theme: ${t.name}`, group: "Themes", icon: t.dark ? "moon" : "sun", run: () => setTheme(t.id) })),
       { id: "sidebar", title: "Toggle sidebar", hint: "Ctrl B", icon: "panelLeft", run: () => setSideCollapsed((x) => !x) },
       { id: "panel", title: "Toggle browser & plan panel", hint: "Ctrl \\", icon: "panelRight", run: () => setPanel((x) => !x) },
+      { id: "terminal", title: "Open terminal", icon: "terminal", run: () => { setPanel(true); setTermOpen((n) => n + 1); } },
       { id: "focus", title: "Focus message box", hint: "Ctrl L", icon: "chat", run: () => composerRef.current?.focus() },
       { id: "reconnect", title: "Reconnect to agent", icon: "refresh", run: () => void connect() },
       { id: "pair", title: "Pair a phone", icon: "phone", run: () => openSettings("devices") },
@@ -1107,6 +1109,7 @@ export default function App() {
             <span className={`status ${conn === "open" ? "ok" : "bad"}`} title={status}><i className="dot" />{conn}</span>
             {conn !== "open" && <button className="secondary" onClick={() => void connect()}><Icon name="refresh" /> Connect</button>}
             <button className="icon" title="Command palette (Ctrl K)" onClick={() => setPalette(true)}><Icon name="search" size={17} /></button>
+            <button className="icon" title="Open terminal" onClick={() => { setPanel(true); setTermOpen((n) => n + 1); }}><Icon name="terminal" size={18} /></button>
             <button className="icon" title={panel ? "Hide browser & plan (Ctrl \\)" : "Show browser & plan (Ctrl \\)"} onClick={() => setPanel((x) => !x)}><Icon name="panelRight" size={18} /></button>
           </header>
           {agentMissing && (
@@ -1285,7 +1288,7 @@ export default function App() {
           </div>
         </main>
       )}
-      {view === "chat" && panel && <BrowserPanel plan={sess.plan} sessionId={activeChat?.sessionId} onClose={() => setPanel(false)} />}
+      {view === "chat" && panel && <BrowserPanel plan={sess.plan} sessionId={activeChat?.sessionId} cwd={active?.project.cwd} focus={termOpen || null} onClose={() => setPanel(false)} />}
       {palette && <CommandPalette commands={paletteCommands} onClose={() => setPalette(false)} />}
       {pairReq && (
         <div className="modal-bg">
