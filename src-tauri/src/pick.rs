@@ -12,11 +12,11 @@ fn output(cmd: &mut Command) -> Option<String> {
 }
 
 fn linux() -> Result<Option<String>, String> {
-    if Command::new("zenity").arg("--version").output().is_ok_and(|o| o.status.success()) {
-        return Ok(output(Command::new("zenity").args(["--file-selection", "--directory", "--title=Open project"])));
+    if crate::hidden::std_cmd("zenity").arg("--version").output().is_ok_and(|o| o.status.success()) {
+        return Ok(output(crate::hidden::std_cmd("zenity").args(["--file-selection", "--directory", "--title=Open project"])));
     }
-    if Command::new("kdialog").arg("--version").output().is_ok_and(|o| o.status.success()) {
-        return Ok(output(Command::new("kdialog").args(["--getexistingdirectory", ".", "--title", "Open project"])));
+    if crate::hidden::std_cmd("kdialog").arg("--version").output().is_ok_and(|o| o.status.success()) {
+        return Ok(output(crate::hidden::std_cmd("kdialog").args(["--getexistingdirectory", ".", "--title", "Open project"])));
     }
     let py = r#"
 import sys
@@ -31,11 +31,11 @@ except Exception as e:
     sys.stderr.write(str(e))
     sys.exit(2)
 "#;
-    Ok(output(Command::new("python3").args(["-c", py])))
+    Ok(output(crate::hidden::std_cmd("python3").args(["-c", py])))
 }
 
 fn macos() -> Result<Option<String>, String> {
-    Ok(output(Command::new("osascript").args(["-e", "POSIX path of (choose folder with prompt \"Open project\")"])))
+    Ok(output(crate::hidden::std_cmd("osascript").args(["-e", "POSIX path of (choose folder with prompt \"Open project\")"])))
 }
 
 fn windows() -> Result<Option<String>, String> {
@@ -45,7 +45,7 @@ $d = New-Object System.Windows.Forms.FolderBrowserDialog
 $d.Description = "Open project"
 if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.SelectedPath }
 "#;
-    Ok(output(Command::new("powershell.exe").args(["-NoProfile", "-STA", "-Command", script])))
+    Ok(output(crate::hidden::std_cmd("powershell.exe").args(["-NoProfile", "-STA", "-Command", script])))
 }
 
 #[tauri::command]
