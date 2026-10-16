@@ -1,0 +1,18 @@
+/* Desktop-only composer and chat styles (kept out of the mobile bundle). */
+.thinking-anchor{position:relative}.thinking-chip{font-size:12px;min-height:28px;border-radius:999px}.thinking-chip:disabled{opacity:.55;cursor:default}
+.thinking-pop{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);width:250px;background:var(--raise);border:1px solid var(--line);border-radius:16px;padding:12px 12px 14px;box-shadow:var(--shadow);z-index:8;text-align:center}
+.thinking-title{color:var(--acc);font-size:14px;font-weight:600}.thinking-model{background:none;border:0;color:var(--muted);font-size:12px;padding:2px 6px;min-height:0;cursor:pointer}.thinking-model:hover{color:var(--fg)}
+.thinking-reset{position:absolute;top:8px;right:8px}
+.thinking-track{position:relative;height:28px;margin-top:10px;border-radius:999px;background:var(--hover);cursor:pointer;touch-action:none;outline:none}.thinking-track:focus-visible{box-shadow:0 0 0 2px var(--acc)}
+.thinking-fill{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:var(--acc);transition:width .12s ease-out}
+.thinking-dot{position:absolute;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:rgba(255,255,255,.45);pointer-events:none}
+.thinking-thumb{position:absolute;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35);transition:left .12s ease-out;pointer-events:none}
+.ctx-meter{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);padding:0 4px}.ctx-meter circle{fill:none;stroke-width:2.5}.ctx-bg{stroke:var(--line)}.ctx-fg{stroke:var(--acc);stroke-linecap:round}.ctx-meter.warm .ctx-fg{stroke:var(--warn)}.ctx-meter.hot .ctx-fg{stroke:var(--bad)}
+@media(prefers-reduced-motion:reduce){.thinking-fill,.thinking-thumb{transition:none}}
+.file-ico{flex:none}
+.vlist-wrap{flex:1;min-height:0;display:flex;flex-direction:column;position:relative}
+.jump-latest{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);font-size:12px;padding:5px 12px;min-height:0;border-radius:999px;background:var(--raise);color:var(--fg);border:1px solid var(--line);box-shadow:var(--shadow);z-index:3;cursor:pointer}.jump-latest:hover{background:var(--hover)}
+.row-wrap.enter{animation:msg-in .16s ease-out}
+@keyframes msg-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.row-wrap.enter{animation:none}}
+.thread .md p,.thread .md li{line-height:1.6}.thread .md p{margin:.45em 0}

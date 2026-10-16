@@ -18,6 +18,10 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
   const ref = useRef<HTMLDivElement>(null);
   const heights = useRef(new Map<string, number>());
   const stick = useRef(true);
+  const [away, setAway] = useState(false);
+  // Rows added after the first render get a one-time enter animation.
+  const base = useRef(items.length);
+  const seen = useRef(new Set<string | number>());
   const [, force] = useState(0);
   const [view, setView] = useState({ top: 0, h: 800 });
   const virtual = items.length > threshold;
@@ -31,6 +35,7 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
       const el = ref.current;
       if (!el) return;
       stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      setAway(!stick.current);
       if (virtual) setView((v) => (Math.abs(v.top - el.scrollTop) < 40 && v.h === el.clientHeight ? v : { top: el.scrollTop, h: el.clientHeight }));
     });
   }, [virtual]);
@@ -82,7 +87,9 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
     padBottom = hs.slice(end).reduce((a, b) => a + b, 0);
   }
 
+  const jump = () => { const el = ref.current; if (!el) return; stick.current = true; setAway(false); el.scrollTop = el.scrollHeight; };
   return (
+    <div className="vlist-wrap">
     <div className={className} ref={ref} onScroll={onScroll} data-virtual={virtual || undefined}>
       <div className="thread">
         {header}
@@ -90,17 +97,21 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
         {items.slice(start, end).map((it, j) => {
           const i = start + j;
           const k = keyOf(it, i);
-          return <Row key={k} k={k} ro={rows.current} item={it} index={i} render={render as (x: unknown, i: number) => ReactNode} />;
+          const enter = i >= base.current && !seen.current.has(k);
+          if (enter) seen.current.add(k);
+          return <Row key={k} k={k} ro={rows.current} item={it} index={i} enter={enter} render={render as (x: unknown, i: number) => ReactNode} />;
         })}
         {padBottom > 0 && <div style={{ height: padBottom }} aria-hidden />}
         {footer}
       </div>
     </div>
+    {away && items.length > 0 && <button className="jump-latest" data-testid="jump-latest" onClick={jump} aria-label="Jump to latest">↓ Latest</button>}
+    </div>
   );
 }
 
 /** Memoised row: unchanged items (same object) skip re-render while the last one streams. */
-const Row = memo(function Row({ k, ro, item, index, render }: { k: string | number; ro: ResizeObserver | null; item: unknown; index: number; render: (x: unknown, i: number) => ReactNode }) {
+const Row = memo(function Row({ k, ro, item, index, render, enter }: { k: string | number; ro: ResizeObserver | null; item: unknown; index: number; enter?: boolean; render: (x: unknown, i: number) => ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const n = ref.current;
@@ -108,5 +119,5 @@ const Row = memo(function Row({ k, ro, item, index, render }: { k: string | numb
     ro.observe(n);
     return () => ro.unobserve(n);
   }, [ro]);
-  return <div ref={ref} data-k={k} className="row-wrap">{render(item, index)}</div>;
+  return <div ref={ref} data-k={k} className={enter ? "row-wrap enter" : "row-wrap"}>{render(item, index)}</div>;
 });

@@ -8,7 +8,8 @@ import { StdioTransport } from "./acp/tauriStdio";
 import { browser, browserClientMeta } from "./browser/bridge";
 const BrowserPanel = lazy(() => import("./components/BrowserPanel").then((m) => ({ default: m.BrowserPanel })));
 const CliSetup = lazy(() => import("./components/CliSetup"));
-import { Command, CommandPalette } from "./components/CommandPalette";
+import type { Command } from "./components/CommandPalette";
+const CommandPalette = lazy(() => import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })));
 import { ComposerMenu } from "./components/ComposerMenu";
 import { ModelControls } from "./components/ModelControls";
 import { optionFor, updateSessionOptions } from "./lib/sessionOptions";
@@ -27,7 +28,7 @@ import { Icon } from "./components/Icon";
 import { Markdown } from "./components/Markdown";
 import { PermissionModal } from "./components/Permission";
 import { LogoMark } from "./components/LogoMark";
-import { PlanApprovalModal } from "./components/PlanApproval";
+const PlanApprovalModal = lazy(() => import("./components/PlanApproval").then((m) => ({ default: m.PlanApprovalModal })));
 import { Sidebar } from "./components/Sidebar";
 import { ToolCard } from "./components/ToolCard";
 import { VirtualList } from "./components/VirtualList";
@@ -1320,7 +1321,7 @@ export default function App() {
         </main>
       )}
       {view === "chat" && panel && <Suspense fallback={null}><BrowserPanel plan={sess.plan} sessionId={activeChat?.sessionId} cwd={active?.project.cwd} focus={panelPick} onClose={() => setPanel(false)} /></Suspense>}
-      {palette && <CommandPalette commands={paletteCommands} onClose={() => setPalette(false)} />}
+      {palette && <Suspense fallback={null}><CommandPalette commands={paletteCommands} onClose={() => setPalette(false)} /></Suspense>}
       {pairReq && (
         <div className="modal-bg">
           <div className="modal" role="dialog" aria-label="Pair device" data-testid="pair-request">
@@ -1334,7 +1335,7 @@ export default function App() {
         </div>
       )}
       {perm && <PermissionModal req={perm.req} onAnswer={(o) => perm.resolve(o)} />}
-      {planAsk && (
+      {planAsk && (<Suspense fallback={null}>
         <PlanApprovalModal
           plan={planAsk.req.planContent ?? ""}
           onAnswer={(r) => {
@@ -1342,7 +1343,7 @@ export default function App() {
             setPlanQueue((pending) => pending.slice(1));
           }}
         />
-      )}
+      </Suspense>)}
     </div>
   );
 }

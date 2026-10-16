@@ -13,7 +13,9 @@ const budgets: { dir: string; label: string; entry: RegExp; entryMax: number; to
   // Includes the project terminal toggle, CLI session sync, browser tools, per-chat model and permission controls, Local/Public, background settings and attachments.
   // all js 67 KB: the side panel is lazy now (entry stays under 56 KB), but plan approval, the file tree,
   // multiple terminals and the animated logo mark are real new code (~1 KB gz over the old 65 KB total).
-  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 56 * KB, totalJsMax: 67 * KB, cssMax: 11 * KB },
+  // all js 72 KB: thinking slider, context meter, price list, jump-to-latest (~3.5 KB gz). The command palette,
+  // plan approval and thinking popover moved to lazy chunks so the entry stays under 56 KB.
+  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 56 * KB, totalJsMax: 72 * KB, cssMax: 11 * KB },
   // Redesigned chat UI with attachments and sheets.
   { dir: "dist-mobile/assets", label: "mobile", entry: /^mobile-.*\.js$/, entryMax: 31 * KB, totalJsMax: 33 * KB, cssMax: 13 * KB },
 ];

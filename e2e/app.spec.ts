@@ -71,15 +71,22 @@ test("desktop model and thinking controls follow the selected chat", async ({ pa
   await boot(page);
   await ask(page, "first chat");
   await expect(page.getByTestId("model-trigger")).toContainText("First");
-  await expect(page.getByTestId("thinking-level")).toHaveValue("high");
+  await expect(page.getByTestId("thinking-chip")).toContainText("High");
+  await expect(page.getByTestId("context-meter")).toHaveAttribute("title", /52,300 \/ 200,000 tokens/);
   await page.getByTestId("model-trigger").click();
   await page.getByTestId("model-choice").filter({ hasText: "Second" }).click();
   await expect(page.getByTestId("model-trigger")).toContainText("Second");
-  await page.getByTestId("thinking-level").selectOption("low");
-  await expect(page.getByTestId("thinking-level")).toHaveValue("low");
+  await page.getByTestId("thinking-chip").click();
+  await expect(page.getByTestId("thinking-pop")).toContainText("High");
+  await page.getByTestId("thinking-slider").focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByTestId("thinking-chip")).toContainText("Low");
+  await page.keyboard.press("Escape");
+  // New chats start with the last model picked.
   await page.getByTestId("new-chat").first().click();
   await ask(page, "other chat");
-  await expect(page.getByTestId("model-trigger")).toContainText("First");
+  await expect(page.getByTestId("model-trigger")).toContainText("Second");
   await page.getByTestId("chat").filter({ hasText: "first chat" }).click();
   await expect(page.getByTestId("model-trigger")).toContainText("Second");
 });

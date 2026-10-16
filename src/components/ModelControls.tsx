@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import type { ConfigOption } from "../acp/types";
 import { optionFor } from "../lib/sessionOptions";
 import { Icon } from "./Icon";
-import { ThinkingControl } from "./ThinkingControl";
+const ThinkingControl = lazy(() => import("./ThinkingControl").then((m) => ({ default: m.ThinkingControl })));
 import { ContextMeter } from "./ContextMeter";
 
 export function ModelControls({ options, onSelect, children, context }: { options: ConfigOption[]; onSelect: (id: string, value: string) => void; children?: ReactNode; context?: { used: number; max?: number } }) {
@@ -32,7 +32,7 @@ export function ModelControls({ options, onSelect, children, context }: { option
           <p className="muted small">Context is selected automatically from available model information.</p>
         </div>}
       </div>}
-      {model && <ThinkingControl option={reasoning} modelName={active?.name ?? active?.value} onSelect={(v) => onSelect(reasoning!.id, v)} onModel={() => { setSearch(""); setOpen(true); }} />}
+      {model && <Suspense fallback={null}><ThinkingControl option={reasoning} modelName={active?.name ?? active?.value} onSelect={(v) => onSelect(reasoning!.id, v)} onModel={() => { setSearch(""); setOpen(true); }} /></Suspense>}
       {context && <ContextMeter used={context.used} max={context.max} />}
       {children}
     </div>

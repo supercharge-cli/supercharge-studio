@@ -76,7 +76,7 @@ wss.on("connection", (ws: WebSocket) => {
   const modesFor = (sid: string) => ({ currentModeId: modeChoices.get(sid) ?? "default", availableModes: [{ id: "default", name: "Agent", description: "Work on the task" }, { id: "plan", name: "Plan", description: "Plan before changing files" }] });
   const optionsFor = (sid: string) => [
     { id: "model", name: "Model", currentValue: modelChoices.get(sid) ?? "studio-test-1", options: [{ value: "studio-test-1", name: "First" }, { value: "studio-test-2", name: "Second" }] },
-    { id: "reasoning_effort", name: "Reasoning Effort", currentValue: reasoningChoices.get(sid) ?? "high", options: [{ value: "high", name: "High" }, { value: "low", name: "Low" }] },
+    { id: "reasoning_effort", name: "Reasoning Effort", currentValue: reasoningChoices.get(sid) ?? "high", options: [{ value: "off", name: "Off" }, { value: "low", name: "Low" }, { value: "medium", name: "Medium" }, { value: "high", name: "High" }, { value: "xhigh", name: "Extra High" }] },
     { id: "permission_mode", name: "Tool permissions", currentValue: permissionChoices.get(sid) ?? "ask", options: [{ value: "ask", name: "Ask" }, { value: "always-approve", name: "Always approve" }] },
   ];
   const send = (m: any) => ws.send(JSON.stringify({ jsonrpc: "2.0", ...m }));
@@ -153,6 +153,7 @@ wss.on("connection", (ws: WebSocket) => {
           sessionId: `fake-${st.n}`,
           configOptions: optionsFor(`fake-${st.n}`),
           modes: modesFor(`fake-${st.n}`),
+          models: { currentModelId: "studio-test-1", availableModels: [{ modelId: "studio-test-1", name: "First", _meta: { totalContextTokens: 200000 } }, { modelId: "studio-test-2", name: "Second", _meta: { totalContextTokens: 1000000 } }] },
         });
       case "session/set_config_option": {
         const sid = m.params?.sessionId;
@@ -305,6 +306,7 @@ wss.on("connection", (ws: WebSocket) => {
         if (!/stream|tool|perm|slow|browser|modelfail|edit|long|tokens/.test(text)) say(sid, `echo: ${text}`);
         // Usage as an extension notification (turn report) and on the prompt result.
         const usage = { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 200, reasoningTokens: 50, modelCalls: 1, modelUsage: { "fake-model": { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 200, reasoningTokens: 50, modelCalls: 1 } } };
+        send({ method: "_supercharge/session_notification", params: { sessionId: sid, update: { sessionUpdate: "response_completed", usage: { input_tokens: 52000, output_tokens: 300, cache_read_input_tokens: 0 } } } });
         send({ method: "_supercharge/session/update", params: { sessionId: sid, update: { sessionUpdate: "turn_completed", prompt_id: `p${nextId++}`, stop_reason: "end_turn", usage } } });
         return reply({ stopReason: "end_turn", usage });
       }
