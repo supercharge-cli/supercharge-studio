@@ -53,3 +53,17 @@ test("/help lists commands and agent commands still go to the agent", async ({ p
   await expect(page.locator(".messages")).toContainText("/models");
   await expect(page.locator(".messages")).toContainText("Configure provider");
 });
+
+test("composer focus is a single subtle outer border, no inner textarea ring", async ({ page }) => {
+  await boot(page);
+  const box = page.locator(".composer textarea");
+  const before = await page.locator(".composer").evaluate((el) => getComputedStyle(el).borderColor);
+  await box.click();
+  const ta = await box.evaluate((el) => { const c = getComputedStyle(el); return { outline: c.outlineStyle, border: c.borderTopWidth, shadow: c.boxShadow }; });
+  expect(ta).toEqual({ outline: "none", border: "0px", shadow: "none" });
+  const outer = await page.locator(".composer").evaluate((el) => { const c = getComputedStyle(el); return { color: c.borderColor, width: c.borderTopWidth, shadow: c.boxShadow }; });
+  expect(outer.width).toBe("1px");
+  expect(outer.color).not.toBe(before);
+  expect(outer.shadow).not.toContain("0px 0px 0px");
+  await page.locator(".composer-wrap").screenshot({ path: "/workspace/out/cm2-composer-focus.png" });
+});

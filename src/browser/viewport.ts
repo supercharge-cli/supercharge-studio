@@ -11,12 +11,16 @@ export function parseSize(s: string): Size | null {
   return width >= MIN_VP && height >= MIN_VP / 2 && width <= MAX_VP && height <= MAX_VP ? { width, height } : null;
 }
 
-/** Scale (never above 1) and centered placement of `vp` inside `area` with `pad` px around. */
-export function fitViewport(vp: Size, area: { x: number; y: number; width: number; height: number }, pad = 16) {
+/** Scale (fixed `zoom`, or fit: never above 1) and centered placement of `vp` inside `area` with `pad` px around. */
+export function fitViewport(vp: Size, area: { x: number; y: number; width: number; height: number }, pad = 16, zoom?: number, capped = false) {
   const aw = Math.max(1, area.width - 2 * pad), ah = Math.max(1, area.height - 2 * pad);
-  const scale = Math.min(1, aw / vp.width, ah / vp.height);
+  const fit = Math.min(1, aw / vp.width, ah / vp.height);
+  const scale = zoom && zoom > 0 ? (capped ? Math.min(zoom, fit) : zoom) : fit;
   const width = Math.round(vp.width * scale), height = Math.round(vp.height * scale);
-  return { scale, width, height, x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2) };
+  // Centered when it fits; pinned to the top-left padding when it overflows (the area scrolls).
+  const x = width + 2 * pad <= area.width ? Math.round(area.x + (area.width - width) / 2) : area.x + pad;
+  const y = height + 2 * pad <= area.height ? Math.round(area.y + (area.height - height) / 2) : area.y + pad;
+  return { scale, width, height, x, y, fit };
 }
 
 /** CSS px of the page per pixel of a screenshot `imgWidth` wide of a viewport `cssWidth` wide. */
@@ -29,3 +33,4 @@ export function cropRect(box: { x: number; y: number; width: number; height: num
   const w = Math.min(img.width - x, Math.ceil((box.width + 2 * pad) * k)), h = Math.min(img.height - y, Math.ceil((box.height + 2 * pad) * k));
   return w > 0 && h > 0 ? { x, y, width: w, height: h } : null;
 }
+

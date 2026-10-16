@@ -93,6 +93,20 @@ describe("viewport math", () => {
     expect(f.y).toBe(48 + Math.round((812 - f.height) / 2));
     expect(fitViewport({ width: 800, height: 600 }, { x: 0, y: 0, width: 2000, height: 2000 }).scale).toBe(1);
   });
+  it("fixed zoom: scales exactly, pins to the padding when it overflows, caps to fit when asked", () => {
+    const panel = { x: 0, y: 0, width: 520, height: 700 };
+    const fit = fitViewport({ width: 1920, height: 1080 }, panel, 12);
+    expect(fit.scale).toBeCloseTo(496 / 1920);
+    expect(fit.x).toBe(12);
+    expect(fit.y).toBe(Math.round((700 - fit.height) / 2));
+    const half = fitViewport({ width: 1920, height: 1080 }, panel, 12, 0.5);
+    expect(half.scale).toBe(0.5);
+    expect(half.width).toBe(960);
+    expect([half.x, half.y]).toEqual([12, Math.round((700 - 540) / 2)]);
+    expect(fitViewport({ width: 1920, height: 1080 }, panel, 12, 1, true).scale).toBeCloseTo(fit.scale);
+    // Page CSS px = frame px / scale, so the agent's coordinates stay in the full viewport.
+    expect(Math.round(fit.width / fit.scale)).toBe(1920);
+  });
   it("maps screenshots to CSS px and crops", () => {
     expect(cssPerPx(1920, 1280)).toBe(1.5);
     expect(cropRect({ x: 100, y: 50, width: 200, height: 40 }, 1920, { width: 960, height: 540 }, 0)).toEqual({ x: 50, y: 25, width: 100, height: 20 });

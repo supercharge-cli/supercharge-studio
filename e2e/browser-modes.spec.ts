@@ -14,24 +14,39 @@ async function boot(page: Page) {
   await expect(page.locator(".status")).toHaveText("open");
 }
 
-test("computer mode shows a desktop-size page scaled to fit and returns to the panel", async ({ page }) => {
+test("computer mode shows a desktop-size page scaled inside the side panel", async ({ page }) => {
   await boot(page);
   await page.getByTitle("Show side panel (Ctrl \\)").click();
   await page.getByLabel("Address").fill(PAGE);
   await page.getByLabel("Address").press("Enter");
   await page.getByTestId("computer-toggle").click();
-  await expect(page.getByTestId("computer-mode")).toBeVisible();
-  await page.getByLabel("Viewport size").selectOption("1920x1080");
+  await expect(page.getByTestId("computer-toggle")).toHaveAttribute("aria-pressed", "true");
+  const mode = page.getByTestId("computer-mode");
+  await expect(mode).toBeVisible();
+  const panel = (await page.locator(".rpanel").boundingBox())!;
+  const box = (await mode.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(panel.x - 1);
+  expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width + 1);
+  await page.getByLabel("Viewport width").fill("1920");
+  await page.getByLabel("Viewport height").fill("1080");
+  await page.getByLabel("Viewport height").press("Enter");
+  await expect(page.getByLabel("Zoom")).toHaveValue("0");
   const stage = (await page.locator(".bm-stage").boundingBox())!;
-  expect(Math.abs(stage.width / stage.height - 1920 / 1080)).toBeLessThan(0.01);
-  expect(stage.width).toBeLessThan(1360);
-  await expect(page.getByTestId("computer-zoom")).toHaveText(`${Math.round((stage.width / 1920) * 100)}%`);
-  await page.screenshot({ path: "/workspace/out/bm-computer.png" });
-  await page.getByLabel("Custom size").fill("1280x800");
-  await page.getByLabel("Custom size").press("Enter");
-  await expect(page.getByLabel("Viewport size")).toHaveValue("1280x800");
-  await page.getByTestId("computer-exit").click();
-  await expect(page.getByTestId("computer-mode")).toHaveCount(0);
+  expect(Math.abs(stage.width / stage.height - 1920 / 1080)).toBeLessThan(0.02);
+  expect(stage.x).toBeGreaterThanOrEqual(panel.x);
+  expect(stage.x + stage.width).toBeLessThanOrEqual(panel.x + panel.width);
+  await expect(page.getByTestId("computer-zoom")).toHaveText(`${Math.round(((stage.width - 2) / 1920) * 100)}%`);
+  await page.screenshot({ path: "/workspace/out/cm2-computer-fit.png" });
+  await page.getByLabel("Viewport width").fill("1280");
+  await page.getByLabel("Viewport height").fill("800");
+  await page.getByLabel("Viewport height").press("Enter");
+  const s2 = (await page.locator(".bm-stage").boundingBox())!;
+  expect(Math.abs(s2.width / s2.height - 1280 / 800)).toBeLessThan(0.02);
+  await page.getByLabel("Zoom").selectOption("0.5");
+  await expect(page.getByTestId("computer-zoom")).toHaveText("50%");
+  await page.screenshot({ path: "/workspace/out/cm2-computer-50.png" });
+  await page.getByTestId("computer-toggle").click();
+  await expect(mode).toHaveCount(0);
   await expect(page.locator(".webslot iframe")).toHaveCount(1);
 });
 

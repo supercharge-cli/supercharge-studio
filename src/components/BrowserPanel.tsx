@@ -216,14 +216,12 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
             </span>
           </form>
           {design && <div className="bm-hint small" data-testid="design-hint">Click an element to attach it to your message. Shift+click picks several, Enter attaches them, Esc stops.</div>}
-          <div ref={slot} className="webslot">
+          {/* The slot stays mounted in computer mode so the native view (page and session) is kept. */}
+          <div ref={slot} className={`webslot${vp ? " computer" : ""}`}>
             {!isDesktop() && !vp && <iframe title="browser" src={url} sandbox="allow-scripts allow-forms allow-same-origin" />}
-            {vp && <div className="empty small"><Icon name="monitor" size={22} /><p>Showing in computer mode ({vp.width}×{vp.height}).</p></div>}
+            {vp && <Suspense fallback={null}><ComputerStage vp={vp} stage={stage} onSize={setVp} /></Suspense>}
           </div>
-          <Suspense fallback={null}>
-            {dev && <DevDrawer />}
-            {vp && <ComputerStage vp={vp} stage={stage} onSize={setVp} onExit={() => setVp(null)} />}
-          </Suspense>
+          <Suspense fallback={null}>{dev && <DevDrawer />}</Suspense>
         </>
       ) : (
         <div className="plan-panel" data-testid="plan-panel">

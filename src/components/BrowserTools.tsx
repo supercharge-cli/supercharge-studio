@@ -3,51 +3,60 @@ import { useEffect, useRef, useState } from "react";
 import { browser } from "../browser/bridge";
 import { DevStore, failed, filterLogs, formatLogs, formatNet } from "../browser/devlog";
 import { designMarkdown, PICK_OFF, PICK_TAKE, pickerScript, pickName, type Pick } from "../browser/picker";
-import { cropRect, fitViewport, parseSize, PRESETS, type Size } from "../browser/viewport";
+import { cropRect, fitViewport, parseSize, type Size } from "../browser/viewport";
 import { invoke, isDesktop } from "../lib/desktop";
 import { Icon } from "./Icon";
 
-const screenSize = (): Size => ({ width: Math.round(window.screen?.width || 1920), height: Math.round(window.screen?.height || 1080) });
+const ZOOMS = [{ v: 0, label: "Fit to window" }, { v: 0.5, label: "50%" }, { v: 0.75, label: "75%" }, { v: 1, label: "100%" }];
 
-/** Computer mode: a desktop-size page centered over the app, scaled to fit. The native view follows `stage`. */
-export function ComputerStage({ vp, onSize, onExit, stage }: { vp: Size; onSize: (s: Size) => void; onExit: () => void; stage: React.RefObject<HTMLDivElement | null> }) {
+/** Computer mode, inside the side panel: a desktop-size page scaled into the panel, framed and centered.
+ *  The native view follows `stage` and is zoomed so its CSS viewport is exactly `vp`. */
+export function ComputerStage({ vp, onSize, stage }: { vp: Size; onSize: (s: Size) => void; stage: React.RefObject<HTMLDivElement | null> }) {
   const area = useRef<HTMLDivElement>(null);
-  const [fit, setFit] = useState(() => fitViewport(vp, { x: 0, y: 0, width: innerWidth, height: innerHeight - 48 }));
-  const [custom, setCustom] = useState("");
+  const [zoom, setZoom] = useState(0);
+  const [box, setBox] = useState({ width: 0, height: 0 });
+  const [w, setW] = useState(String(vp.width)), [h, setH] = useState(String(vp.height));
+  useEffect(() => { setW(String(vp.width)); setH(String(vp.height)); }, [vp.width, vp.height]);
+  const desktop = isDesktop();
+  // The native view can't scroll inside the panel, so on desktop a fixed zoom is capped to what fits.
+  const f = fitViewport(vp, { x: 0, y: 0, ...box }, 12, zoom, desktop);
   useEffect(() => {
-    const place = () => {
-      const r = area.current?.getBoundingClientRect();
-      if (!r) return;
-      const f = fitViewport(vp, { x: r.left, y: r.top, width: r.width, height: r.height });
-      setFit(f);
-      void browser.setBounds({ x: f.x, y: f.y, width: f.width, height: f.height }).then(() => browser.setZoom(f.scale));
-    };
-    place();
-    addEventListener("resize", place);
-    return () => removeEventListener("resize", place);
-  }, [vp.width, vp.height]);
-  const scr = screenSize();
-  const opts = [scr, ...PRESETS.filter((p) => p.width !== scr.width || p.height !== scr.height)];
-  const key = (s: Size) => `${s.width}x${s.height}`;
+    const el = area.current;
+    if (!el) return;
+    const measure = () => setBox({ width: el.clientWidth, height: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    addEventListener("resize", measure);
+    return () => { ro.disconnect(); removeEventListener("resize", measure); };
+  }, []);
+  useEffect(() => {
+    const r = area.current?.getBoundingClientRect();
+    if (!r || !box.width) return;
+    const b = { x: Math.round(r.left + f.x + 1), y: Math.round(r.top + f.y + 1), width: f.width, height: f.height };
+    void browser.setBounds(b).then(() => browser.setZoom(f.scale));
+  }, [f.x, f.y, f.width, f.height, f.scale, box.width]);
+  const commit = () => {
+    const s = parseSize(`${w}x${h}`);
+    if (!s) { setW(String(vp.width)); setH(String(vp.height)); }
+    else if (s.width !== vp.width || s.height !== vp.height) onSize(s);
+  };
+  const num = (v: string, set: (x: string) => void, label: string) => (
+    <input inputMode="numeric" aria-label={label} value={v} onChange={(e) => set(e.target.value.replace(/\D/g, "").slice(0, 4))} onBlur={(e) => { if (!e.currentTarget.parentElement?.contains(e.relatedTarget as Node)) commit(); }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }} />
+  );
   return (
     <div className="bm-computer" data-testid="computer-mode">
       <div className="bm-bar">
-        <Icon name="monitor" size={14} />
-        <select aria-label="Viewport size" value={opts.some((o) => key(o) === key(vp)) ? key(vp) : "custom"} onChange={(e) => { const s = parseSize(e.target.value); if (s) onSize(s); }}>
-          {opts.map((o, i) => <option key={key(o)} value={key(o)}>{o.width} × {o.height}{i === 0 ? " (your screen)" : ""}</option>)}
-          {!opts.some((o) => key(o) === key(vp)) && <option value="custom">{vp.width} × {vp.height}</option>}
+        {num(w, setW, "Viewport width")}<span>×</span>{num(h, setH, "Viewport height")}
+        <span className="muted small" data-testid="computer-zoom">{Math.round(f.scale * 100)}%</span>
+        <select aria-label="Zoom" value={zoom} onChange={(e) => setZoom(+e.target.value)}>
+          {ZOOMS.map((z) => <option key={z.v} value={z.v}>{z.label}</option>)}
         </select>
-        <form onSubmit={(e) => { e.preventDefault(); const s = parseSize(custom); if (s) { onSize(s); setCustom(""); } }}>
-          <input className="bm-custom" placeholder="Custom, e.g. 1600x900" value={custom} onChange={(e) => setCustom(e.target.value)} aria-label="Custom size" />
-        </form>
-        <span className="muted small" data-testid="computer-zoom">{Math.round(fit.scale * 100)}%</span>
-        <div style={{ flex: 1 }} />
-        <span className="muted small">You and the agent see this {vp.width}×{vp.height} page</span>
-        <button className="ghost sm" data-testid="computer-exit" onClick={onExit}>Back to panel</button>
       </div>
-      <div className="bm-area" ref={area}>
-        <div ref={stage} className="bm-stage" style={{ left: fit.x, top: fit.y, width: fit.width, height: fit.height, position: "fixed" }}>
-          {!isDesktop() && <iframe title="browser" src={browser.url} style={{ width: vp.width, height: vp.height, transform: `scale(${fit.scale})`, transformOrigin: "0 0", border: 0 }} />}
+      <div className="bm-area" ref={area} style={{ overflow: desktop ? "hidden" : "auto" }}>
+        <div style={{ width: f.x + f.width + 14, height: f.y + f.height + 14, pointerEvents: "none" }} />
+        <div ref={stage} className="bm-stage" style={{ left: f.x, top: f.y, width: f.width, height: f.height }}>
+          {!desktop && <iframe title="browser" src={browser.url} style={{ width: vp.width, height: vp.height, transform: `scale(${f.scale})`, transformOrigin: "0 0", border: 0 }} />}
         </div>
       </div>
     </div>
