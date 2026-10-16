@@ -661,7 +661,8 @@ export default function App() {
   async function newWorktreeChat(projectId: string) {
     const f = findProject(dataRef.current, projectId);
     if (!f) return;
-    const name = prompt("Worktree name (becomes branch supercharge/<name>)", `chat-${new Date().toISOString().slice(5, 16).replace(/[-T:]/g, "")}`);
+    const { askName, worktreeNameError } = await import("./lib/askName");
+    const name = await askName({ title: "New chat in a worktree", label: "Runs on its own branch supercharge/<name>, in parallel with other chats", initial: `chat-${new Date().toISOString().slice(5, 16).replace(/[-T:]/g, "")}`, validate: worktreeNameError });
     if (!name) return;
     try {
       const wt = await git.worktreeAdd(normCwd(f.project.cwd), name);

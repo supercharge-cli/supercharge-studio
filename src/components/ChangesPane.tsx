@@ -77,9 +77,10 @@ export function ChangesPane({ cwd, onCount }: { cwd?: string; onCount?: (n: numb
       setMsg((ai && ai.trim()) || heuristicMessage(files, parseUnifiedDiff(d)));
     } finally { setBusy(""); }
   };
-  const newBranch = () => {
-    const n = prompt("New branch name");
-    if (n) void run("branch", () => git.checkout(root, n.trim(), true), `Switched to ${n.trim()}`);
+  const newBranch = async () => {
+    const { askName, branchError } = await import("../lib/askName");
+    const n = await askName({ title: "New branch", label: `Created from ${st?.branch ?? "HEAD"} and checked out`, placeholder: "feature/my-change", validate: (v) => branchError(v) ?? (branches.includes(v.trim()) ? "A branch with that name exists" : null) });
+    if (n) void run("branch", () => git.checkout(root, n, true), `Switched to ${n}`);
   };
 
   return (
@@ -90,7 +91,7 @@ export function ChangesPane({ cwd, onCount }: { cwd?: string; onCount?: (n: numb
           data-testid="git-branch"
           value={st?.branch ?? ""}
           onFocus={() => void git.branches(root).then(setBranches).catch(() => {})}
-          onChange={(e) => { if (e.target.value === "__new") newBranch(); else void run("switch", () => git.checkout(root, e.target.value, false), `Switched to ${e.target.value}`); }}
+          onChange={(e) => { if (e.target.value === "__new") void newBranch(); else void run("switch", () => git.checkout(root, e.target.value, false), `Switched to ${e.target.value}`); }}
         >
           {[...new Set([st?.branch ?? "", ...branches])].filter(Boolean).map((b) => <option key={b} value={b}>{b}</option>)}
           <option value="__new">+ New branch…</option>

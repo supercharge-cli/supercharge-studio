@@ -108,3 +108,26 @@ test("a turn that edits files shows 'N files changed — Review' which opens the
   await expect(page.getByTestId("changes-pane")).toBeVisible();
   await expect(page.getByTestId("change-file")).toHaveCount(2);
 });
+
+test("new branch uses the in-app dialog with inline validation, Esc cancels and Enter creates", async ({ page }) => {
+  const { d, g } = makeRepo();
+  const base = serve(d, g);
+  await boot(page, d, (c, a) => (c === "git_checkout" ? (execFileSync("git", ["-C", d, "switch", ...(a.create ? ["-c"] : []), a.branch]), null) : base(c, a)));
+  await page.getByTitle("Show side panel (Ctrl \\)").click();
+  await page.getByTestId("changes-tab").click();
+  await page.getByTestId("git-branch").selectOption("__new");
+  const dlg = page.getByTestId("name-dialog");
+  await expect(dlg).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dlg).toHaveCount(0);
+  await page.getByTestId("git-branch").selectOption("__new");
+  await page.getByTestId("name-input").fill("bad name");
+  await expect(page.getByTestId("name-error")).toHaveText("No spaces");
+  await expect(page.getByTestId("name-ok")).toBeDisabled();
+  await page.screenshot({ path: "/workspace/out/g-name-dialog.png" });
+  await page.getByTestId("name-input").fill("feature/dialog");
+  await page.getByTestId("name-input").press("Enter");
+  await expect(dlg).toHaveCount(0);
+  await expect(page.getByTestId("git-note")).toHaveText("Switched to feature/dialog");
+  expect(g("branch", "--show-current").trim()).toBe("feature/dialog");
+});
