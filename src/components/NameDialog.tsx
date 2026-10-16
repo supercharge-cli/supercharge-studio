@@ -10,12 +10,17 @@ export function NameDialog({ title, label, initial = "", placeholder, ok = "Crea
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => pushOverlay(), []);
   useEffect(() => { input.current?.focus(); input.current?.select(); }, []);
+  // Esc cancels even if focus is elsewhere (capture, so app shortcuts don't see it).
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onDone(null); } };
+    window.addEventListener("keydown", k, true);
+    return () => window.removeEventListener("keydown", k, true);
+  }, [onDone]);
   const err = validate?.(v) ?? (v.trim() ? null : "Enter a name");
   const submit = () => { setTouched(true); if (!err) onDone(v.trim()); };
   return (
     <div className="modal-bg" data-testid="name-dialog" onMouseDown={(e) => { if (e.target === e.currentTarget) onDone(null); }}>
-      <div className="modal name-dialog" role="dialog" aria-modal="true" aria-label={title}
-        onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onDone(null); } }}>
+      <div className="modal name-dialog" role="dialog" aria-modal="true" aria-label={title}>
         <h3>{title}</h3>
         <form onSubmit={(e) => { e.preventDefault(); submit(); }}>
           {label && <label className="small muted" htmlFor="name-dialog-input">{label}</label>}
