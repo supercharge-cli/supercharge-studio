@@ -489,3 +489,8 @@ button:active:not(:disabled){transform:scale(.97)}
 .bm-log{display:flex;gap:8px;padding:2px 8px;border-bottom:1px solid var(--line)}.bm-log>span{color:var(--muted);flex:none;min-width:34px}
 .bm-log code{flex:1;white-space:pre-wrap;word-break:break-all}.bm-log.warn{background:rgba(255,180,0,.08)}.bm-log.error{background:rgba(229,72,77,.1);color:#e5484d}
 .bm-log code{background:none;border:0;padding:0;font-size:11px}.bm-dev-bar label{display:flex;align-items:center;gap:4px}.bm-dev-bar input{width:auto;margin:0}
+/* Changes / worktrees (always-loaded bits) */
+.tab-badge{display:inline-block;min-width:16px;padding:0 4px;margin-left:4px;border-radius:8px;background:var(--accent,#6fa8dc);color:#fff;font-size:10px;line-height:16px;text-align:center}
+.turn-changes{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;margin:4px 0}
+.wt-badge{font:10px/1 ui-monospace,monospace;padding:2px 5px;border-radius:6px;border:1px solid var(--line);color:var(--muted);margin-left:4px;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis}
+.wt-acts{display:inline-flex;align-items:center;gap:4px;margin-left:8px}

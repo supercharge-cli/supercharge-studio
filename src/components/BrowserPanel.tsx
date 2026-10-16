@@ -14,7 +14,10 @@ import type { Size } from "../browser/viewport";
 // The terminal pulls in xterm; load it only when the tab is opened.
 const TerminalPane = lazy(() => import("./TerminalPane").then((m) => ({ default: m.TerminalPane })));
 
-type PanelTab = "browser" | "plan" | "terminal" | "files";
+const ChangesPane = lazy(() => import("./ChangesPane").then((m) => ({ default: m.ChangesPane })));
+import { git, gitAvailable } from "../lib/git";
+
+type PanelTab = "browser" | "plan" | "terminal" | "files" | "changes";
 
 /** Right panel: browser, plan, project files, and one or more local terminals. */
 export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: PlanEntry[]; sessionId?: string; cwd?: string; focus?: { tab: PanelTab; n: number } | null; onClose: () => void }) {
@@ -24,6 +27,17 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
   const [terms, setTerms] = useState<{ id: string; title: string }[]>([{ id: "t1", title: "Terminal 1" }]);
   const [activeTerm, setActiveTerm] = useState("t1");
   const [picker, setPicker] = useState(false);
+  // Changed-file count for the Changes tab badge.
+  const [nChanges, setNChanges] = useState(0);
+  useEffect(() => {
+    if (!cwd || !gitAvailable()) return;
+    let gone = false;
+    const on = () => void git.status(cwd).then((s) => { if (!gone) setNChanges(s.repo ? s.files.length : 0); }).catch(() => {});
+    on();
+    const t = setInterval(on, 8000);
+    window.addEventListener("sc-changes-refresh", on);
+    return () => { gone = true; clearInterval(t); window.removeEventListener("sc-changes-refresh", on); };
+  }, [cwd]);
   const termFocus = useRef<number | null>(null);
   const aside = useRef<HTMLElement>(null);
   const overlays = useOverlayCount();
@@ -160,6 +174,7 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
       <div className="tabs">
         <button className={tab === "browser" ? "on" : ""} onClick={() => { setPicker(false); setTab("browser"); }}><Icon name="globe" size={14} /> Browser</button>
         <button data-testid="plan-tab" className={tab === "plan" ? "on" : ""} onClick={() => { setPicker(false); setTab("plan"); }}><Icon name="file" size={14} /> Plan{plan.length ? ` (${plan.length})` : ""}</button>
+        {gitAvailable() && <button data-testid="changes-tab" className={tab === "changes" ? "on" : ""} onClick={() => { setPicker(false); setTab("changes"); }}><Icon name="code" size={14} /> Changes{nChanges ? <span className="tab-badge" data-testid="changes-badge">{nChanges}</span> : null}</button>}
         {isDesktop() && <button data-testid="files-tab" className={tab === "files" ? "on" : ""} onClick={() => { setPicker(false); setTab("files"); }}><Icon name="folder" size={14} /> File tree</button>}
         {isDesktop() && terms.map((t) => (
           <button key={t.id} data-testid="terminal-tab" className={tab === "terminal" && t.id === activeTerm ? "on" : ""} onClick={() => { setPicker(false); setActiveTerm(t.id); setTab("terminal"); }}>
@@ -177,11 +192,12 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
           <p>Choose a tab to open in the side pane.</p>
           <div className="tab-picker-grid">
             {([
+              ["changes", "code", "Changes"],
               ["files", "folder", "File tree"],
               ["plan", "file", "Plan"],
               ["terminal", "terminal", "Terminal"],
               ["browser", "globe", "Browser"],
-            ] as const).filter(([id]) => isDesktop() || id === "browser" || id === "plan").map(([id, icon, label]) => (
+            ] as const).filter(([id]) => isDesktop() || id === "browser" || id === "plan" || (id === "changes" && gitAvailable())).map(([id, icon, label]) => (
               <button key={id} onClick={() => { setPicker(false); if (id === "terminal") addTerm(); else setTab(id); }}>
                 <Icon name={icon} size={18} />
                 {label}
@@ -198,7 +214,7 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
           </Suspense>
         </div>
       )}
-      {picker ? null : tab === "files" && isDesktop() ? <FilesPane cwd={cwd} /> : tab === "terminal" ? null : tab === "browser" ? (
+      {picker ? null : tab === "changes" && gitAvailable() ? <Suspense fallback={null}><ChangesPane cwd={cwd} onCount={setNChanges} /></Suspense> : tab === "files" && isDesktop() ? <FilesPane cwd={cwd} /> : tab === "terminal" ? null : tab === "browser" ? (
         <>
           <form
             className="urlbar"

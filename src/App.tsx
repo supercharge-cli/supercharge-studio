@@ -37,7 +37,8 @@ import { effectiveRelay, ensureHostId, needsFirewall } from "./lib/reach";
 import { type Attachment, fmtSize, fromFile, isImage, rejectReason, toBlocks } from "./lib/attachments";
 import { FileEntry, projectFiles, projectReadText } from "./lib/desktop";
 import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type CliStatus, agentLogNote, agentRestart, appConfig, ensureAgent, gateway, invoke, isDesktop, keychainGet, keychainSet, listen, mcpUrl, pickFolder, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
-import { AppData, applyTree, ensureFolderProject, findProject, load, mergeCliSessions, normCwd, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
+import { git, refreshChanges, commitMessageHook, editedPaths } from "./lib/git";
+import { AppData, type Chat, applyTree, ensureFolderProject, findProject, load, mergeCliSessions, normCwd, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
 import { contextFromUsageNotification, isResponseCompleted, usedFromResponseCompleted } from "./lib/contextUsage";
 import { isTerminalTarget } from "./lib/terminalInput";
@@ -70,8 +71,8 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [sideCollapsed, setSideCollapsed] = useState(false);
   const [panel, setPanel] = useState(false);
-  const [panelPick, setPanelPick] = useState<{ tab: "browser" | "plan" | "terminal" | "files"; n: number } | null>(null);
-  const openPanel = (tab: "browser" | "plan" | "terminal" | "files") => { setPanel(true); setPanelPick({ tab, n: Date.now() }); };
+  const [panelPick, setPanelPick] = useState<{ tab: "browser" | "plan" | "terminal" | "files" | "changes"; n: number } | null>(null);
+  const openPanel = (tab: "browser" | "plan" | "terminal" | "files" | "changes") => { setPanel(true); setPanelPick({ tab, n: Date.now() }); };
   const [view, setViewNow] = useState<View>("chat");
   const viewRef = useRef<View>("chat");
   const setView = useCallback((v: View) => {
@@ -337,6 +338,7 @@ export default function App() {
       },
       onUpdate: (sid, u) => {
         if (replaying.current.has(sid)) return; // history re-sent while reattaching tools
+        if (oneShot.current.has(sid)) { if (u.sessionUpdate === "agent_message_chunk" && (u as any).content?.type === "text") oneShot.current.set(sid, oneShot.current.get(sid)! + (u as any).content.text); return; }
         hub.update(sid, u);
         const f = chatForSession(sid);
         if (!f) return;
@@ -616,6 +618,18 @@ export default function App() {
   }
 
   const creatingSession = useRef(new Map<string, Promise<string | null>>());
+  /** Hidden one-shot sessions (commit messages): their text is collected here, not shown. */
+  const oneShot = useRef(new Map<string, string>());
+  commitMessageHook.ask = async (diff: string) => {
+    const c = clientRef.current, f = active;
+    if (!c || !f || !diff.trim()) return null;
+    const res = await c.newSession(normCwd(activeChat?.cwd ?? f.project.cwd), { yoloMode: false }, []);
+    oneShot.current.set(res.sessionId, "");
+    try {
+      await c.prompt(res.sessionId, "Write a concise git commit message (imperative subject line under 72 characters, optional short bullet body) for this diff. Do not use any tools. Reply with only the message.\n\n```diff\n" + diff + "\n```", []);
+      return (oneShot.current.get(res.sessionId) ?? "").replace(/^```\w*\n?|```$/g, "").trim() || null;
+    } finally { oneShot.current.delete(res.sessionId); }
+  };
   async function ensureSession(projectId: string, chatId: string): Promise<string | null> {
     const c = clientRef.current;
     const found = findProject(dataRef.current, projectId);
@@ -626,7 +640,7 @@ export default function App() {
     if (pending) return pending;
     const create = (async () => {
       const mcpServers = await browserMcp(c);
-      const res = await c.newSession(normCwd(found.project.cwd), { yoloMode: dataRef.current.settings.alwaysApprove }, mcpServers);
+      const res = await c.newSession(normCwd(chat.cwd ?? found.project.cwd), { yoloMode: dataRef.current.settings.alwaysApprove }, mcpServers);
       rememberOptions(res.sessionId, res.configOptions ?? []);
       rememberModes(res.sessionId, res.modes);
       rememberWindows((res as any).models);
@@ -643,8 +657,34 @@ export default function App() {
     try { return await create; } finally { creatingSession.current.delete(chatId); }
   }
 
-  function newChat(projectId: string, focus = true) {
-    const chat = { id: uid(), title: "New chat", createdAt: Date.now(), updatedAt: Date.now() };
+  /** New chat in its own git worktree + branch, so several chats can work in parallel. */
+  async function newWorktreeChat(projectId: string) {
+    const f = findProject(dataRef.current, projectId);
+    if (!f) return;
+    const name = prompt("Worktree name (becomes branch supercharge/<name>)", `chat-${new Date().toISOString().slice(5, 16).replace(/[-T:]/g, "")}`);
+    if (!name) return;
+    try {
+      const wt = await git.worktreeAdd(normCwd(f.project.cwd), name);
+      newChat(projectId, true, { cwd: wt.path, worktree: wt, title: name });
+    } catch (e: any) { setNotice(`Could not create worktree: ${e?.message ?? e}`); }
+  }
+  async function worktreeAction(kind: "merge" | "discard") {
+    const ch = activeChat, f = active;
+    if (!ch?.worktree || !f) return;
+    const wt = ch.worktree;
+    if (kind === "merge") {
+      try { const h = await git.worktreeMerge(wt.root, wt.path, wt.branch, wt.base); setNotice(`Merged ${wt.branch} into ${wt.base} (${h})`); refreshChanges(); }
+      catch (e: any) { setNotice(`Merge into ${wt.base} failed: ${e?.message ?? e}. Nothing was changed; resolve it in the worktree and try again.`); }
+    } else if (confirm(`Discard worktree ${wt.branch}? Its folder, branch and any unmerged work are deleted.`)) {
+      try {
+        await git.worktreeRemove(wt.root, wt.path, wt.branch);
+        update((d) => mapProject(d, f.project.id, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === ch.id ? { ...x, worktree: undefined, cwd: undefined, title: `${x.title} (discarded)` } : x)) })));
+      } catch (e: any) { setNotice(`Could not discard: ${e?.message ?? e}`); }
+    }
+  }
+
+  function newChat(projectId: string, focus = true, init: Partial<Chat> = {}) {
+    const chat: Chat = { id: uid(), title: "New chat", createdAt: Date.now(), updatedAt: Date.now(), ...init };
     update((d) => ({ ...mapProject(d, projectId, (p) => ({ ...p, chats: [chat, ...p.chats] })), ...(focus ? { activeProjectId: projectId, activeChatId: chat.id } : {}) }));
     if (focus) {
       setView("chat");
@@ -719,6 +759,15 @@ export default function App() {
       // Prefer the agent's turn report; fall back to `usage` on the prompt result.
       if ((r as any).usage && !turnUsage.current.has(sid)) recordUsage(sid, (r as any).usage, `${sid}:result:${Date.now()}`);
       if (r.stopReason !== "end_turn") pushItem(chatId, { kind: "system", text: `stopped: ${r.stopReason}` });
+      {
+        // "N files changed — Review" after a turn that edited files.
+        const ss = sessionsRef.current[chatId];
+        const lastUser = ss ? ss.items.map((x) => x.kind).lastIndexOf("user") : -1;
+        const tcs = ss ? ss.items.slice(lastUser + 1).filter((x) => x.kind === "tool").map((x: any) => ss.toolCalls[x.toolCallId]) : [];
+        const paths = editedPaths(tcs);
+        if (paths.length) pushItem(chatId, { kind: "system", text: `${paths.length} file${paths.length === 1 ? "" : "s"} changed`, changes: paths } as any);
+        refreshChanges();
+      }
       return r as any;
     } catch (e: any) {
       const msg = String(e?.message ?? e);
@@ -1022,6 +1071,8 @@ export default function App() {
   const paletteCommands: Command[] = useMemo(() => {
     const cmds: Command[] = [
       { id: "new", title: "New chat", hint: "Ctrl N", icon: "plus", run: () => active && newChat(active.project.id) },
+      { id: "new-wt", title: "New chat in new worktree", icon: "plus", run: () => { if (active) void newWorktreeChat(active.project.id); } },
+      { id: "changes", title: "Review changes", icon: "code", run: () => openPanel("changes") },
       { id: "settings", title: "Open settings", hint: "Ctrl ,", icon: "settings", run: () => openSettings() },
       { id: "usage", title: "Open usage & costs", hint: "Ctrl Shift U", icon: "chart", run: () => setView("usage") },
       { id: "theme", title: `Switch to ${theme === "light" ? "dark" : "light"} theme`, icon: theme === "light" ? "moon" : "sun", run: () => setTheme(theme === "light" ? "dark" : "light") },
@@ -1074,6 +1125,8 @@ export default function App() {
         sess.toolCalls[m.toolCallId] ? <ToolCard tc={sess.toolCalls[m.toolCallId]} /> : null
       ) : m.kind === "agent" ? (
         <div className="bubble agent"><Markdown text={m.text} /></div>
+      ) : (m as any).changes ? (
+        <div className="turn-changes" data-testid="turn-changes"><Icon name="code" size={13} /> {m.text} <span className="muted small">{((m as any).changes as string[]).map((x) => x.split("/").pop()).slice(0, 3).join(", ")}</span><div style={{ flex: 1 }} /><button className="secondary compact" data-testid="turn-review" onClick={() => openPanel("changes")}>Review</button></div>
       ) : (m as any).error ? (
         <div className="bubble error" role="alert" data-testid="error-item">
           <div className="err-head"><Icon name="alert" size={14} /> {(m as any).error === "config" ? "Setup needed" : (m as any).error === "load" ? "History unavailable" : "The turn failed"}</div>
@@ -1114,6 +1167,7 @@ export default function App() {
         onSelectChat={(p, c) => void selectChat(p, c)}
         onSelectProject={(pid) => { update((d) => ({ ...d, activeProjectId: pid, activeChatId: undefined })); setView("chat"); }}
         onNewChat={(p) => void newChat(p)}
+        onNewWorktreeChat={(p) => void newWorktreeChat(p)}
         onTree={(a) => update((d) => applyTree(d, a))}
         onOpenFolder={openFolder}
         onBrowse={() => void browseFolder()}
@@ -1174,6 +1228,13 @@ export default function App() {
               {active && <Icon name="chevronRight" size={14} />}
               <strong title={active ? `cwd ${active.project.cwd}` : undefined}>{active ? active.project.name : ""}</strong>
               {activeChat && <span className="crumb-dim chat-crumb">{activeChat.title}</span>}
+              {activeChat?.worktree && (
+                <span className="wt-acts" data-testid="wt-bar">
+                  <span className="wt-badge" title={activeChat.worktree.path}>{activeChat.worktree.branch}</span>
+                  <button className="ghost compact" data-testid="wt-merge" onClick={() => void worktreeAction("merge")}>Merge into {activeChat.worktree.base}</button>
+                  <button className="ghost compact" data-testid="wt-discard" onClick={() => void worktreeAction("discard")}>Discard</button>
+                </span>
+              )}
             </div>
             <div className="spacer" />
             {devicesOnline > 0 && <span className="pill" title="Paired devices online"><Icon name="phone" size={12} /> {devicesOnline}</span>}

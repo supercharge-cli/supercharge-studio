@@ -15,7 +15,9 @@ const budgets: { dir: string; label: string; entry: RegExp; entryMax: number; to
   // entry 57 KB: CLI reasoning_effort + context_usage wire handling (~0.6 KB gz over 56).
   // entry 58 / all js 81 KB: side browser computer, dev and design modes (+0.8 KB entry for the console/network/viewport
   // tools; +7 KB lazy: BrowserTools and devlog chunks load only when a mode is first switched on). HEAD was already 57.1 / 72.4.
-  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 58 * KB, totalJsMax: 81 * KB, cssMax: 11 * KB },
+  // entry 60 / all js 87 / css 12.5 KB: Changes tab (diff review + Git), worktree chats (+1.5 KB gz entry for the turn review row,
+  // worktree actions and commit-message hook; ChangesPane js+css ~3.6 KB gz load only when the tab opens).
+  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 60 * KB, totalJsMax: 87 * KB, cssMax: 12.5 * KB },
   // Redesigned chat UI with attachments and sheets; +reasoning labels / thought_level (~1 KB gz).
   { dir: "dist-mobile/assets", label: "mobile", entry: /^mobile-.*\.js$/, entryMax: 32 * KB, totalJsMax: 35 * KB, cssMax: 13 * KB },
 ];

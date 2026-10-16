@@ -1,0 +1,32 @@
+.changes{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;font-size:12.5px}
+.changes-empty{padding:16px}
+.git-bar{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--line)}
+.git-bar select{max-width:160px;font-size:12px;padding:2px 4px}
+.git-note{padding:4px 10px;color:var(--muted);border-bottom:1px solid var(--line);white-space:pre-wrap}
+.changes-files{max-height:32%;overflow:auto;border-bottom:1px solid var(--line);flex-shrink:0}
+.changes-none{padding:10px}
+.ch-row{display:flex;align-items:center;gap:6px;padding:0 8px}
+.ch-row.on{background:var(--hover,rgba(127,127,127,.12))}
+.ch-row.kept .ch-base{opacity:.6}
+.ch-name{all:unset;cursor:pointer;display:flex;gap:6px;align-items:center;flex:1;min-width:0;padding:4px 0}
+.ch-base{white-space:nowrap}.ch-dir{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ch-st{font:600 10px/1 ui-monospace,monospace;width:12px;text-align:center}
+.ch-M{color:#d9a43a}.ch-A,.ch-U{color:#4fb477}.ch-D{color:#e06666}.ch-R{color:#6fa8dc}
+.diff-view{flex:1;overflow:auto;min-height:0}
+.diff-head{display:flex;align-items:center;gap:6px;padding:6px 8px;position:sticky;top:0;background:var(--bg);z-index:1;border-bottom:1px solid var(--line)}
+.d-add{color:#4fb477}.d-del{color:#e06666}
+button.reject{color:#e06666}
+.hunk{border-bottom:1px solid var(--line)}
+.hunk-head{display:flex;align-items:center;gap:4px;padding:2px 8px;background:rgba(111,168,220,.08)}
+.cd-uni,.cd-split{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+.cd-uni .cd-row{display:grid;grid-template-columns:34px 34px 14px 1fr}
+.cd-split .cd-row{display:grid;grid-template-columns:34px 1fr 34px 1fr}
+.cd-n{color:var(--muted);text-align:right;padding-right:6px;user-select:none;opacity:.7}
+.cd-l,.cd-empty{white-space:pre-wrap;word-break:break-all;padding-right:6px}
+.cd-add{background:rgba(79,180,119,.14)}.cd-del{background:rgba(224,102,102,.14)}
+.cd-empty{background:rgba(127,127,127,.06)}
+.cd-sign{user-select:none;text-align:center}
+.hl-k{color:#c792ea}.hl-s{color:#c3e88d}.hl-c{color:#7f8c98;font-style:italic}.hl-n{color:#f78c6c}
+.commit-box{border-top:1px solid var(--line);padding:8px;display:flex;flex-direction:column;gap:6px}
+.commit-box textarea{width:100%;resize:vertical;font:inherit;box-sizing:border-box}
+.ch-row input[type=checkbox]{width:auto;flex:none;margin:0}

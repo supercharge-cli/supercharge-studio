@@ -18,6 +18,7 @@ use tokio::sync::oneshot;
 
 pub mod hidden;
 mod files;
+mod git;
 mod portbind;
 mod lanaddr;
 mod firewall;
@@ -432,7 +433,8 @@ pub fn run() {
             gateway::gateway_status, gateway::gateway_start, gateway::gateway_firewall_allow, gateway::gateway_firewall_check, gateway::gateway_stop, gateway::gateway_pair_begin, gateway::gateway_pair_answer, gateway::gateway_revoke, gateway::gateway_send, gateway::gateway_relay_set,
             files::fs_list, files::fs_read_text, background::background_get, background::background_set, upload_chunk, upload_rewrite,
             terminal::term_open, terminal::term_write, terminal::term_resize, terminal::term_close,
-            pick::pick_folder
+            pick::pick_folder,
+            git::git_status, git::git_diff_file, git::git_diff_all, git::git_revert_hunk, git::git_restore_file, git::git_stage, git::git_commit, git::git_branches, git::git_checkout, git::git_push, git::git_open_pr, git::git_worktree_add, git::git_worktree_merge, git::git_worktree_remove
         ])
         .build(tauri::generate_context!())
         .expect("error while running Supercharge Studio")

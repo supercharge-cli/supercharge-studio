@@ -10,6 +10,7 @@ type Props = {
   onSelectProject: (projectId: string) => void;
   onSelectChat: (projectId: string, chatId: string) => void;
   onNewChat: (projectId: string) => void;
+  onNewWorktreeChat?: (projectId: string) => void;
   onTree: (a: TreeAction) => void;
   onSettings: () => void;
   onUsage?: () => void;
@@ -142,6 +143,7 @@ function FolderTree({ p, ed, setEd }: { p: Props; ed: Editing; setEd: (e: Editin
               </button>
               <div className="acts">
                 <button className="icon sm" title="New chat in this folder" data-testid="new-chat" onClick={() => p.onNewChat(f.projectId)}><Icon name="plus" size={13} /></button>
+                {p.onNewWorktreeChat && <button className="icon sm" title="New chat in a new git worktree (runs in parallel on its own branch)" data-testid="new-wt-chat" onClick={() => p.onNewWorktreeChat!(f.projectId)}><Icon name="code" size={13} /></button>}
               </div>
             </div>
             {isOpen && shown.map(({ projectId, chat: c }) => (
@@ -150,7 +152,7 @@ function FolderTree({ p, ed, setEd }: { p: Props; ed: Editing; setEd: (e: Editin
                   <Inline key={`rc-${c.id}`} initial={c.title} onDone={(v) => (v && p.onTree({ type: "renameChat", chatId: c.id, title: v }), setEd(null))} />
                 ) : (
                   <button className="link grow" data-testid="chat-open" title={c.title} onClick={() => p.onSelectChat(projectId, c.id)} onDoubleClick={() => setEd({ kind: "renameChat", id: c.id })}>
-                    <span className="chat-t" data-testid="chat-title">{c.title}</span><span className="muted small chat-time" data-testid="chat-time">{relTime(c.updatedAt ?? c.createdAt, now)}</span>
+                    <span className="chat-t" data-testid="chat-title">{c.title}</span>{c.worktree && <span className="wt-badge" data-testid="wt-badge" title={c.worktree.path}>{c.worktree.branch.replace(/^supercharge\//, "")}</span>}<span className="muted small chat-time" data-testid="chat-time">{relTime(c.updatedAt ?? c.createdAt, now)}</span>
                   </button>
                 )}
                 <div className="acts">
@@ -179,7 +181,7 @@ function Recents({ p }: { p: Props }) {
       {shown.map(({ projectId, projectName, chat: c, at }) => (
         <div key={c.id} className={`chat recent ${c.id === p.data.activeChatId ? "active" : ""}`} data-testid="chat">
           <button className="link grow" data-testid="chat-open" title={c.title} onClick={() => p.onSelectChat(projectId, c.id)}>
-            <span className="recent-main"><span className="chat-t" data-testid="chat-title">{c.title}</span><span className="muted small recent-proj">{projectName}</span></span>
+            <span className="recent-main"><span className="chat-t" data-testid="chat-title">{c.title}{c.worktree && <span className="wt-badge" title={c.worktree.path}>{c.worktree.branch.replace(/^supercharge\//, "")}</span>}</span><span className="muted small recent-proj">{projectName}</span></span>
             <span className="muted small chat-time" data-testid="chat-time">{relTime(at, now)}</span>
           </button>
         </div>

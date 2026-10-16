@@ -1,7 +1,9 @@
 /** Local app data: groups → projects → chats. Persisted to localStorage. */
 import { DEFAULT_RELAY, ensureHostId, reachOf, type Reach } from "./reach";
 /** `updatedAt`: last activity (ms). `cli`: discovered from the agent's session list (the CLI owns it). `cwd`: the session's own folder. */
-export type Chat = { id: string; title: string; sessionId?: string; createdAt: number; updatedAt?: number; cli?: boolean; cwd?: string };
+export type Chat = { id: string; title: string; sessionId?: string; createdAt: number; updatedAt?: number; cli?: boolean; cwd?: string;
+  /** Set when the chat runs in its own git worktree (cwd = path). */
+  worktree?: { path: string; branch: string; base: string; root: string } };
 export type Project = { id: string; name: string; cwd: string; chats: Chat[] };
 export type Group = { id: string; name: string; collapsed?: boolean; projects: Project[] };
 export type ApiFormat = "responses" | "chat_completions" | "messages";
