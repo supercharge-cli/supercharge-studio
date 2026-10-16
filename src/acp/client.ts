@@ -83,7 +83,14 @@ export type AcpClientOptions = {
   onReconnected?: (init: InitializeResult) => void;
   onOpen?: () => void;
   onClose?: () => void;
+  /** Send a lightweight ping this often while open so dead sockets are found fast (0 = off). */
+  heartbeatMs?: number;
+  /** How long a ping may take before the socket is treated as dead. */
+  heartbeatTimeoutMs?: number;
 };
+
+/** Heartbeat method. Any reply, even "method not found", proves the link is alive. */
+export const PING_METHOD = "_supercharge/ping";
 
 export type ExtensionInfo = {
   /** Extension method names (leading underscore), e.g. "_supercharge/fs/tree". */
@@ -110,6 +117,8 @@ export class AcpClient {
   private manualClose = false;
   private attempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
+  private reconnecting = false;
   private _state: ConnectionState = "idle";
   private dedup = new LegacyNotificationDedup();
 
@@ -163,12 +172,58 @@ export class AcpClient {
     this.transport = t;
     this.attempt = 0;
     this.setState("open");
+    this.startHeartbeat();
     this.opts.onOpen?.();
+  }
+
+  private startHeartbeat() {
+    this.stopHeartbeat();
+    const every = this.opts.heartbeatMs ?? 0;
+    if (every > 0) this.heartbeat = setInterval(() => void this.checkAlive(), every);
+  }
+  private stopHeartbeat() {
+    if (this.heartbeat) clearInterval(this.heartbeat);
+    this.heartbeat = null;
+  }
+
+  /**
+   * Ping the other side. Resolves true if it answered in time; otherwise drops the
+   * socket (which starts a reconnect) and resolves false.
+   */
+  async checkAlive(timeoutMs = this.opts.heartbeatTimeoutMs ?? 4000): Promise<boolean> {
+    const t = this.transport;
+    if (!t || this._state !== "open") return false;
+    try {
+      await this.request(PING_METHOD, {}, { timeoutMs });
+      return true;
+    } catch (e) {
+      if (!(e instanceof AcpTimeoutError) && !/Not connected|Connection/.test(String((e as Error)?.message))) return true; // an error reply still means it's alive
+      if (this.transport !== t) return false;
+      try { t.close(); } catch { /* already gone */ }
+      this.handleTransportClose(t, "no answer to ping");
+      return false;
+    }
+  }
+
+  /**
+   * The app came back to the foreground or the network changed: check the link now and,
+   * if it is down, reconnect at once instead of waiting out the backoff.
+   */
+  reconnectNow(): void {
+    if (this.manualClose) return;
+    this.attempt = 0;
+    if (this._state === "open") { void this.checkAlive(2500); return; }
+    if (this.reconnecting) return; // an attempt is already running
+    if (this._state === "reconnecting" || this.reconnectTimer) {
+      this.clearReconnect();
+      void this.runReconnect();
+    }
   }
 
   close() {
     this.manualClose = true;
     this.clearReconnect();
+    this.stopHeartbeat();
     const t = this.transport;
     this.transport = null;
     t?.close();
@@ -193,6 +248,7 @@ export class AcpClient {
   private handleTransportClose(t: Transport, reason?: string) {
     if (this.transport !== t) return;
     this.transport = null;
+    this.stopHeartbeat();
     this.failAll(new Error(`Connection lost${reason ? `: ${reason}` : ""}`));
     this.opts.onClose?.();
     if (this.manualClose) return;
@@ -222,17 +278,23 @@ export class AcpClient {
     this.attempt++;
     const delayMs = this.backoffDelay(this.attempt);
     this.setState("reconnecting", { attempt: this.attempt, delayMs, error });
-    this.reconnectTimer = setTimeout(async () => {
-      this.reconnectTimer = null;
-      if (this.manualClose) return;
-      try {
-        await this.connect();
-        const init = await this.initialize();
-        this.opts.onReconnected?.(init);
-      } catch (e: any) {
-        if (!this.manualClose && !this.transport) this.scheduleReconnect(e?.message);
-      }
-    }, delayMs);
+    this.reconnectTimer = setTimeout(() => { this.reconnectTimer = null; void this.runReconnect(); }, delayMs);
+  }
+
+  private async runReconnect() {
+    if (this.manualClose || this.reconnecting) return;
+    this.reconnecting = true;
+    this._state = "reconnecting";
+    try {
+      await this.connect();
+      const init = await this.initialize();
+      this.opts.onReconnected?.(init);
+    } catch (e: any) {
+      if (!this.manualClose && !this.transport) { this.reconnecting = false; this.scheduleReconnect(e?.message); }
+      else if (this.transport && !this.manualClose) { const t = this.transport; try { t.close(); } catch { /* */ } this.reconnecting = false; this.handleTransportClose(t, e?.message); }
+    } finally {
+      this.reconnecting = false;
+    }
   }
 
   private handleRaw(raw: string) {

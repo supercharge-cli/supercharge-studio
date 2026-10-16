@@ -4,7 +4,7 @@
  *
  * Allowed device → desktop methods: initialize, session/list, session/load, session/new,
  * session/prompt, session/cancel, session/set_mode, session/set_config_option,
- * _supercharge/focus, _supercharge/upload (chunked file upload; prompts link uploads by id). Everything else is rejected.
+ * _supercharge/focus, _supercharge/ping (heartbeat), _supercharge/upload (chunked file upload; prompts link uploads by id). Everything else is rejected.
  * Desktop → device: session/update (live + replay), session/request_permission (fan-out,
  * first answer wins), _supercharge/permission/resolved, _supercharge/handoff,
  * _supercharge/sessions/changed.
@@ -36,7 +36,7 @@ export interface HubHost {
 type Msg = { jsonrpc?: "2.0"; id?: number | string; method?: string; params?: any; result?: any; error?: any };
 type Send = (deviceId: string, msg: Msg) => void;
 
-const ALLOWED = new Set(["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "session/set_config_option", "session/set_mode", "_supercharge/focus", "_supercharge/upload"]);
+const ALLOWED = new Set(["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "session/set_config_option", "session/set_mode", "_supercharge/focus", "_supercharge/upload", "_supercharge/ping"]);
 const MAX_REPLAY = 3000;
 
 export class GatewayHub {
@@ -44,7 +44,7 @@ export class GatewayHub {
   private subs = new Map<string, Set<string>>(); // sessionId → deviceIds
   private devices = new Set<string>();
   private seq = 1;
-  private perms = new Map<number, { sessionId: string; toolCallId?: string; resolve: (o: PermissionOutcome) => void; asked: Map<string, number | string> }>();
+  private perms = new Map<number, { sessionId: string; toolCallId?: string; resolve: (o: PermissionOutcome) => void; asked: Map<string, number | string>; params: any }>();
 
   constructor(private send: Send, private host: HubHost, private names: (deviceId: string) => string = (d) => d) {}
 
@@ -54,6 +54,7 @@ export class GatewayHub {
   disconnected(deviceId: string) {
     this.devices.delete(deviceId);
     for (const s of this.subs.values()) s.delete(deviceId);
+    for (const p of this.perms.values()) p.asked.delete(deviceId);
   }
   get deviceCount() {
     return this.devices.size;
@@ -90,7 +91,7 @@ export class GatewayHub {
   requestPermission(sessionId: string, params: any): { token: number; answer: Promise<PermissionOutcome> } {
     const token = this.seq++;
     const asked = new Map<string, number | string>();
-    const answer = new Promise<PermissionOutcome>((resolve) => this.perms.set(token, { sessionId, toolCallId: params?.toolCall?.toolCallId, resolve, asked }));
+    const answer = new Promise<PermissionOutcome>((resolve) => this.perms.set(token, { sessionId, toolCallId: params?.toolCall?.toolCallId, resolve, asked, params }));
     for (const d of this.devices) {
       const id = `perm-${token}-${this.seq++}`;
       asked.set(d, id);
@@ -156,6 +157,13 @@ export class GatewayHub {
           for (const u of this.buffers.get(sid) ?? []) this.send(deviceId, { jsonrpc: "2.0", method: "session/update", params: { sessionId: sid, update: u } });
           if (!this.subs.has(sid)) this.subs.set(sid, new Set());
           this.subs.get(sid)!.add(deviceId);
+          // A phone that dropped off mid-turn gets any still-open permission questions again.
+          for (const p of this.perms.values()) {
+            if (p.sessionId !== sid || p.asked.has(deviceId)) continue;
+            const pid = `perm-r-${this.seq++}`;
+            p.asked.set(deviceId, pid);
+            this.send(deviceId, { jsonrpc: "2.0", id: pid, method: "session/request_permission", params: { ...p.params, sessionId: sid } });
+          }
           return this.reply(deviceId, id, { configOptions: this.host.configOptions?.(sid) ?? [], modes: this.host.modes?.(sid) });
         }
         case "session/new": {
@@ -206,6 +214,9 @@ export class GatewayHub {
           return this.reply(deviceId, id, await this.host.upload(params));
         case "session/cancel":
           this.host.cancel(String(params.sessionId ?? ""));
+          return;
+        case "_supercharge/ping":
+          if (id !== undefined) this.reply(deviceId, id, { t: Date.now() });
           return;
         case "_supercharge/focus":
           this.host.focus(String(params.sessionId ?? ""));

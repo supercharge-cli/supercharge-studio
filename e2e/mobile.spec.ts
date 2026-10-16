@@ -163,3 +163,40 @@ test("recents list by default and light theme", async ({ browser }) => {
     await shot(page, "mobile-chat-light");
   } finally { await context.close(); }
 });
+
+test("keyboard: only the composer rises; header stays put and the latest message stays visible", async ({ page }) => {
+  await pair(page);
+  await page.getByTestId("m-chat").first().click();
+  await expect(page.getByTestId("m-thread")).toContainText("The token check is inverted.");
+  await page.getByTestId("m-input").focus();
+  const before = await page.locator(".m-top").boundingBox();
+  // Android with adjustResize / resizes-content: the visible area shrinks by the keyboard height.
+  await page.setViewportSize({ width: 390, height: 500 });
+  await page.waitForTimeout(150);
+  const head = await page.locator(".m-top").boundingBox();
+  const comp = await page.locator(".m-composer").boundingBox();
+  expect(head!.y).toBe(before!.y);
+  expect(Math.round(comp!.y + comp!.height)).toBeLessThanOrEqual(500);
+  expect(Math.round(comp!.y + comp!.height)).toBeGreaterThan(490);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.dataset.kb)).toBe("1");
+  const last = page.locator(".m-thread .bubble").last();
+  await expect(last).toBeInViewport();
+  await shot(page, "m2-keyboard");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.kb)).toBe("");
+});
+
+test("reconnects at once after the link drops (app resumed) and reloads the open chat", async ({ page }) => {
+  await pair(page);
+  await page.getByTestId("m-chat").first().click();
+  await expect(page.getByTestId("m-thread")).toContainText("The token check is inverted.");
+  await fetch(`${GW}/drop`);
+  const t0 = Date.now();
+  await page.evaluate(() => window.dispatchEvent(new Event("supercharge:resume")));
+  await expect(page.getByTestId("m-status")).toHaveText("open", { timeout: 4000 });
+  expect(Date.now() - t0).toBeLessThan(3000);
+  await expect(page.getByTestId("m-thread")).toContainText("The token check is inverted.");
+  await expect(page.getByTestId("m-conn")).toHaveCount(0);
+  await shot(page, "m2-resumed");
+});

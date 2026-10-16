@@ -18,6 +18,12 @@ import { APP_VERSION, checkUpdate, type AvailableUpdate } from "../lib/updates";
 
 /** Light haptic tick where the platform allows it. */
 const haptic = (ms = 8) => { try { navigator.vibrate?.(ms); } catch { /* not supported */ } };
+/** Fast reconnect: 250 ms, doubling, never more than 5 s between tries. */
+export const RECONNECT = { initialDelayMs: 250, maxDelayMs: 5000, factor: 2 };
+/** The on-screen keyboard is open when the visible height dropped well below the full height. */
+export const keyboardOpen = (full: number, now: number) => full - now > 120;
+/** Android keep-alive bridge (absent on iOS and in the browser). */
+const keepAlive = (on: boolean) => { try { (window as any).SuperchargeAndroid?.keepAlive?.(on); } catch { /* not available */ } };
 const SUGGESTIONS = ["Explain this project", "Find and fix a bug", "Write tests for recent changes", "Summarize what changed today"];
 
 type Sess = { sessionId: string; title?: string; cwd?: string; updatedAt?: string; _meta?: { project?: string; projectId?: string; group?: string; busy?: boolean } };
@@ -160,6 +166,7 @@ export default function MobileApp() {
   const fileInput = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const client = useRef<AcpClient | null>(null);
+  const queued = useRef<{ sid: string; text: string }[]>([]);
   const loadedRef = useRef(new Set<string>());
   const activeSessionRef = useRef<string | null>(null);
   const sessionsRef = useRef(list);
@@ -179,19 +186,27 @@ export default function MobileApp() {
     setProjects(r._meta?.projects ?? []);
   }, []);
 
-  // Keep the app (and the composer) inside the visible area when the on-screen keyboard opens.
+  // Keyboard: the native side shrinks the web view (adjustResize + IME insets), so the app
+  // only has to match the visible height. Header and chat list stay put; the composer sits
+  // on top of the keyboard and the chat list shrinks, keeping the latest message in view.
   useEffect(() => {
     const vv = window.visualViewport;
-    if (!vv) return;
+    let full = 0, width = 0;
     const fit = () => {
-      document.documentElement.style.setProperty("--vvh", `${Math.round(vv.height)}px`);
-      window.scrollTo(0, 0);
+      const h = Math.round(vv?.height ?? window.innerHeight);
+      if (window.innerWidth !== width) { width = window.innerWidth; full = 0; }
+      full = Math.max(full, h, vv ? 0 : window.innerHeight);
+      const root = document.documentElement;
+      root.style.setProperty("--vvh", `${h}px`);
+      root.dataset.kb = keyboardOpen(full, h) ? "1" : "";
+      if (window.scrollY) window.scrollTo(0, 0); // never let the page itself pan
       const el = scroller.current;
       if (el && stuck.current) el.scrollTop = el.scrollHeight;
     };
     fit();
-    vv.addEventListener("resize", fit);
-    return () => vv.removeEventListener("resize", fit);
+    vv?.addEventListener("resize", fit);
+    window.addEventListener("resize", fit);
+    return () => { vv?.removeEventListener("resize", fit); window.removeEventListener("resize", fit); };
   }, []);
 
   useEffect(() => {
@@ -207,6 +222,9 @@ export default function MobileApp() {
     const pending: { sid: string; u: any }[] = [];
     let raf = 0;
     const c = new AcpClient({
+      reconnect: RECONNECT,
+      heartbeatMs: 15_000,
+      heartbeatTimeoutMs: 5_000,
       transportFactory: () => { const t = new GatewayTransport(candidates(creds), creds.deviceId, creds.key, creds.name); const o = t.open.bind(t); t.open = async () => { t.localIp = await phoneIp(); await o(); setRoute(t.route); if (t.route === "direct" && t.connectedUrl && t.connectedUrl !== creds.url) { const next = { ...creds, url: t.connectedUrl, alts: [creds.url, ...(creds.alts ?? [])].filter((u) => u !== t.connectedUrl) }; saveCreds(next); } }; return t; },
       clientName: "supercharge-studio-mobile",
       onStateChange: (s) => setConn(s),
@@ -239,7 +257,13 @@ export default function MobileApp() {
         loadedRef.current.clear();
         setConfigBySession({});
         setModesBySession({});
-        void refresh();
+        // Questions asked on the old socket can't be answered any more; the desktop asks again on load.
+        setPermQueue((q) => { q.forEach((x) => x.resolve({ outcome: "cancelled" })); return []; });
+        void refresh().then(() => {
+          // Turns keep running on the computer while the phone is away: take "busy" from it.
+          setBusy(Object.fromEntries(sessionsRef.current.map((s) => [s.sessionId, !!s._meta?.busy])));
+          flushQueued();
+        }).catch(() => {});
         const sid = activeSessionRef.current;
         if (sid) {
           setState((all) => ({ ...all, [sid]: emptySession() }));
@@ -256,6 +280,12 @@ export default function MobileApp() {
       },
     });
     client.current = c;
+    // Back from the background, screen on, or network changed: check the link and reconnect now.
+    const wake = () => { if (document.visibilityState !== "hidden") c.reconnectNow(); };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", wake);
+    window.addEventListener("pageshow", wake);
+    window.addEventListener("supercharge:resume", wake);
     (async () => {
       try {
         await c.connect();
@@ -266,8 +296,27 @@ export default function MobileApp() {
         setErr(String(e?.message ?? e));
       }
     })();
-    return () => c.close();
+    return () => {
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("online", wake);
+      window.removeEventListener("pageshow", wake);
+      window.removeEventListener("supercharge:resume", wake);
+      c.close();
+    };
   }, [creds, refresh, retryKey]);
+
+  // Android: keep the process (and socket) alive with a quiet notification while a turn runs.
+  const anyBusy = Object.values(busy).some(Boolean);
+  useEffect(() => { keepAlive(anyBusy && conn !== "closed" && conn !== "idle"); }, [anyBusy, conn]);
+  useEffect(() => () => keepAlive(false), []);
+
+  // Only show "Reconnecting…" if it takes a moment, so a quick resume doesn't flash a banner.
+  const [showConn, setShowConn] = useState(false);
+  useEffect(() => {
+    if (conn !== "reconnecting" && conn !== "closed") { setShowConn(false); return; }
+    const t = setTimeout(() => setShowConn(true), conn === "closed" ? 0 : 1200);
+    return () => clearTimeout(t);
+  }, [conn]);
 
   useEffect(() => {
     if (!toast) return;
@@ -325,8 +374,21 @@ export default function MobileApp() {
     const text = draft.trim();
     if (!c || !open || (!text && !atts.length) || uploading != null) return;
     haptic();
+    if (c.state !== "open" && !atts.length) {
+      // Offline for a moment: hold the message and send it as soon as the link is back.
+      queued.current.push({ sid: open, text });
+      setDraft("");
+      if (inputRef.current) inputRef.current.style.height = "";
+      setToast("Will send when reconnected");
+      c.reconnectNow();
+      return;
+    }
+    await sendText(c, open, text);
+  }
+
+  async function sendText(c: AcpClient, open: string, text: string, withFiles = true) {
     let extra: unknown[] = [];
-    if (atts.length) {
+    if (withFiles && atts.length) {
       setUploading(0);
       try {
         // Files go up in small encrypted chunks first (the relay caps frame size), then the prompt links them.
@@ -348,12 +410,22 @@ export default function MobileApp() {
     try {
       const r = await c.prompt(open, text, extra);
       if (r.stopReason !== "end_turn") setState((all) => ({ ...all, [open]: { ...all[open], items: [...all[open].items, { kind: "system", text: `stopped: ${r.stopReason}` }] } }));
+      setBusy((b) => ({ ...b, [open]: false }));
     } catch (e: any) {
+      // A dropped link doesn't stop the turn on the computer; the reload after reconnecting shows the rest.
+      if (/Connection lost|Connection closed|no answer to ping/i.test(String(e?.message ?? e))) return;
       setState((all) => ({ ...all, [open]: { ...(all[open] ?? emptySession()), items: [...(all[open]?.items ?? []), { kind: "system", text: `The turn failed: ${e?.message ?? e}`, error: true } as any] } }));
-    } finally {
       setBusy((b) => ({ ...b, [open]: false }));
     }
   }
+
+  function flushQueued() {
+    const c = client.current;
+    if (!c || c.state !== "open") return;
+    for (const q of queued.current.splice(0)) void sendRef.current(c, q.sid, q.text, false);
+  }
+  const sendRef = useRef(sendText);
+  sendRef.current = sendText;
 
   async function chooseOption(configId: string, value: string) {
     const sid = open;
@@ -466,7 +538,7 @@ export default function MobileApp() {
         <span className={`m-dot ${conn === "open" ? "ok" : "bad"}`} data-testid="m-status" title={conn}><i /><span className="sr">{conn}</span></span>
         {open && <button className="icon" aria-label="New chat" data-testid="m-new-chat" onClick={() => { haptic(); const pid = list.find((s) => s.sessionId === open)?._meta?.projectId; const p = allProjects.find((x) => x.projectId === pid); if (p) void newChat(p); else setNewSheet(true); }}><Icon name="compose" size={18} /></button>}
       </header>
-      {(conn === "reconnecting" || conn === "closed") && !err && (
+      {showConn && (conn === "reconnecting" || conn === "closed") && !err && (
         <div className={`m-conn ${conn}`} role="status" data-testid="m-conn">
           <span className="m-conn-dot" aria-hidden />
           <span>{connLabel(conn)}</span>

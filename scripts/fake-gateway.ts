@@ -88,6 +88,7 @@ const http = createServer(async (req, res) => {
   }
   if (u.pathname === "/attachments") return res.end(JSON.stringify(lastAttachments));
   if (u.pathname === "/relay-stats") return res.end(JSON.stringify(relayStats));
+  if (u.pathname === "/drop") { for (const c of wss.clients) c.terminate(); return res.end("{}"); }
   if (u.pathname === "/handoff") return res.end(JSON.stringify({ n: hub.handoff(u.searchParams.get("sid") ?? "s2") }));
   if (u.pathname === "/perm") {
     permResult = null;

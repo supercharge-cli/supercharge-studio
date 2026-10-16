@@ -144,7 +144,10 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-head-title:disabled{opacity:1;color:var(--fg);cursor:default}
 
 /* v2 polish: keyboard-safe height, 44px targets, recents rows, banners, jump button, permission sheet */
-.m-app{height:var(--vvh,100dvh)}
+.m-app{position:fixed;top:0;left:0;right:0;height:var(--vvh,100dvh);overflow:hidden}
+/* keyboard open: the keyboard covers the home-indicator area, so drop that padding */
+:root[data-kb="1"] .m-composer{padding-bottom:6px}
+:root[data-kb="1"] .m-fab-row{display:none}
 .m-top .icon,.m-attach,.m-compose-row .round{min-width:44px;min-height:44px}
 .m-attach{width:44px;height:44px}
 .m-compose-row .round{width:44px;height:44px}
