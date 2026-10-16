@@ -479,3 +479,4 @@ button:active:not(:disabled){transform:scale(.97)}
 .thinking-thumb{position:absolute;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35);transition:left .12s ease-out;pointer-events:none}
 .ctx-meter{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);padding:0 4px}.ctx-meter circle{fill:none;stroke-width:2.5}.ctx-bg{stroke:var(--line)}.ctx-fg{stroke:var(--acc);stroke-linecap:round}.ctx-meter.warm .ctx-fg{stroke:var(--warn)}.ctx-meter.hot .ctx-fg{stroke:var(--bad)}
 @media(prefers-reduced-motion:reduce){.thinking-fill,.thinking-thumb{transition:none}}
+.file-ico{flex:none}

@@ -39,3 +39,7 @@ npm run build
 ## License
 
 Apache-2.0 — see [LICENSE](LICENSE).
+
+## Third-party assets
+
+File-tree icons in `public/icons/files.svg` come from an MIT-licensed icon set; the license text is in `public/icons/LICENSE.txt`.

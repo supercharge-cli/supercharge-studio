@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { FileEntry, projectFiles, projectReadText } from "../lib/desktop";
 import { Icon } from "./Icon";
+import { fileIcon } from "../lib/fileIcons";
 
 type Node = { name: string; path: string; dir: boolean; children: Node[] };
 
@@ -37,7 +38,7 @@ function Row({ node, depth, open, toggle, selected, onOpen }: { node: Node; dept
         style={{ paddingLeft: 8 + depth * 14 }}
         onClick={() => (node.dir ? toggle(node.path) : onOpen(node))}
       >
-        <Icon name={node.dir ? "folder" : "file"} size={14} />
+        <svg className="file-ico" width="15" height="15" aria-hidden="true"><use href={`/icons/files.svg#${fileIcon(node.name, node.dir, expanded)}`} /></svg>
         <span>{node.name}</span>
       </button>
       {node.dir && expanded && node.children.map((c) => (
