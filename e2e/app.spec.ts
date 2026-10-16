@@ -90,6 +90,13 @@ test("streams a reply with thought and plan", async ({ page }) => {
   await page.getByTitle("Show side panel (Ctrl \\)").click();
   await page.getByTestId("plan-tab").click();
   await expect(page.getByTestId("plan-panel")).toContainText("plan for this chat");
+  // The active tab fills the whole panel: no terminal strip or empty block above it.
+  await expect(page.locator(".term-tabs")).toHaveCount(0);
+  const panelBox = (await page.locator(".rpanel").boundingBox())!;
+  const tabsBox = (await page.locator(".rpanel .tabs").boundingBox())!;
+  const planBox = (await page.getByTestId("plan-panel").boundingBox())!;
+  expect(Math.abs(planBox.y - (tabsBox.y + tabsBox.height))).toBeLessThan(2);
+  expect(planBox.height).toBeGreaterThan(panelBox.height - tabsBox.height - 4);
   // The + on the tab bar opens the tab picker cards.
   await page.getByTestId("panel-add").click();
   await page.getByTestId("tab-picker").getByRole("button", { name: "Browser" }).click();

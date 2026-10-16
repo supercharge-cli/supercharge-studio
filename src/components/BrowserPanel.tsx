@@ -24,28 +24,25 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
     setTab(focus.tab);
     if (focus.tab !== "terminal") return;
     // The first request only shows the shell. Each later request opens another one.
-    if (termFocus.current == null) { termFocus.current = focus.n; return; }
+    if (termFocus.current == null) { termFocus.current = focus.n; if (!terms.length) addTerm(); return; }
     if (termFocus.current === focus.n) return;
     termFocus.current = focus.n;
     const id = `t${focus.n}`;
     setTerms((cur) => cur.some((t) => t.id === id) ? cur : [...cur, { id, title: `Terminal ${cur.length + 1}` }]);
     setActiveTerm(id);
   }, [focus]);
-  const addTerm = () => {
+  function addTerm() {
     const id = `t${Date.now()}`;
     setTerms((cur) => [...cur, { id, title: `Terminal ${cur.length + 1}` }]);
     setActiveTerm(id);
     setTab("terminal");
-  };
+  }
   const closeTerm = (id: string) => {
-    setTerms((cur) => {
-      const next = cur.filter((t) => t.id !== id);
-      if (!next.length) return cur;
-      setActiveTerm((on) => (on === id ? next[next.length - 1].id : on));
-      return next;
-    });
+    const next = terms.filter((t) => t.id !== id);
+    setTerms(next);
+    if (activeTerm === id) setActiveTerm(next.length ? next[next.length - 1].id : "");
+    if (!next.length && tab === "terminal") setTab("browser");
   };
-
   useEffect(() => {
     // The agent used a browser tool while the Tools tab was showing: switch to the browser.
     browser.showBrowserTab = () => setTab("browser");
@@ -85,10 +82,15 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
   return (
     <aside className="rpanel">
       <div className="tabs">
-        <button className={tab === "browser" ? "on" : ""} onClick={() => setTab("browser")}><Icon name="globe" size={14} /> Browser</button>
-        <button data-testid="plan-tab" className={tab === "plan" ? "on" : ""} onClick={() => setTab("plan")}><Icon name="file" size={14} /> Plan{plan.length ? ` (${plan.length})` : ""}</button>
-        {isDesktop() && <button data-testid="files-tab" className={tab === "files" ? "on" : ""} onClick={() => setTab("files")}><Icon name="folder" size={14} /> File tree</button>}
-        {isDesktop() && <button data-testid="terminal-tab" className={tab === "terminal" ? "on" : ""} onClick={() => setTab("terminal")}><Icon name="terminal" size={14} /> Terminal</button>}
+        <button className={tab === "browser" ? "on" : ""} onClick={() => { setPicker(false); setTab("browser"); }}><Icon name="globe" size={14} /> Browser</button>
+        <button data-testid="plan-tab" className={tab === "plan" ? "on" : ""} onClick={() => { setPicker(false); setTab("plan"); }}><Icon name="file" size={14} /> Plan{plan.length ? ` (${plan.length})` : ""}</button>
+        {isDesktop() && <button data-testid="files-tab" className={tab === "files" ? "on" : ""} onClick={() => { setPicker(false); setTab("files"); }}><Icon name="folder" size={14} /> File tree</button>}
+        {isDesktop() && terms.map((t) => (
+          <button key={t.id} data-testid="terminal-tab" className={tab === "terminal" && t.id === activeTerm ? "on" : ""} onClick={() => { setPicker(false); setActiveTerm(t.id); setTab("terminal"); }}>
+            <Icon name="terminal" size={14} /> {t.title}
+            <span className="term-x" role="button" aria-label={`Close ${t.title}`} onClick={(e) => { e.stopPropagation(); closeTerm(t.id); }}>×</span>
+          </button>
+        ))}
         <button className="icon" data-testid="panel-add" title="Open a tab" aria-expanded={picker} onClick={() => setPicker((v) => !v)}><Icon name="plus" size={16} /></button>
         <div style={{ flex: 1 }} />
         <button className="icon" onClick={onClose} title="Close panel"><Icon name="x" /></button>
@@ -112,19 +114,11 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
           </div>
         </div>
       )}
-      {isDesktop() && (
+      {isDesktop() && terms.length > 0 && (
+        // Shells stay mounted (and running) while another tab is showing; they are only hidden.
         <div className="term-stack" hidden={picker || tab !== "terminal"}>
-          <div className="term-tabs">
-            {terms.map((t) => (
-              <button key={t.id} className={t.id === activeTerm ? "on" : ""} onClick={() => setActiveTerm(t.id)}>
-                {t.title}
-                {terms.length > 1 && <span className="term-x" onClick={(e) => { e.stopPropagation(); closeTerm(t.id); }} aria-label={`Close ${t.title}`}>×</span>}
-              </button>
-            ))}
-            <button data-testid="term-add" title="New terminal" onClick={addTerm}><Icon name="plus" size={14} /> New</button>
-          </div>
           <Suspense fallback={null}>
-            {terms.map((t) => <TerminalPane key={t.id} id={t.id} cwd={cwd} active={tab === "terminal" && t.id === activeTerm} />)}
+            {terms.map((t) => <TerminalPane key={t.id} id={t.id} cwd={cwd} active={!picker && tab === "terminal" && t.id === activeTerm} />)}
           </Suspense>
         </div>
       )}

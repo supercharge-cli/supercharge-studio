@@ -132,10 +132,9 @@ input.inline{margin:4px 6px;width:calc(100% - 12px);padding:5px 8px;font-size:13
 .rpanel{min-height:0;overflow:hidden;border-left:1px solid var(--line);display:flex;flex-direction:column;min-width:0;background:var(--panel)}
 .term-host{flex:1;min-height:0;padding:8px 8px 10px}
 .term-stack{flex:1;min-height:0;display:flex;flex-direction:column}
-.term-tabs{display:flex;gap:4px;align-items:center;padding:6px 8px 0;overflow:auto}
-.term-tabs button{display:flex;align-items:center;gap:6px;background:transparent;color:var(--muted);border-radius:8px;padding:4px 8px;font-size:12px}
-.term-tabs button.on{background:var(--hover);color:var(--fg)}
-.term-x{opacity:.7}
+/* display:flex would otherwise beat the hidden attribute and keep an empty block on screen. */
+.term-stack[hidden],.term-host[hidden]{display:none!important}
+.tabs .term-x{opacity:.6;margin-left:4px;padding:0 3px;border-radius:4px}.tabs .term-x:hover{opacity:1;background:var(--line)}
 .files-pane{flex:1;min-height:0;display:flex;flex-direction:column}
 .file-find{margin:8px;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--fg)}
 .files-split{flex:1;min-height:0;display:grid;grid-template-columns:minmax(140px,38%) 1fr}
