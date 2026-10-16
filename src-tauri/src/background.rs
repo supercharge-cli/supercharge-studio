@@ -89,6 +89,10 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     Ok(())
 }
 
+fn in_flatpak() -> bool {
+    std::env::var_os("FLATPAK_ID").is_some() || std::path::Path::new("/.flatpak-info").exists()
+}
+
 #[derive(Serialize)]
 pub struct Status {
     autostart: bool,
@@ -97,14 +101,17 @@ pub struct Status {
 
 #[tauri::command]
 pub fn background_get(app: AppHandle) -> Status {
-    Status { autostart: app.autolaunch().is_enabled().unwrap_or(false), keep_running: KEEP_RUNNING.load(Ordering::SeqCst) }
+    let autostart = !in_flatpak() && app.autolaunch().is_enabled().unwrap_or(false);
+    Status { autostart, keep_running: KEEP_RUNNING.load(Ordering::SeqCst) }
 }
 
 /// One switch in the UI: start at login + keep running when the window closes.
 #[tauri::command]
 pub fn background_set(app: AppHandle, enabled: bool) -> Result<Status, String> {
     let al = app.autolaunch();
-    let r = if enabled { al.enable() } else { al.disable() };
+    // Inside a Flatpak sandbox a host autostart entry would point at a path that only exists
+    // in the sandbox, so start-at-login is skipped there; keep-running still applies.
+    let r = if in_flatpak() { Ok(()) } else if enabled { al.enable() } else { al.disable() };
     save(Prefs { keep_running: enabled })?;
     KEEP_RUNNING.store(enabled, Ordering::SeqCst);
     r.map_err(|e| format!("start at login: {e}"))?;
