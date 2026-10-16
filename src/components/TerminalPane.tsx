@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
 import { invoke, listen } from "../lib/desktop";
+import { hardenTerminalInput } from "../lib/terminalInput";
 
 /** One local shell. Several of these can run at once; each has its own id. */
 export function TerminalPane({ id, cwd, active }: { id: string; cwd?: string; active: boolean }) {
@@ -16,11 +17,16 @@ export function TerminalPane({ id, cwd, active }: { id: string; cwd?: string; ac
       cursorBlink: true,
       fontSize: 13,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      minimumContrastRatio: 1,
       theme: { background: "#00000000", foreground: "#e7e7ea", cursor: "#e7e7ea" },
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(el);
+    hardenTerminalInput(el);
+    // Keep Escape and key presses inside the terminal from reaching app handlers.
+    const stopBubble = (e: KeyboardEvent) => e.stopPropagation();
+    el.addEventListener("keydown", stopBubble);
     fit.fit();
     termRef.current = term;
     fitRef.current = fit;
@@ -39,6 +45,7 @@ export function TerminalPane({ id, cwd, active }: { id: string; cwd?: string; ac
     return () => {
       stopped = true;
       typed.dispose();
+      el.removeEventListener("keydown", stopBubble);
       ro.disconnect();
       void unlisten.then((f) => f());
       void invoke("term_close", { id }).catch(() => {});

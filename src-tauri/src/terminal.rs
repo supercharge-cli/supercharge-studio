@@ -52,6 +52,12 @@ pub fn term_open(app: AppHandle, state: State<Terms>, id: String, cwd: Option<St
     } else {
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into())
     });
+    if !cfg!(windows) {
+        // Desktop launchers often leave TERM unset or "dumb", which makes shells
+        // print autosuggestions and prompts as plain committed text.
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
+    }
     if let Some(dir) = cwd.filter(|d| !d.is_empty() && std::path::Path::new(d).is_dir()) {
         cmd.cwd(dir);
     }
@@ -62,11 +68,19 @@ pub fn term_open(app: AppHandle, state: State<Terms>, id: String, cwd: Option<St
     let id_r = id.clone();
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
+        let mut pending: Vec<u8> = Vec::new();
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    let chunk = TermChunk { id: id_r.clone(), data: String::from_utf8_lossy(&buf[..n]).to_string() };
+                    pending.extend_from_slice(&buf[..n]);
+                    let cut = utf8_complete_len(&pending);
+                    if cut == 0 {
+                        continue;
+                    }
+                    let rest = pending.split_off(cut);
+                    let chunk = TermChunk { id: id_r.clone(), data: String::from_utf8_lossy(&pending).to_string() };
+                    pending = rest;
                     if app_r.emit("term-data", chunk).is_err() {
                         break;
                     }
@@ -107,5 +121,32 @@ fn close_one(state: &State<Terms>, id: &str) {
 pub fn term_close(state: State<Terms>, id: String) {
     if check_id(&id).is_ok() {
         close_one(&state, &id);
+    }
+}
+
+/// Length of the prefix that does not end in a partial UTF-8 sequence, so a
+/// multi-byte character split across reads is not turned into garbage.
+pub fn utf8_complete_len(b: &[u8]) -> usize {
+    let n = b.len();
+    for back in 1..=3.min(n) {
+        let c = b[n - back];
+        if c & 0xC0 == 0x80 {
+            continue;
+        }
+        let need = if c >= 0xF0 { 4 } else if c >= 0xE0 { 3 } else if c >= 0xC0 { 2 } else { 1 };
+        return if need > back { n - back } else { n };
+    }
+    n
+}
+
+#[cfg(test)]
+mod utf8_tests {
+    use super::utf8_complete_len;
+    #[test]
+    fn holds_back_partial_chars() {
+        assert_eq!(utf8_complete_len(b"ls"), 2);
+        let s = "a→".as_bytes();
+        assert_eq!(utf8_complete_len(&s[..2]), 1);
+        assert_eq!(utf8_complete_len(s), s.len());
     }
 }

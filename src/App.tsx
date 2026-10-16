@@ -40,6 +40,7 @@ import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type Cli
 import { AppData, applyTree, ensureFolderProject, findProject, load, mergeCliSessions, normCwd, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
 import { contextFromUsageNotification, isResponseCompleted, usedFromResponseCompleted } from "./lib/contextUsage";
+import { isTerminalTarget } from "./lib/terminalInput";
 import { APP_VERSION, checkUpdate, type AvailableUpdate } from "./lib/updates";
 
 type View = "chat" | "settings" | "usage";
@@ -1033,6 +1034,8 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Keys typed into a terminal belong to the shell (Ctrl+L, Ctrl+K, Ctrl+B…).
+      if (isTerminalTarget(e.target)) return;
       const k = e.key.toLowerCase();
       if (mod(e) && k === "k") { e.preventDefault(); setPalette((x) => !x); }
       else if (mod(e) && k === "n" && !e.shiftKey) { e.preventDefault(); if (active) newChat(active.project.id); }
