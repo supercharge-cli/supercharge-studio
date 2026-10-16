@@ -180,3 +180,6 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-perm-icon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,#e0a030 18%,transparent);color:#e0a030;flex:none}
 .m-perm-title{margin:4px 0;font-weight:500;word-break:break-word}
 .m-perm-details summary{min-height:44px;display:flex;align-items:center;color:var(--muted);cursor:pointer}
+.m-snip{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.m-notify{flex-wrap:wrap;gap:8px}.m-notify-opts{display:flex;gap:10px;flex-wrap:wrap;font-size:13px}.m-notify-opts label{display:flex;align-items:center;gap:4px}
+.search-flash{animation:sflash 2s ease}@keyframes sflash{0%,40%{outline:2px solid var(--acc)}100%{outline:2px solid transparent}}

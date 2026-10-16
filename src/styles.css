@@ -494,3 +494,6 @@ button:active:not(:disabled){transform:scale(.97)}
 .turn-changes{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;margin:4px 0}
 .wt-badge{font:10px/1 ui-monospace,monospace;padding:2px 5px;border-radius:6px;border:1px solid var(--line);color:var(--muted);margin-left:4px;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis}
 .wt-acts{display:inline-flex;align-items:center;gap:4px;margin-left:8px}
+/* Session search hits (palette) */
+.palette-hit{align-items:flex-start}.ph-main{display:flex;flex-direction:column;min-width:0;flex:1;gap:2px}.ph-top{display:flex;gap:8px;align-items:baseline;min-width:0}.ph-top .pi-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ph-date{margin-left:auto;color:var(--muted);font-size:11px;flex:none}.ph-snip{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}.ph-snip mark,.m-snip mark{background:color-mix(in srgb,var(--acc) 30%,transparent);color:inherit;border-radius:3px;padding:0 1px}
+.search-flash{animation:sflash 2s ease}@keyframes sflash{0%,40%{background:color-mix(in srgb,var(--acc) 18%,transparent)}100%{background:transparent}}

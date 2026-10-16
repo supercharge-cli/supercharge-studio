@@ -74,6 +74,10 @@ export class GatewayHub {
     this.buffers.set(sessionId, updates.slice(-MAX_REPLAY));
   }
 
+  /** Agent alert (turn done / error / needs approval) for phones; they decide whether to show it. */
+  agentEvent(sessionId: string, kind: "done" | "error" | "permission", body: string) {
+    for (const d of this.devices) this.send(d, { jsonrpc: "2.0", method: "_supercharge/agent_event", params: { sessionId, kind, body } });
+  }
   sessionsChanged() {
     for (const d of this.devices) this.send(d, { jsonrpc: "2.0", method: "_supercharge/sessions/changed", params: {} });
   }

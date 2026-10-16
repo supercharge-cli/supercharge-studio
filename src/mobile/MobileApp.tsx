@@ -1,4 +1,6 @@
 import { cleanPermission } from "../lib/labels";
+import { clip, Deduper, defaultNotifyPrefs, notifyTitle, shouldNotify, type NotifyKind, type NotifyPrefs } from "../lib/notify";
+import type { Hit, SearchIndex } from "../lib/searchIndex";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AcpClient, ConnectionState } from "../acp/client";
 import { applyUpdate, ChatItem, emptySession, SessionState } from "../acp/session";
@@ -24,6 +26,23 @@ export const RECONNECT = { initialDelayMs: 250, maxDelayMs: 5000, factor: 2 };
 /** The on-screen keyboard is open when the visible height dropped well below the full height. */
 export const keyboardOpen = (full: number, now: number) => full - now > 120;
 /** Android keep-alive bridge (absent on iOS and in the browser). */
+/** Local alert for agent events while the app is in the background or another chat is open. */
+const notifyDedupe = new Deduper();
+function phoneNotify(kind: NotifyKind, sid: string, chatTitle: string, body: string, prefs: NotifyPrefs, openSid: string | null) {
+  const visible = document.visibilityState !== "hidden";
+  if (!shouldNotify(kind, prefs, { focused: visible, visible, activeChatId: openSid ?? undefined, chatId: sid }) || !notifyDedupe.ok(`${sid}:${kind}`)) return;
+  const title = notifyTitle(kind, chatTitle), text = clip(body);
+  try {
+    const a = (window as any).SuperchargeAndroid;
+    if (a?.notify) { a.notify(sid, title, text, prefs.sound); return; }
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      const n = new Notification(title, { body: text, silent: !prefs.sound });
+      n.onclick = () => { window.focus(); window.dispatchEvent(new CustomEvent("supercharge:open-chat", { detail: sid })); };
+    }
+  } catch { /* not available */ }
+}
+const NOTIFY_KEY = "supercharge-mobile/notify";
+const loadNotifyPrefs = (): NotifyPrefs => { try { return { ...defaultNotifyPrefs, ...JSON.parse(localStorage.getItem(NOTIFY_KEY) ?? "{}") }; } catch { return defaultNotifyPrefs; } };
 const keepAlive = (on: boolean) => { try { (window as any).SuperchargeAndroid?.keepAlive?.(on); } catch { /* not available */ } };
 const SUGGESTIONS = ["Explain this project", "Find and fix a bug", "Write tests for recent changes", "Summarize what changed today"];
 
@@ -124,6 +143,15 @@ export default function MobileApp() {
   const [list, setList] = useState<Sess[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [open, setOpen] = useState<string | null>(null);
+  // Notifications + message search (local index of chats opened on this phone).
+  const notifyPrefs = useRef(loadNotifyPrefs());
+  const openRef = useRef<string | null>(null);
+  openRef.current = open;
+  const titleOf = useRef<(sid: string) => string>(() => "chat");
+  const notifyRef = useRef((kind: NotifyKind, sid: string, body: string) => phoneNotify(kind, sid, titleOf.current(sid), body, notifyPrefs.current, openRef.current));
+  const searchIx = useRef<SearchIndex | null>(null);
+  const [flashMsg, setFlashMsg] = useState(-1);
+  const photoInput = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<Record<string, SessionState>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState("");
@@ -251,9 +279,13 @@ export default function MobileApp() {
             return false;
           }));
         } else if (method === "_supercharge/handoff") setHandoff(String(p?.sessionId ?? ""));
+        else if (method === "_supercharge/agent_event" && p?.sessionId && ["done", "error", "permission"].includes(p?.kind)) notifyRef.current(p.kind, String(p.sessionId), String(p.body ?? ""));
         else if (method === "_supercharge/sessions/changed") void refresh();
       },
-      onPermissionRequest: (req) => new Promise((resolve) => setPermQueue((pending) => [...pending, { req: cleanPermission(req), resolve }])),
+      onPermissionRequest: (req) => new Promise((resolve) => {
+        notifyRef.current("permission", req.sessionId, `Allow: ${(req as any).toolCall?.title ?? "a tool call"}?`);
+        setPermQueue((pending) => [...pending, { req: cleanPermission(req), resolve }]);
+      }),
       onReconnected: () => {
         loadedRef.current.clear();
         setConfigBySession({});
@@ -325,6 +357,33 @@ export default function MobileApp() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  titleOf.current = (sid) => list.find((x) => x.sessionId === sid)?.title || "chat";
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      if (!searchIx.current) { const { SearchIndex } = await import("../lib/searchIndex"); searchIx.current ??= new SearchIndex(); }
+      for (const x of list) {
+        const at = Date.parse(x.updatedAt ?? "") || 0;
+        searchIx.current!.upsert({ chatId: x.sessionId, title: x.title || "Untitled", project: x._meta?.project ?? (x.cwd ?? "").split(/[\\/]/).pop() ?? "", updatedAt: at }, (state[x.sessionId]?.items as any) ?? null);
+      }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [list, state]);
+  async function openHit(h: Hit) {
+    await openSession(h.chatId);
+    if (h.msgIndex == null) return;
+    const idx = h.msgIndex;
+    let tries = 0;
+    const t = setInterval(() => {
+      const el = document.querySelector(`[data-mi="${idx}"]`) as HTMLElement | null;
+      if (el) { clearInterval(t); stuck.current = false; el.scrollIntoView({ block: "center" }); setFlashMsg(idx); setTimeout(() => setFlashMsg(-1), 2200); }
+      else if (++tries > 40) clearInterval(t);
+    }, 75);
+  }
+  useEffect(() => {
+    const onOpen = (e: Event) => { const sid = String((e as CustomEvent).detail ?? ""); if (sid) { setDrawer(false); void openSession(sid); } };
+    window.addEventListener("supercharge:open-chat", onOpen);
+    return () => window.removeEventListener("supercharge:open-chat", onOpen);
+  });
   async function openSession(sid: string) {
     activeSessionRef.current = sid;
     setPicker(null);
@@ -363,7 +422,7 @@ export default function MobileApp() {
     for (const f of files) {
       const why = rejectReason(f, n);
       if (why) { setAttErr(why); continue; }
-      add.push(await fromFile(f));
+      try { add.push(await fromFile(f)); } catch (e: any) { setAttErr(String(e?.message ?? e)); continue; }
       n++;
     }
     if (add.length) { haptic(); setAtts((a) => [...a, ...add]); }
@@ -411,11 +470,13 @@ export default function MobileApp() {
     try {
       const r = await c.prompt(open, text, extra);
       if (r.stopReason !== "end_turn") setState((all) => ({ ...all, [open]: { ...all[open], items: [...all[open].items, { kind: "system", text: `stopped: ${r.stopReason}` }] } }));
+      if (r.stopReason !== "cancelled") notifyRef.current("done", open, r.stopReason === "end_turn" ? "The agent finished its reply" : `Stopped: ${r.stopReason}`);
       setBusy((b) => ({ ...b, [open]: false }));
     } catch (e: any) {
       // A dropped link doesn't stop the turn on the computer; the reload after reconnecting shows the rest.
       if (/Connection lost|Connection closed|no answer to ping/i.test(String(e?.message ?? e))) return;
       setState((all) => ({ ...all, [open]: { ...(all[open] ?? emptySession()), items: [...(all[open]?.items ?? []), { kind: "system", text: `The turn failed: ${e?.message ?? e}`, error: true } as any] } }));
+      notifyRef.current("error", open, String(e?.message ?? e));
       setBusy((b) => ({ ...b, [open]: false }));
     }
   }
@@ -490,9 +551,10 @@ export default function MobileApp() {
   const hasSettings = !!(modelOption || thinkingOption || permissionOption || sessionModes);
   const renderItem = (m: ChatItem, i: number) =>
     m.kind === "tool" ? (sess.toolCalls[m.toolCallId] ? <ToolCard key={i} tc={sess.toolCalls[m.toolCallId]} compact /> : null)
-      : m.kind === "agent" ? <div key={i} className="bubble agent"><Markdown text={m.text} /></div>
-      : <div key={i} className={`bubble ${(m as any).error ? "error" : m.kind}`} role={(m as any).error ? "alert" : undefined}>{m.text}</div>;
+      : m.kind === "agent" ? <div key={i} data-mi={i} className={`bubble agent${flashMsg === i ? " search-flash" : ""}`}><Markdown text={m.text} /></div>
+      : <div key={i} data-mi={i} className={`bubble ${(m as any).error ? "error" : m.kind}${flashMsg === i ? " search-flash" : ""}`} role={(m as any).error ? "alert" : undefined}>{m.text}</div>;
   const q = search.trim().toLowerCase();
+  const msgHits: Hit[] = q.length >= 2 ? (searchIx.current?.search(q, 30) ?? []).filter((h) => h.msgIndex != null) : [];
   const shown = q ? grouped.map((g) => ({ ...g, sessions: g.sessions.filter((s) => `${s.title ?? ""} ${g.project.name}`.toLowerCase().includes(q)) })).filter((g) => g.sessions.length || g.project.name.toLowerCase().includes(q)) : grouped;
   const allProjects = grouped.map((g) => g.project);
   const chatSections = (() => {
@@ -607,7 +669,18 @@ export default function MobileApp() {
                 ))}
               </section>
             )}
-            {q && shown.length === 0 && <p className="muted m-none">No chats match “{search}”.</p>}
+            {msgHits.length > 0 && (
+              <section className="m-proj" data-testid="m-msg-hits">
+                <div className="m-proj-head"><b>In messages</b></div>
+                {msgHits.map((h) => (
+                  <button key={`hit-${h.chatId}`} className="m-chat m-chat-recent m-hit" data-testid="m-search-hit" onClick={() => { setDrawer(false); void openHit(h); }}>
+                    <span className="m-chat-body"><span className="m-chat-title">{h.title || "Untitled"}</span><span className="m-chat-sub m-snip">{h.snippet.before}<mark>{h.snippet.match}</mark>{h.snippet.after}</span></span>
+                    <span className="m-chat-time">{h.project}</span>
+                  </button>
+                ))}
+              </section>
+            )}
+            {q && shown.length === 0 && msgHits.length === 0 && <p className="muted m-none">No chats match “{search}”.</p>}
             </div>
           <div className="m-fab-row">
             <button className="m-fab m-disconnect" data-testid="m-disconnect" onClick={() => { haptic(); setConfirmDisconnect(true); }}>Disconnect</button>
@@ -666,6 +739,8 @@ export default function MobileApp() {
               <div className="m-compose-row">
                 <input ref={fileInput} type="file" multiple hidden accept="*/*" data-testid="m-attach-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
                 <button className="icon m-attach" aria-label="Attach files" data-testid="m-attach" onClick={() => fileInput.current?.click()}><Icon name="plus" size={20} /></button>
+                <input ref={photoInput} type="file" multiple hidden accept="image/*" data-testid="m-photo-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
+                <button className="icon m-attach" aria-label="Add photo" data-testid="m-photo" onClick={() => photoInput.current?.click()}><Icon name="photo" size={19} /></button>
                 {permissionOption && (
                   <span className="m-think-anchor">
                     <button type="button" className="m-chip m-chip-accent" onClick={() => { haptic(); setPermPop((v) => !v); setThinkPop(false); setModePop(false); }}>{optionLabel(permissionOption)}</button>
@@ -741,6 +816,13 @@ export default function MobileApp() {
               }} />
             </div>}
             <button className="m-row" onClick={() => { setSheet(false); void client.current?.ext("_supercharge/focus", { sessionId: open }); setToast("Opened on your computer"); }}><span>Open on computer</span><Icon name="panelRight" size={15} /></button>
+            <div className="m-row m-notify" data-testid="m-notify"><span>Alerts</span>
+              <span className="m-notify-opts">
+                {([["done", "Done"], ["error", "Errors"], ["permission", "Approvals"], ["sound", "Sound"]] as const).map(([k, label]) => (
+                  <label key={k}><input type="checkbox" data-testid={`m-notify-${k}`} checked={notifyPrefs.current[k]} onChange={(e) => { notifyPrefs.current = { ...notifyPrefs.current, [k]: e.target.checked }; try { localStorage.setItem(NOTIFY_KEY, JSON.stringify(notifyPrefs.current)); } catch { /* ignore */ } setFlashMsg((x) => x); setToast(`${label} alerts ${e.target.checked ? "on" : "off"}`); }} /> {label}</label>
+                ))}
+              </span>
+            </div>
           </div>
         </div>
       )}

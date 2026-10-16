@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
 
-export type Command = { id: string; title: string; hint?: string; icon?: string; group?: string; run: () => void };
+import type { Hit } from "../lib/searchIndex";
+export type Command = { id: string; title: string; hint?: string; icon?: string; group?: string; run: () => void; hit?: Hit };
+
+const fmtDate = (t: number) => { const d = new Date(t); return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString([], { month: "short", day: "numeric" }); };
 
 /** Fuzzy subsequence score (higher is better), -1 if no match. */
 export function score(q: string, s: string): number {
@@ -20,13 +23,17 @@ export function score(q: string, s: string): number {
   return i === q.length ? sc : -1;
 }
 
-export function CommandPalette({ commands, onClose }: { commands: Command[]; onClose: () => void }) {
-  const [q, setQ] = useState("");
+export function CommandPalette({ commands, onClose, searchChats, onHit, initialQuery = "" }: { commands: Command[]; onClose: () => void; searchChats?: (q: string) => Hit[]; onHit?: (h: Hit) => void; initialQuery?: string }) {
+  const [q, setQ] = useState(initialQuery);
   const [sel, setSel] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const list = useMemo(
-    () => commands.map((c) => ({ c, s: score(q, `${c.title} ${c.hint ?? ""}`) })).filter((x) => x.s >= 0).sort((a, b) => b.s - a.s).slice(0, 50).map((x) => x.c),
-    [commands, q],
+    () => {
+      const cmds = commands.map((c) => ({ c, s: score(q, `${c.title} ${c.hint ?? ""}`) })).filter((x) => x.s >= 0).sort((a, b) => b.s - a.s).slice(0, q.trim().length >= 2 && searchChats ? 8 : 50).map((x) => x.c);
+      const hits: Command[] = q.trim().length >= 2 && searchChats && onHit ? searchChats(q).slice(0, 40).map((h) => ({ id: `hit-${h.chatId}`, title: h.title, icon: "chat", hit: h, run: () => onHit(h) })) : [];
+      return [...cmds, ...hits];
+    },
+    [commands, q, searchChats, onHit],
   );
   useEffect(() => input.current?.focus(), []);
   useEffect(() => setSel(0), [q]);
@@ -69,6 +76,15 @@ export function CommandPalette({ commands, onClose }: { commands: Command[]; onC
         <div className="palette-list">
           {list.length === 0 && <div className="muted palette-empty">No matches</div>}
           {list.map((c, i) => (
+            c.hit ? (
+              <button key={c.id} className={`palette-item palette-hit ${i === sel ? "on" : ""}`} data-testid="search-hit" onMouseEnter={() => setSel(i)} onClick={() => run(c)}>
+                <Icon name="chat" size={15} />
+                <span className="ph-main">
+                  <span className="ph-top"><span className="pi-title">{c.hit.title}</span><span className="pi-group">{c.hit.project}</span><span className="ph-date">{fmtDate(c.hit.updatedAt)}</span></span>
+                  <span className="ph-snip">{c.hit.snippet.before}<mark>{c.hit.snippet.match}</mark>{c.hit.snippet.after}</span>
+                </span>
+              </button>
+            ) :
             <button key={c.id} className={`palette-item ${i === sel ? "on" : ""}`} onMouseEnter={() => setSel(i)} onClick={() => run(c)}>
               <Icon name={c.icon ?? "command"} size={15} />
               <span className="pi-title">{c.title}</span>

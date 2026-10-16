@@ -26,7 +26,8 @@ export function rejectReason(f: { name: string; size: number; type: string }, co
   if (count >= MAX_ATTACHMENTS) return `At most ${MAX_ATTACHMENTS} attachments per message.`;
   if (f.size === 0) return `${f.name} is empty.`;
   if (f.size > MAX_FILE) return `${f.name} is ${fmtSize(f.size)}; the limit is ${fmtSize(MAX_FILE)}.`;
-  if (isImage(f.type) && f.size > MAX_IMAGE) return `${f.name} is ${fmtSize(f.size)}; images can be up to ${fmtSize(MAX_IMAGE)}.`;
+  // Bigger images are downscaled first (fromFile) and only refused if they are still over the limit.
+  if (isImage(f.type) && f.size > MAX_FILE) return `${f.name} is ${fmtSize(f.size)}; images can be up to ${fmtSize(MAX_IMAGE)}.`;
   return null;
 }
 
@@ -52,6 +53,8 @@ export function attachmentName(name: string, mime: string): string {
 }
 
 export async function fromFile(f: File): Promise<Attachment> {
+  if (isImage(f.type)) f = await import("./imageResize").then((m) => m.downscaleImage(f)).catch(() => f);
+  if (isImage(f.type) && f.size > MAX_IMAGE) throw new Error(`${f.name} is ${fmtSize(f.size)}; images can be up to ${fmtSize(MAX_IMAGE)}.`);
   const bytes = new Uint8Array(await f.arrayBuffer());
   const mime = f.type || (isText(f.name, "") ? "text/plain" : "application/octet-stream");
   return { id: rid(), name: attachmentName(f.name, mime), mime, size: bytes.length, bytes, preview: isImage(mime) ? URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime })) : undefined };
@@ -68,6 +71,10 @@ export async function upload(a: Attachment, send: SendChunk, onProgress?: (done:
   }
   return last as Uploaded;
 }
+
+/** Warning when images will go as plain files because the agent can't take image blocks. */
+export const imageFallbackWarning = (atts: { mime: string }[], caps: Caps) =>
+  caps.image === false && atts.some((a) => isImage(a.mime)) ? "This agent can't read images directly; they were attached as files instead." : "";
 
 export type Caps = { image?: boolean; embeddedContext?: boolean };
 

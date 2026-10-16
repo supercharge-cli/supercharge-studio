@@ -1,6 +1,7 @@
 /** Tiny inline SVG icon set (stroke icons, 24×24 grid). */
 const P: Record<string, string> = {
   plus: "M12 5v14M5 12h14",
+  photo: "M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M16 10a1.5 1.5 0 1 0 0-.1",
   edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z",
   trash: "M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14",
   chevronRight: "m9 18 6-6-6-6",

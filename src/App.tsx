@@ -179,6 +179,19 @@ export default function App() {
     setSessions((all) => ({ ...all, [cid]: { ...(all[cid] ?? emptySession()), items: [...(all[cid]?.items ?? []), item] } }));
   };
 
+  // ---- Notifications (turn done / error / needs approval while not looking) ----
+  const notifyEv = (kind: "done" | "error" | "permission", key: { chatId?: string; sessionId?: string }, body: string) => {
+    const d = dataRef.current;
+    let chat: { id: string; title: string; sessionId?: string } | undefined;
+    for (const g of d.groups) for (const p of g.projects) for (const c of p.chats) if (c.id === key.chatId || (key.sessionId && c.sessionId === key.sessionId)) chat = c;
+    if (!chat) return;
+    const c = chat;
+    // Away from the computer: let paired phones alert too.
+    const sid = (c as any).sessionId as string | undefined;
+    if (sid && (!document.hasFocus() || document.visibilityState === "hidden")) hubRef.current?.agentEvent(sid, kind, body);
+    void import("./lib/notifyDeliver").then((m) => m.deliver({ kind, chatId: c.id, title: c.title, body }, d.settings.notify, d.activeChatId, c.title)).catch(() => {});
+  };
+
   // ---- Usage ----
   const providerName = () => {
     const st = dataRef.current.settings;
@@ -383,6 +396,7 @@ export default function App() {
       },
       onPlanApproval: (req) =>
         new Promise((resolve) => {
+          notifyEv("permission", { sessionId: (req as any).sessionId }, "A plan is waiting for your approval");
           setPanel(true);
           setPanelPick({ tab: "plan", n: Date.now() });
           setPlanQueue((pending) => [...pending, { req, resolve }]);
@@ -400,6 +414,7 @@ export default function App() {
           const fan = hub.deviceCount > 0 ? hub.requestPermission(req.sessionId, req) : null;
           fan?.answer.then((o) => finish(o, "device"));
           setPermQueue((pending) => [...pending, { req, resolve: (o) => finish(o, "desktop", fan?.token), token: fan?.token }]);
+          notifyEv("permission", { sessionId: req.sessionId }, `Allow: ${(req as any).toolCall?.title ?? "a tool call"}?`);
         }),
       onReconnected: () => {
         setStatus("Reconnected");
@@ -760,6 +775,7 @@ export default function App() {
       // Prefer the agent's turn report; fall back to `usage` on the prompt result.
       if ((r as any).usage && !turnUsage.current.has(sid)) recordUsage(sid, (r as any).usage, `${sid}:result:${Date.now()}`);
       if (r.stopReason !== "end_turn") pushItem(chatId, { kind: "system", text: `stopped: ${r.stopReason}` });
+      if (r.stopReason !== "cancelled") notifyEv("done", { chatId }, r.stopReason === "end_turn" ? "The agent finished its reply" : `Stopped: ${r.stopReason}`);
       {
         // "N files changed — Review" after a turn that edited files.
         const ss = sessionsRef.current[chatId];
@@ -778,6 +794,7 @@ export default function App() {
           ? "The selected model is not available from your provider. Pick another model in Settings (or set `[models] default` in ~/.supercharge/config.toml).\n\n" + msg
           : `Error: ${msg}`;
       pushItem(chatId, { kind: "system", text: t, error: isAuthError(e) || isModelError(e) ? "config" : "prompt", retry: text } as any);
+      notifyEv("error", { chatId }, msg);
       throw e;
     } finally {
       setBusy((b) => ({ ...b, [chatId]: false }));
@@ -856,6 +873,7 @@ export default function App() {
       try {
         const blocks = await toBlocks(sending, { image: pc.image !== false, embeddedContext: true }, isDesktop() ? (params) => invoke("upload_chunk", { params }) : undefined);
         blocks.forEach((b: any, i) => (b._att = sending[i].name));
+        if (pc.image === false && sending.some((a) => /^image\//.test(a.mime))) setAttErr("This agent can't read images directly; they were attached as files instead.");
         extra = [...extra, ...blocks];
       } catch (e: any) {
         setAtts(sending);
@@ -881,7 +899,7 @@ export default function App() {
     for (const f of files) {
       const why = rejectReason(f, n);
       if (why) { setAttErr(why); continue; }
-      add.push(await fromFile(f));
+      try { add.push(await fromFile(f)); } catch (e: any) { setAttErr(String(e?.message ?? e)); continue; }
       n++;
     }
     if (add.length) setAtts((a) => [...a, ...add]);
@@ -1069,6 +1087,37 @@ export default function App() {
   }
 
   // ---- Command palette + keyboard shortcuts ----
+  // ---- Session search (local full-text index, lazy) ----
+  const searchRef = useRef<import("./lib/searchIndex").SearchIndex | null>(null);
+  const [scrollTo, setScrollTo] = useState<{ chatId: string; index: number; n: number } | null>(null);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      void import("./lib/searchIndex").then(({ SearchIndex }) => {
+        const ix = (searchRef.current ??= new SearchIndex());
+        for (const g of data.groups) for (const p of g.projects) for (const c of p.chats)
+          ix.upsert({ chatId: c.id, title: c.title, project: p.name, updatedAt: c.updatedAt ?? c.createdAt }, (sessions[c.id]?.items as any) ?? null);
+      });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [sessions, data.groups]);
+  const searchChats = useCallback((q: string) => searchRef.current?.search(q) ?? [], []);
+  const openHit = useCallback((h: import("./lib/searchIndex").Hit) => {
+    const d = dataRef.current;
+    for (const g of d.groups) for (const p of g.projects) if (p.chats.some((c) => c.id === h.chatId)) {
+      setView("chat");
+      void selectChat(p.id, h.chatId).then(() => { if (h.msgIndex != null) setScrollTo({ chatId: h.chatId, index: h.msgIndex, n: Date.now() }); });
+    }
+  }, []);
+  // Opening the app right after an alert (or clicking a web alert) opens that chat.
+  useEffect(() => {
+    const open = (id: string | null) => { if (!id) return; const d = dataRef.current; for (const g of d.groups) for (const p of g.projects) if (p.chats.some((c) => c.id === id)) { setView("chat"); void selectChat(p.id, id); } };
+    const onFocus = () => void import("./lib/notifyDeliver").then((m) => open(m.takePending())).catch(() => {});
+    const onOpen = (e: Event) => open((e as CustomEvent).detail);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("supercharge:open-chat", onOpen);
+    return () => { window.removeEventListener("focus", onFocus); window.removeEventListener("supercharge:open-chat", onOpen); };
+  }, []);
+
   const paletteCommands: Command[] = useMemo(() => {
     const cmds: Command[] = [
       { id: "new", title: "New chat", hint: "Ctrl N", icon: "plus", run: () => active && newChat(active.project.id) },
@@ -1295,6 +1344,7 @@ export default function App() {
             key={activeChat?.id ?? "none"}
             className="messages"
             items={sess.items}
+            scrollTo={scrollTo && scrollTo.chatId === activeChat?.id ? scrollTo : null}
             keyOf={(_, i) => i}
             render={renderItem}
             header={
@@ -1417,7 +1467,7 @@ export default function App() {
         </main>
       )}
       {view === "chat" && panel && <Suspense fallback={null}><BrowserPanel plan={sess.plan} sessionId={activeChat?.sessionId} cwd={active?.project.cwd} focus={panelPick} onClose={() => setPanel(false)} /></Suspense>}
-      {palette && <Suspense fallback={null}><CommandPalette commands={paletteCommands} onClose={() => setPalette(false)} /></Suspense>}
+      {palette && <Suspense fallback={null}><CommandPalette commands={paletteCommands} onClose={() => setPalette(false)} searchChats={searchChats} onHit={openHit} /></Suspense>}
       {pairReq && (
         <div className="modal-bg">
           <div className="modal" role="dialog" aria-label="Pair device" data-testid="pair-request">

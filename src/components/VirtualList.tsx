@@ -4,7 +4,7 @@ import { memo, ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useSt
  * Windowed list with measured row heights and stick-to-bottom behaviour.
  * Short lists render fully; long ones render only rows near the viewport.
  */
-export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate = 72, overscan = 900, footer, header, className }: {
+export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate = 72, overscan = 900, footer, header, className, scrollTo }: {
   items: T[];
   render: (item: T, index: number) => ReactNode;
   keyOf: (item: T, index: number) => string | number;
@@ -14,6 +14,8 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
   footer?: ReactNode;
   header?: ReactNode;
   className?: string;
+  /** Scroll a row into view and flash it (n changes per request). */
+  scrollTo?: { index: number; n: number } | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const heights = useRef(new Map<string, number>());
@@ -87,6 +89,31 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
     padBottom = hs.slice(end).reduce((a, b) => a + b, 0);
   }
 
+  // Search results: jump to a message (estimate first if virtualised, then refine on the real row).
+  const [flash, setFlash] = useState(-1);
+  useEffect(() => {
+    const el = ref.current;
+    if (!scrollTo || !el || scrollTo.index < 0 || scrollTo.index >= items.length) return;
+    stick.current = false;
+    setAway(true);
+    if (virtual) {
+      let y = 0;
+      for (let i = 0; i < scrollTo.index; i++) y += heights.current.get(String(keyOf(items[i], i))) ?? estimate;
+      el.scrollTop = Math.max(0, y - 80);
+      setView({ top: el.scrollTop, h: el.clientHeight });
+    }
+    setFlash(scrollTo.index);
+    let tries = 0;
+    const t = setInterval(() => {
+      const row = el.querySelector(`[data-vi="${scrollTo.index}"]`) as HTMLElement | null;
+      if (row) { row.scrollIntoView({ block: "center" }); clearInterval(t); }
+      else if (++tries > 20) clearInterval(t);
+    }, 50);
+    const f = setTimeout(() => setFlash(-1), 2200);
+    return () => { clearInterval(t); clearTimeout(f); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollTo?.n, items.length > 0]);
+
   const jump = () => { const el = ref.current; if (!el) return; stick.current = true; setAway(false); el.scrollTop = el.scrollHeight; };
   return (
     <div className="vlist-wrap">
@@ -99,7 +126,7 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
           const k = keyOf(it, i);
           const enter = i >= base.current && !seen.current.has(k);
           if (enter) seen.current.add(k);
-          return <Row key={k} k={k} ro={rows.current} item={it} index={i} enter={enter} render={render as (x: unknown, i: number) => ReactNode} />;
+          return <Row key={k} k={k} ro={rows.current} item={it} index={i} enter={enter} render={render as (x: unknown, i: number) => ReactNode} flash={i === flash} />;
         })}
         {padBottom > 0 && <div style={{ height: padBottom }} aria-hidden />}
         {footer}
@@ -111,7 +138,7 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
 }
 
 /** Memoised row: unchanged items (same object) skip re-render while the last one streams. */
-const Row = memo(function Row({ k, ro, item, index, render, enter }: { k: string | number; ro: ResizeObserver | null; item: unknown; index: number; enter?: boolean; render: (x: unknown, i: number) => ReactNode }) {
+const Row = memo(function Row({ k, ro, item, index, render, enter, flash }: { flash?: boolean; k: string | number; ro: ResizeObserver | null; item: unknown; index: number; enter?: boolean; render: (x: unknown, i: number) => ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const n = ref.current;
@@ -119,5 +146,5 @@ const Row = memo(function Row({ k, ro, item, index, render, enter }: { k: string
     ro.observe(n);
     return () => ro.unobserve(n);
   }, [ro]);
-  return <div ref={ref} data-k={k} className={enter ? "row-wrap enter" : "row-wrap"}>{render(item, index)}</div>;
+  return <div ref={ref} data-k={k} data-vi={index} className={`row-wrap${enter ? " enter" : ""}${flash ? " search-flash" : ""}`}>{render(item, index)}</div>;
 });

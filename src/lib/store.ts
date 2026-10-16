@@ -35,6 +35,8 @@ export type Settings = {
   agentChoice?: "own" | "key";
   ownBind?: string;
   gateway?: GatewayPrefs;
+  /** Agent-event notifications (all on when absent). */
+  notify?: { done: boolean; error: boolean; permission: boolean; sound: boolean };
 };
 export type AppData = {
   groups: Group[];

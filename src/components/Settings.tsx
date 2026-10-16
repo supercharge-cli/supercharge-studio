@@ -147,6 +147,11 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
             <label className="check"><input type="checkbox" checked={s.alwaysApprove} onChange={(e) => set({ ...s, alwaysApprove: e.target.checked })} /> Always approve by default for new chats</label>
             <p className="muted small">Change tool permissions for an existing chat with the mode button below its message box.</p>
             <label className="check"><input type="checkbox" data-testid="steer-default" checked={!!s.steerByDefault} onChange={(e) => set({ ...s, steerByDefault: e.target.checked })} /> Messages sent while the agent works steer the current turn (otherwise they wait in a queue)</label>
+            <h4 className="set-sub">Notifications</h4>
+            <p className="muted small">Shown only when Supercharge isn't focused or you're looking at another chat.</p>
+            {([["done", "When a reply finishes"], ["error", "When a turn fails"], ["permission", "When the agent needs approval (permissions, plans)"], ["sound", "Play a sound"]] as const).map(([k, label]) => (
+              <label key={k} className="check"><input type="checkbox" data-testid={`notify-${k}`} checked={s.notify?.[k] ?? true} onChange={(e) => set({ ...s, notify: { done: true, error: true, permission: true, sound: true, ...s.notify, [k]: e.target.checked } })} /> {label}</label>
+            ))}
             <p className="muted">{desktop ? "The server key is stored in the OS keychain." : "Web mode: settings are stored in this browser."}</p>
             {desktop && <AgentLog />}
           </div>

@@ -400,6 +400,7 @@ pub fn run() {
         // A second launch (e.g. from the menu while hidden in the tray) shows the running window.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| background::show_main(app)))
         .plugin(tauri_plugin_autostart::Builder::new().args([background::BACKGROUND_ARG]).build())
+        .plugin(tauri_plugin_notification::init())
         .manage(AppState::default())
         .manage(terminal::Terms::new())
         .setup(|app| {
