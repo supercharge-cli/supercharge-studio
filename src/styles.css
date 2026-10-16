@@ -36,7 +36,14 @@ select option{background:var(--panel);color:var(--fg)}
 .app.with-panel{grid-template-columns:auto 1fr minmax(340px,38vw)}
 
 /* sidebar */
-.sidebar{width:264px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.sidebar{width:264px;flex:none;position:relative;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.side-resize{position:absolute;top:0;right:-3px;width:6px;height:100%;cursor:col-resize;z-index:5}
+.side-resize:hover,body.resizing .side-resize{background:var(--acc-bg)}
+body.resizing{cursor:col-resize;user-select:none}
+body.resizing .sidebar{transition:none}
+.recent-main{display:flex;flex-direction:column;min-width:0;flex:1;align-items:flex-start}
+.recent-main .chat-t,.recent-proj{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recent-proj{font-size:11px}
 .sidebar.collapsed{width:52px;align-items:center;padding-top:10px;gap:6px}
 .side-head{display:flex;align-items:center;gap:8px;padding:12px 10px 10px 14px}
 .logo{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;overflow:hidden;background:#000}
@@ -270,7 +277,8 @@ kbd{font:11px ui-monospace,Menlo,Consolas,monospace;padding:1px 5px;border:1px s
 .screen-main{flex:1;min-width:0;display:flex;flex-direction:column}
 .screen-head{display:flex;align-items:center;gap:10px;padding:14px 26px;border-bottom:1px solid var(--line)}
 .screen-head h2{margin:0;font-size:17px;font-weight:650;letter-spacing:-.01em}
-.screen-body{flex:1;overflow:auto;padding:22px 26px;display:flex;flex-direction:column;gap:14px;max-width:980px;width:100%}
+.screen-body{flex:1;overflow:auto;padding:22px 26px;display:flex;flex-direction:column;gap:14px;width:100%;box-sizing:border-box}
+.screen-body input.bad{border-color:var(--bad)}
 .section-anim{animation:rise .2s var(--ease) both}
 .screen-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 26px;border-top:1px solid var(--line)}
 .seg.sm button{padding:4px 10px;font-size:12.5px}

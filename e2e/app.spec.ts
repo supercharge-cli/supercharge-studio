@@ -186,45 +186,25 @@ test("stop cancels a running turn", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible();
 });
 
-test("sidebar groups/projects/chats create, rename, delete and persist", async ({ page }) => {
+test("sidebar recents list and resize persist", async ({ page }) => {
   await boot(page);
-  await page.getByTestId("view-groups").click();
-  await page.getByTestId("add-group").click();
-  await page.getByTestId("inline-input").fill("Work");
-  await page.getByTestId("inline-input").press("Enter");
-  const work = page.getByTestId("group").filter({ hasText: "Work" });
-  await work.getByTestId("add-project").click();
-  await page.getByTestId("inline-input").fill("api");
-  await page.getByTestId("inline-input").press("Enter");
-  await page.getByTestId("inline-input").fill("/srv/api");
-  await page.getByTestId("inline-input").press("Enter");
-  const api = work.getByTestId("project");
-  await expect(api).toContainText("api");
-  await api.getByTestId("rename-project").click();
-  await page.getByTestId("inline-input").fill("api-server");
-  await page.getByTestId("inline-input").press("Enter");
-  await api.getByTestId("new-chat").click();
-  await api.getByTestId("rename-chat").click();
-  await page.getByTestId("inline-input").fill("Design notes");
-  await page.getByTestId("inline-input").press("Enter");
-  await work.getByTestId("rename-group").click();
-  await page.getByTestId("inline-input").fill("Work stuff");
-  await page.getByTestId("inline-input").press("Enter");
+  await ask(page, "hello");
+  await page.getByTestId("view-recents").click();
+  const rec = page.getByTestId("recents");
+  await expect(rec.getByTestId("chat").first()).toBeVisible();
+  await expect(rec.getByTestId("chat-time").first()).toHaveText("now");
+  const side = page.getByTestId("sidebar");
+  const h = await page.getByTestId("sidebar-resize").boundingBox();
+  await page.mouse.move(h!.x + 3, h!.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(h!.x + 103, h!.y + 200);
+  await page.mouse.up();
+  await expect.poll(async () => (await side.boundingBox())!.width).toBeGreaterThan(330);
+  const w = (await side.boundingBox())!.width;
   await page.reload();
-  const g = page.getByTestId("group").filter({ hasText: "Work stuff" });
-  await expect(g.getByTestId("project-name")).toHaveText("api-server");
-  await expect(g.getByTestId("chat-title")).toHaveText("Design notes");
-  await g.getByTestId("chat").getByTestId("delete").click();
-  await g.getByTestId("confirm-delete").click();
-  await expect(g.getByTestId("chat")).toHaveCount(0);
-  await g.getByTestId("project").getByTestId("delete").click();
-  await g.getByTestId("confirm-delete").click();
-  await expect(g.getByTestId("project")).toHaveCount(0);
-  await g.locator(".group-head").getByTestId("delete").click();
-  await g.getByTestId("confirm-delete").click();
-  await expect(page.getByTestId("group")).toHaveCount(1);
-  await page.getByTestId("collapse-sidebar").click();
-  await expect(page.getByTestId("expand-sidebar")).toBeVisible();
+  expect(Math.abs((await page.getByTestId("sidebar").boundingBox())!.width - w)).toBeLessThan(2);
+  await page.getByTestId("sidebar-resize").dblclick();
+  await expect.poll(async () => Math.round((await page.getByTestId("sidebar").boundingBox())!.width)).toBe(264);
 });
 
 test("slash menu and settings", async ({ page }) => {
@@ -318,6 +298,9 @@ test("usage screen aggregates tokens and estimates cost from editable pricing", 
   await expect(page.locator(".tbl").first()).toContainText("fake-model");
   await page.getByTestId("price-input").fill("10");
   await page.getByTestId("price-output").fill("100");
+  await page.getByTestId("price-input").fill("0.");
+  await expect(page.getByTestId("price-input")).toHaveValue("0.");
+  await page.getByTestId("price-input").fill("10");
   // (2400-400 cached billed at input when no cached price) ... all input at $10/M + 600 out at $100/M
   await expect(page.getByTestId("stat-cost")).toHaveText("$0.08");
   await page.getByTestId("period-month").click();

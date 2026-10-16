@@ -40,7 +40,7 @@ export type AppData = {
   /** Data format version (2 = synced with the CLI session list). */
   schema?: number;
   /** Sidebar layout: "projects" (one entry per folder, like the CLI) or "groups" (app-only groups). */
-  sidebarView?: "projects" | "groups";
+  sidebarView?: "projects" | "groups" | "recents";
   /** CLI sessions the user removed from the sidebar (never re-added by sync). */
   hiddenSessions?: string[];
 };
@@ -244,6 +244,24 @@ export function projectsByCwd(d: AppData): FolderView[] {
   for (const f of out) f.chats.sort((a, b) => (b.chat.updatedAt ?? b.chat.createdAt) - (a.chat.updatedAt ?? a.chat.createdAt));
   return out.sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name));
 }
+
+/** Every chat across projects, most recent activity first (sidebar Recents). */
+export type RecentChat = { projectId: string; projectName: string; chat: Chat; at: number };
+export function recentChats(d: AppData): RecentChat[] {
+  const out: RecentChat[] = [];
+  for (const g of d.groups) for (const p of g.projects) for (const c of p.chats)
+    out.push({ projectId: p.id, projectName: p.name || folderName(normCwd(p.cwd)), chat: c, at: c.updatedAt ?? c.createdAt });
+  return out.sort((a, b) => b.at - a.at);
+}
+
+/** Sidebar width, persisted on this device. */
+export const SIDEBAR_MIN = 180, SIDEBAR_MAX = 480, SIDEBAR_DEFAULT = 264;
+const SW_KEY = "supercharge-studio/sidebar-width";
+export const clampSidebar = (w: number) => Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w)));
+export function loadSidebarWidth(): number {
+  try { const n = Number(localStorage.getItem(SW_KEY)); return n ? clampSidebar(n) : SIDEBAR_DEFAULT; } catch { return SIDEBAR_DEFAULT; }
+}
+export function saveSidebarWidth(w: number) { try { localStorage.setItem(SW_KEY, String(clampSidebar(w))); } catch { /* ignore */ } }
 
 /** "now", "5m", "3h", "2d", "4w", then a date. */
 export function relTime(ms: number, now = Date.now()): string {

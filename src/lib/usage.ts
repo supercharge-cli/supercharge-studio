@@ -138,3 +138,11 @@ export function aggregate(rs: UsageRecord[], pricing: Pricing, period: Period, k
 
 export const fmtTokens = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
 export const fmtUsd = (n: number) => (n === 0 ? "$0" : n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`);
+
+/** Parse a typed price ("0.1", ".5", "2,75"); null when not a valid non-negative number. */
+export function parsePrice(v: string): number | null {
+  const t = v.trim().replace(",", ".");
+  if (!/^(\d+\.?\d*|\.\d+)$/.test(t)) return null;
+  const n = Number(t);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}

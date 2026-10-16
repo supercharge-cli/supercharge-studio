@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { aggregate, bucketRange, clearUsage, fmtTokens, fmtUsd, Period, Pricing, UsageRecord } from "../lib/usage";
+import { aggregate, bucketRange, clearUsage, fmtTokens, fmtUsd, parsePrice, Period, Pricing, UsageRecord } from "../lib/usage";
 import { Icon } from "./Icon";
 
 const RANGE: Record<Period, number> = { day: 30, month: 12, year: 5 };
@@ -128,13 +128,13 @@ export function UsageScreen({ records, pricing, onPricing, onClear, onClose }: {
           {models.length === 0 && <p className="muted">Models appear here after the agent reports usage for them.</p>}
           {models.map((m) => {
             const p = pricing[m] ?? { input: 0, output: 0 };
-            const set = (k: "input" | "output" | "cached", v: string) => onPricing({ ...pricing, [m]: { ...p, [k]: v === "" && k === "cached" ? undefined : Number(v) || 0 } });
+            const set = (k: "input" | "output" | "cached", v: number | undefined) => onPricing({ ...pricing, [m]: { ...p, [k]: v } });
             return (
               <div className="price-row" key={m} data-testid="price-row">
                 <span className="mono">{m}</span>
-                <label>Input<input type="number" min="0" step="0.01" value={p.input} data-testid="price-input" onChange={(e) => set("input", e.target.value)} /></label>
-                <label>Cached<input type="number" min="0" step="0.01" placeholder="= input" value={p.cached ?? ""} onChange={(e) => set("cached", e.target.value)} /></label>
-                <label>Output<input type="number" min="0" step="0.01" value={p.output} data-testid="price-output" onChange={(e) => set("output", e.target.value)} /></label>
+                <label>Input<PriceInput value={p.input} testId="price-input" onCommit={(v) => set("input", v ?? 0)} /></label>
+                <label>Cached<PriceInput value={p.cached} placeholder="= input" onCommit={(v) => set("cached", v)} /></label>
+                <label>Output<PriceInput value={p.output} testId="price-output" onCommit={(v) => set("output", v ?? 0)} /></label>
               </div>
             );
           })}
@@ -145,5 +145,23 @@ export function UsageScreen({ records, pricing, onPricing, onClear, onClose }: {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Text price field: keeps what you type ("0.", ".5"), saves each valid value, settles on blur or Enter. */
+function PriceInput({ value, placeholder, testId, onCommit }: { value?: number; placeholder?: string; testId?: string; onCommit: (v: number | undefined) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    const n = parsePrice(draft);
+    if (draft.trim() === "") onCommit(undefined);
+    else if (n !== null && n !== value) onCommit(n);
+    setDraft(null);
+  };
+  return (
+    <input type="text" inputMode="decimal" placeholder={placeholder} data-testid={testId} className={draft !== null && draft.trim() !== "" && parsePrice(draft) === null ? "bad" : ""}
+      value={draft ?? (value === undefined ? "" : String(value))}
+      onChange={(e) => { const t = e.target.value; if (!/^[0-9.,]*$/.test(t)) return; setDraft(t); const n = parsePrice(t); if (n !== null && n !== value) onCommit(n); }}
+      onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setDraft(null); }} />
   );
 }

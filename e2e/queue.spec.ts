@@ -3,7 +3,7 @@ import { expect, Page, test } from "@playwright/test";
 async function boot(page: Page, bind: string, extra: Record<string, unknown> = {}) {
   await page.addInitScript(([b, x]) => {
     if (!localStorage.getItem("supercharge-studio/v1"))
-      localStorage.setItem("supercharge-studio/v1", JSON.stringify({ settings: { bind: b, secret: "e2e", transport: "ws", autoStart: false, alwaysApprove: true, ...(x as object) }, groups: [{ id: "g1", name: "P", projects: [{ id: "p1", name: "q", cwd: "/srv/q", chats: [] }] }], activeProjectId: "p1", sidebarView: "groups", schema: 2 }));
+      localStorage.setItem("supercharge-studio/v1", JSON.stringify({ settings: { bind: b, secret: "e2e", transport: "ws", autoStart: false, alwaysApprove: true, ...(x as object) }, groups: [{ id: "g1", name: "P", projects: [{ id: "p1", name: "q", cwd: "/srv/q", chats: [] }] }], activeProjectId: "p1", sidebarView: "projects", schema: 2 }));
   }, [bind, extra] as const);
   await page.goto("/");
   await expect(page.locator(".status")).toHaveText("open");

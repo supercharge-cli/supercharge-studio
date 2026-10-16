@@ -45,12 +45,11 @@ test("sidebar shows every CLI session grouped by folder, loads any of them, and 
   await expect(eps.getByTestId("chat")).toHaveCount(1);
   await expect(eps.locator('[data-session^="fake-"]')).toHaveCount(1);
 
-  // Removing a chat hides it; sync doesn't bring it back. Groups view still has the app-only group.
+  // Removing a chat hides it; sync doesn't bring it back. Recents lists chats from every project.
   await page.reload();
   await expect(page.locator(".status")).toHaveText("open");
-  await page.getByTestId("view-groups").click();
-  await expect(page.getByTestId("group").filter({ hasText: "Personal" })).toBeVisible();
-  await expect(page.getByTestId("group").filter({ hasText: "Supercharge CLI" })).toBeVisible();
+  await page.getByTestId("view-recents").click();
+  await expect(page.getByTestId("recents").getByTestId("chat").first()).toBeVisible();
   await page.getByTestId("view-projects").click();
   const beta = tree.locator('[data-cwd="/srv/beta"]');
   await beta.getByTestId("chat").getByTestId("delete").click();
