@@ -18,9 +18,12 @@ const budgets: { dir: string; label: string; entry: RegExp; entryMax: number; to
   // entry 60 / all js 87 / css 12.5 KB: Changes tab (diff review + Git), worktree chats (+1.5 KB gz entry for the turn review row,
   // worktree actions and commit-message hook; ChangesPane js+css ~3.6 KB gz load only when the tab opens).
   // all js 89 KB: lazy in-app name dialog (NameDialog + askName ~1.4 KB gz, loaded on first use).
-  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 60 * KB, totalJsMax: 89 * KB, cssMax: 12.5 * KB },
+  // entry 63 / all js 97 / css 13 KB: notifications, session search (palette hits, jump-to-message), image downscale and the
+  // context-window picker (+2.2 KB gz entry; imageResize, notifyDeliver, searchIndex and ContextWindowPop are lazy chunks).
+  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 63 * KB, totalJsMax: 97 * KB, cssMax: 13 * KB },
   // Redesigned chat UI with attachments and sheets; +reasoning labels / thought_level (~1 KB gz).
-  { dir: "dist-mobile/assets", label: "mobile", entry: /^mobile-.*\.js$/, entryMax: 32 * KB, totalJsMax: 35 * KB, cssMax: 13 * KB },
+  // entry 36 / all js 41 / css 14 KB: Recents message search, alerts, photo/camera button, context ring + window picker.
+  { dir: "dist-mobile/assets", label: "mobile", entry: /^mobile-.*\.js$/, entryMax: 36 * KB, totalJsMax: 41 * KB, cssMax: 14 * KB },
 ];
 let failed = false;
 for (const b of budgets) {

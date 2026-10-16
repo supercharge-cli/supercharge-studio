@@ -74,10 +74,20 @@ wss.on("connection", (ws: WebSocket) => {
   const permissionChoices = new Map<string, string>();
   const modeChoices = new Map<string, string>();
   const modesFor = (sid: string) => ({ currentModeId: modeChoices.get(sid) ?? "default", availableModes: [{ id: "default", name: "Agent", description: "Work on the task" }, { id: "plan", name: "Plan", description: "Plan before changing files" }] });
+  // Context window override: the plain fake offers the `context_window` config option; the CLI fake only the extension.
+  const windowChoices = new Map<string, number | null>();
+  const winFor = (sid: string) => windowChoices.get(sid) ?? 200000;
+  const windowOpt = (sid: string) => {
+    const cur = windowChoices.get(sid);
+    const base = ["auto", "128000", "200000", "256000", "400000", "1000000", "2000000"];
+    if (cur && !base.includes(String(cur))) base.push(String(cur));
+    return { id: "context_window", name: "Context window", currentValue: cur ? String(cur) : "auto", options: base.map((v) => ({ value: v, name: v })) };
+  };
   const optionsFor = (sid: string) => [
     { id: "model", name: "Model", currentValue: modelChoices.get(sid) ?? "studio-test-1", options: [{ value: "studio-test-1", name: "First" }, { value: "studio-test-2", name: "Second" }] },
     { id: "reasoning_effort", name: "Reasoning Effort", category: "thought_level", currentValue: reasoningChoices.get(sid) ?? "high", options: [{ value: "off", name: "Off" }, { value: "low", name: "Low" }, { value: "medium", name: "Medium" }, { value: "high", name: "High" }, { value: "xhigh", name: "Extra High" }] },
     { id: "permission_mode", name: "Tool permissions", currentValue: permissionChoices.get(sid) ?? "ask", options: [{ value: "ask", name: "Ask" }, { value: "always-approve", name: "Always approve" }] },
+    ...(CLI ? [] : [windowOpt(sid)]),
   ];
   const send = (m: any) => ws.send(JSON.stringify({ jsonrpc: "2.0", ...m }));
   const update = (sessionId: string, u: any) => send({ method: "session/update", params: { sessionId, update: u } });
@@ -101,7 +111,7 @@ wss.on("connection", (ws: WebSocket) => {
         return reply({
           protocolVersion: 1,
           agentCapabilities: CLI
-            ? { loadSession: true, sessionCapabilities: { list: {}, resume: {} }, mcpCapabilities: { http: true }, ...(process.env.FAKE_AGENT_STEER === "1" ? { _meta: { supercharge: { steer: true } } } : {}) }
+            ? { loadSession: true, sessionCapabilities: { list: {}, resume: {} }, mcpCapabilities: { http: true }, _meta: { supercharge: { methods: ["_supercharge/session/context_window"], ...(process.env.FAKE_AGENT_STEER === "1" ? { steer: true } : {}) } } }
             : { loadSession: false, _meta: { "supercharge/demo": true } },
           authMethods: [],
           _meta: { agentVersion: "fake-1.0", availableCommands: [{ name: "help", description: "Show help" }, { name: "setup", description: "Configure provider" }] },
@@ -160,6 +170,12 @@ wss.on("connection", (ws: WebSocket) => {
         if (!known.has(sid)) return send({ id: m.id, error: { code: -32602, message: "unknown session id" } });
         if (m.params?.configId === "model") modelChoices.set(sid, m.params.value);
         if (m.params?.configId === "reasoning_effort") reasoningChoices.set(sid, m.params.value === "none" ? "off" : m.params.value);
+        if (m.params?.configId === "context_window" && !CLI) {
+          const v = String(m.params.value);
+          if (v !== "auto" && !/^\d{4,9}$/.test(v)) return send({ id: m.id, error: { code: -32602, message: "Invalid context window" } });
+          windowChoices.set(sid, v === "auto" ? null : Number(v));
+          send({ method: "_supercharge/session/context_usage", params: { sessionId: sid, usedTokens: 52300, maxTokens: winFor(sid) } });
+        }
         if (m.params?.configId === "permission_mode") {
           if (!["ask", "always-approve"].includes(m.params.value)) return send({ id: m.id, error: { code: -32602, message: "Invalid permission mode" } });
           permissionChoices.set(sid, m.params.value);
@@ -307,10 +323,20 @@ wss.on("connection", (ws: WebSocket) => {
         // Usage: context_usage (preferred by Studio), response_completed (snake_case), and turn report.
         const usage = { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 200, reasoningTokens: 50, modelCalls: 1, modelUsage: { "fake-model": { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 200, reasoningTokens: 50, modelCalls: 1 } } };
         const msgId = `m${nextId++}`;
-        send({ method: "_supercharge/session/context_usage", params: { sessionId: sid, usedTokens: 52300, maxTokens: 200000 } });
+        send({ method: "_supercharge/session/context_usage", params: { sessionId: sid, usedTokens: 52300, maxTokens: winFor(sid) } });
         send({ method: "_supercharge/session_notification", params: { sessionId: sid, update: { sessionUpdate: "response_completed", message_id: msgId, usage: { input_tokens: 52000, output_tokens: 300, cache_read_input_tokens: 0, reasoning_tokens: 50 } } } });
         send({ method: "_supercharge/session/update", params: { sessionId: sid, update: { sessionUpdate: "turn_completed", prompt_id: `p${nextId++}`, stop_reason: "end_turn", usage } } });
         return reply({ stopReason: "end_turn", usage });
+      }
+      case "_supercharge/session/context_window": {
+        const sid = m.params?.sessionId, v = m.params?.contextWindow;
+        if (!CLI) return send({ id: m.id, error: { code: -32601, message: "Method not found" } });
+        if (!known.has(sid)) return send({ id: m.id, error: { code: -32602, message: "unknown session id" } });
+        const n = v == null || v === "auto" ? null : v === "1m" ? 1000000 : typeof v === "number" && v >= 1000 ? v : NaN;
+        if (Number.isNaN(n)) return send({ id: m.id, error: { code: -32602, message: "Invalid context window" } });
+        windowChoices.set(sid, n);
+        send({ method: "_supercharge/session/context_usage", params: { sessionId: sid, usedTokens: 52300, maxTokens: winFor(sid) } });
+        return reply({ contextWindow: winFor(sid), overridden: n != null });
       }
       default:
         if (m.id != null) send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });

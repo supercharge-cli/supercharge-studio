@@ -57,6 +57,7 @@ const hub: GatewayHub = new GatewayHub((d, m) => conns.get(d)?.(m), {
       hub.update(sid, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: w } });
       await sleep(40);
     }
+    hub.contextUsage(sid, 52300, windows.get(sid) ?? 200000);
     hub.update(sid, { sessionUpdate: "tool_call", toolCallId: `t${Date.now()}`, title: "Edit src/login.ts", kind: "edit", status: "completed", content: [{ type: "diff", path: "src/login.ts", oldText: "a\nb", newText: "a\nB" }] });
     return { stopReason: "end_turn" };
   },
@@ -67,7 +68,15 @@ const hub: GatewayHub = new GatewayHub((d, m) => conns.get(d)?.(m), {
     return s.sessionId;
   },
   focus() {},
+  windowSupport: (sid) => ({ via: "ext", current: windows.get(sid) ?? null }),
+  async setContextWindow(sid, v) {
+    windows.set(sid, v === "auto" ? null : v);
+    const max = v === "auto" ? 200000 : v;
+    hub.contextUsage(sid, 52300, max);
+    return { contextWindow: max };
+  },
 });
+const windows = new Map<string, number | null>();
 hub.seed("s1", [
   { sessionUpdate: "user_message_chunk", content: { type: "text", text: "Why does login fail?" } },
   { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "The **token** check is inverted." } },

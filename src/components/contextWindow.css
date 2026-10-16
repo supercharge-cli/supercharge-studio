@@ -1,0 +1,5 @@
+.ctx-pop{position:absolute;bottom:calc(100% + 8px);right:0;width:250px;background:var(--raise);border:1px solid var(--line);border-radius:14px;padding:12px;box-shadow:var(--shadow);z-index:9;text-align:left;display:flex;flex-direction:column;gap:8px;font-size:13px}
+.ctx-pop-bar{height:5px;border-radius:9px;background:var(--hover);overflow:hidden}.ctx-pop-bar span{display:block;height:100%;background:var(--acc)}
+.ctx-pop-label{display:flex;flex-direction:column;gap:4px;color:var(--muted);font-size:12px}.ctx-pop-label select{width:100%}
+.ctx-pop-custom{display:flex;gap:6px}.ctx-pop-custom input{flex:1;min-width:0}
+.ctx-pop-err{color:var(--bad);margin:0;font-size:12px}.ctx-pop .small{margin:0}

@@ -4,7 +4,7 @@
  *
  * Allowed device → desktop methods: initialize, session/list, session/load, session/new,
  * session/prompt, session/cancel, session/set_mode, session/set_config_option,
- * _supercharge/focus, _supercharge/ping (heartbeat), _supercharge/upload (chunked file upload; prompts link uploads by id). Everything else is rejected.
+ * _supercharge/focus, _supercharge/session/context_window, _supercharge/ping (heartbeat), _supercharge/upload (chunked file upload; prompts link uploads by id). Everything else is rejected.
  * Desktop → device: session/update (live + replay), session/request_permission (fan-out,
  * first answer wins), _supercharge/permission/resolved, _supercharge/handoff,
  * _supercharge/sessions/changed.
@@ -29,6 +29,10 @@ export interface HubHost {
   setMode?(sessionId: string, modeId: string): Promise<void>;
   setConfigOption?(sessionId: string, id: string, value: string): Promise<ConfigOption[]>;
   focus(sessionId: string): void;
+  /** Context-window override support for a session ("option" / "ext"), or null when the agent offers neither. */
+  windowSupport?(sessionId: string): { via: "option" | "ext"; current?: number | "auto" | null } | null;
+  /** Apply a context-window override; returns the session's config options and the resolved window. */
+  setContextWindow?(sessionId: string, value: number | "auto"): Promise<{ configOptions?: ConfigOption[]; contextWindow?: number | null }>;
   /** Make sure a session's history is available (e.g. load it from the agent). */
   ensureLoaded?(sessionId: string): Promise<void>;
 }
@@ -36,7 +40,7 @@ export interface HubHost {
 type Msg = { jsonrpc?: "2.0"; id?: number | string; method?: string; params?: any; result?: any; error?: any };
 type Send = (deviceId: string, msg: Msg) => void;
 
-const ALLOWED = new Set(["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "session/set_config_option", "session/set_mode", "_supercharge/focus", "_supercharge/upload", "_supercharge/ping"]);
+const ALLOWED = new Set(["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "session/set_config_option", "session/set_mode", "_supercharge/focus", "_supercharge/upload", "_supercharge/ping", "_supercharge/session/context_window"]);
 const MAX_REPLAY = 3000;
 
 export class GatewayHub {
@@ -78,6 +82,11 @@ export class GatewayHub {
   agentEvent(sessionId: string, kind: "done" | "error" | "permission", body: string) {
     for (const d of this.devices) this.send(d, { jsonrpc: "2.0", method: "_supercharge/agent_event", params: { sessionId, kind, body } });
   }
+  /** Context usage for phones watching that session. */
+  contextUsage(sessionId: string, usedTokens: number, maxTokens?: number) {
+    for (const d of this.subs.get(sessionId) ?? []) this.send(d, { jsonrpc: "2.0", method: "_supercharge/session/context_usage", params: { sessionId, usedTokens, maxTokens } });
+  }
+  private windowMeta(sid: string) { return { supercharge: { contextWindow: this.host.windowSupport?.(sid) ?? null } }; }
   sessionsChanged() {
     for (const d of this.devices) this.send(d, { jsonrpc: "2.0", method: "_supercharge/sessions/changed", params: {} });
   }
@@ -168,7 +177,7 @@ export class GatewayHub {
             p.asked.set(deviceId, pid);
             this.send(deviceId, { jsonrpc: "2.0", id: pid, method: "session/request_permission", params: { ...p.params, sessionId: sid } });
           }
-          return this.reply(deviceId, id, { configOptions: this.host.configOptions?.(sid) ?? [], modes: this.host.modes?.(sid) });
+          return this.reply(deviceId, id, { configOptions: this.host.configOptions?.(sid) ?? [], modes: this.host.modes?.(sid), _meta: this.windowMeta(sid) });
         }
         case "session/new": {
           const pid = String(params?._meta?.projectId ?? this.host.projects().find((p) => p.cwd === params.cwd)?.projectId ?? "");
@@ -177,7 +186,7 @@ export class GatewayHub {
           if (!this.subs.has(sid)) this.subs.set(sid, new Set());
           this.subs.get(sid)!.add(deviceId);
           this.sessionsChanged();
-          return this.reply(deviceId, id, { sessionId: sid, configOptions: this.host.configOptions?.(sid) ?? [], modes: this.host.modes?.(sid) });
+          return this.reply(deviceId, id, { sessionId: sid, configOptions: this.host.configOptions?.(sid) ?? [], modes: this.host.modes?.(sid), _meta: this.windowMeta(sid) });
         }
         case "session/set_config_option": {
           const sid = params.sessionId;
@@ -185,7 +194,8 @@ export class GatewayHub {
           const value = params.value;
           if (typeof sid !== "string" || !this.host.sessions().some((s) => s.sessionId === sid)) return this.fail(deviceId, id, -32602, "Unknown session");
           const option = (this.host.configOptions?.(sid) ?? []).find((o) => o.id === configId);
-          if (!(["model", "reasoning_effort", "permission_mode"].includes(configId) && typeof value === "string" && option?.options?.some((o) => o.value === value)))
+          const windowOk = configId === "context_window" && !!option && typeof value === "string" && (value === "auto" || /^\d{4,9}$/.test(value));
+          if (!windowOk && !(["model", "reasoning_effort", "permission_mode"].includes(configId) && typeof value === "string" && option?.options?.some((o) => o.value === value)))
             return this.fail(deviceId, id, -32602, "Invalid config option or value");
           if (!this.host.setConfigOption) return this.fail(deviceId, id, -32603, "Session configuration unavailable");
           const configOptions = await this.host.setConfigOption(sid, configId, value);
@@ -222,6 +232,17 @@ export class GatewayHub {
         case "_supercharge/ping":
           if (id !== undefined) this.reply(deviceId, id, { t: Date.now() });
           return;
+        case "_supercharge/session/context_window": {
+          const sid = String(params?.sessionId ?? "");
+          const v = params?.contextWindow;
+          if (!this.host.sessions().some((s) => s.sessionId === sid)) return this.fail(deviceId, id, -32602, "Unknown session");
+          const value = v == null || v === "auto" ? "auto" : v === "1m" ? 1000000 : typeof v === "number" && v >= 1000 && v <= 1e8 ? Math.round(v) : null;
+          if (value == null) return this.fail(deviceId, id, -32602, "Invalid context window");
+          if (!this.host.setContextWindow || !this.host.windowSupport?.(sid)) return this.fail(deviceId, id, -32601, "This agent doesn't support changing the context window");
+          const r = await this.host.setContextWindow(sid, value);
+          if (r.configOptions) this.update(sid, { sessionUpdate: "config_option_update", configOptions: r.configOptions });
+          return this.reply(deviceId, id, { contextWindow: r.contextWindow ?? (value === "auto" ? null : value), overridden: value !== "auto" });
+        }
         case "_supercharge/focus":
           this.host.focus(String(params.sessionId ?? ""));
           if (id !== undefined) this.reply(deviceId, id, {});

@@ -3,9 +3,9 @@ import type { ConfigOption } from "../acp/types";
 import { optionFor, reasoningOption } from "../lib/sessionOptions";
 import { Icon } from "./Icon";
 const ThinkingControl = lazy(() => import("./ThinkingControl").then((m) => ({ default: m.ThinkingControl })));
-import { ContextMeter } from "./ContextMeter";
+import { ContextMeter, type WindowCtl } from "./ContextMeter";
 
-export function ModelControls({ options, onSelect, children, context }: { options: ConfigOption[]; onSelect: (id: string, value: string) => void; children?: ReactNode; context?: { used: number; max?: number } }) {
+export function ModelControls({ options, onSelect, children, context, window: win }: { options: ConfigOption[]; onSelect: (id: string, value: string) => void; children?: ReactNode; context?: { used: number; max?: number }; window?: WindowCtl }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const model = optionFor(options, "model");
@@ -33,7 +33,7 @@ export function ModelControls({ options, onSelect, children, context }: { option
         </div>}
       </div>}
       {(model || reasoning) && <Suspense fallback={null}><ThinkingControl option={reasoning} modelName={active?.name ?? active?.value} onSelect={(v) => reasoning && onSelect(reasoning.id, v)} onModel={() => { setSearch(""); setOpen(true); }} /></Suspense>}
-      {context && <ContextMeter used={context.used} max={context.max} />}
+      {context && <ContextMeter used={context.used} max={context.max} window={win} />}
       {children}
     </div>
   );

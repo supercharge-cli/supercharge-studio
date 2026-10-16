@@ -18,6 +18,8 @@ import { parsePairUri } from "../gateway/crypto";
 import { type Attachment, deviceBlocks, fmtSize, fromFile, isImage, rejectReason } from "../lib/attachments";
 import { APP_VERSION, checkUpdate, type AvailableUpdate } from "../lib/updates";
 import { effortLabel, reasoningOption } from "../lib/sessionOptions";
+import { ContextMeter, type WindowCtl } from "../components/ContextMeter";
+import { applyWindow, windowOption } from "../lib/contextWindow";
 
 /** Light haptic tick where the platform allows it. */
 const haptic = (ms = 8) => { try { navigator.vibrate?.(ms); } catch { /* not supported */ } };
@@ -166,6 +168,10 @@ export default function MobileApp() {
   const [listed, setListed] = useState(false);
   const [loadingSess, setLoadingSess] = useState<string | null>(null);
   const [configBySession, setConfigBySession] = useState<Record<string, ConfigOption[]>>({});
+  // Context meter + window override (the computer reports support per session).
+  const [ctxBySession, setCtxBySession] = useState<Record<string, { used: number; max?: number }>>({});
+  const [windowBySession, setWindowBySession] = useState<Record<string, { via: "option" | "ext"; current?: number | "auto" | null } | null>>({});
+  const rememberWindow = (sid: string, r: any) => { const w = r?._meta?.supercharge?.contextWindow; setWindowBySession((all) => ({ ...all, [sid]: w && (w.via === "option" || w.via === "ext") ? w : null })); };
   const [modesBySession, setModesBySession] = useState<Record<string, SessionModes>>({});
   const rememberModes = (sid: string, modes?: SessionModes) => {
     if (modes?.availableModes?.length) setModesBySession((all) => ({ ...all, [sid]: modes }));
@@ -281,6 +287,7 @@ export default function MobileApp() {
         } else if (method === "_supercharge/handoff") setHandoff(String(p?.sessionId ?? ""));
         else if (method === "_supercharge/agent_event" && p?.sessionId && ["done", "error", "permission"].includes(p?.kind)) notifyRef.current(p.kind, String(p.sessionId), String(p.body ?? ""));
         else if (method === "_supercharge/sessions/changed") void refresh();
+        else if (method === "_supercharge/session/context_usage" && p?.sessionId && Number(p?.usedTokens) >= 0) setCtxBySession((all) => ({ ...all, [String(p.sessionId)]: { used: Number(p.usedTokens), max: Number(p.maxTokens) > 0 ? Number(p.maxTokens) : all[String(p.sessionId)]?.max } }));
       },
       onPermissionRequest: (req) => new Promise((resolve) => {
         notifyRef.current("permission", req.sessionId, `Allow: ${(req as any).toolCall?.title ?? "a tool call"}?`);
@@ -305,7 +312,7 @@ export default function MobileApp() {
             .then((r: any) => {
               loadedRef.current.add(sid);
               if (Array.isArray(r?.configOptions)) setConfigBySession((all) => ({ ...all, [sid]: r.configOptions }));
-              rememberModes(sid, r?.modes);
+              rememberModes(sid, r?.modes); rememberWindow(sid, r);
             })
             .catch((e) => setErr(`Could not reload this chat: ${e?.message ?? e}`))
             .finally(() => setLoadingSess(null));
@@ -396,7 +403,7 @@ export default function MobileApp() {
     setState((all) => ({ ...all, [sid]: emptySession() }));
     setLoadingSess(sid);
     await c.loadSession(sid, list.find((s) => s.sessionId === sid)?.cwd ?? "")
-      .then((r: any) => { if (Array.isArray(r?.configOptions)) setConfigBySession((all) => ({ ...all, [sid]: r.configOptions })); rememberModes(sid, r?.modes); })
+      .then((r: any) => { if (Array.isArray(r?.configOptions)) setConfigBySession((all) => ({ ...all, [sid]: r.configOptions })); rememberModes(sid, r?.modes); rememberWindow(sid, r); })
       .catch((e) => { loadedRef.current.delete(sid); setErr(`Could not load this chat: ${e?.message ?? e}`); });
     setLoadingSess(null);
   }
@@ -408,7 +415,7 @@ export default function MobileApp() {
     loadedRef.current.add(r.sessionId);
     activeSessionRef.current = r.sessionId;
     setConfigBySession((all) => ({ ...all, [r.sessionId]: r.configOptions ?? [] }));
-    rememberModes(r.sessionId, r.modes);
+    rememberModes(r.sessionId, r.modes); rememberWindow(r.sessionId, r);
     setPicker(null);
     setModelSearch("");
     await refresh();
@@ -547,6 +554,20 @@ export default function MobileApp() {
   const permissionOption = sessionOptions.find((o) => o.id === "permission_mode" && o.options?.length);
   const sessionModes = open ? modesBySession[open] : undefined;
   const activeOption = sessionOptions.find((o) => o.id === picker);
+  const windowSup = open ? windowBySession[open] : null;
+  const windowCtl: WindowCtl | undefined = open && windowSup ? {
+    option: windowSup.via === "option" ? windowOption(sessionOptions) : undefined, ext: windowSup.via === "ext", current: windowSup.current,
+    onSet: async (v) => {
+      const c = client.current, sid = open;
+      if (!c) throw new Error("Not connected");
+      haptic();
+      const r = await applyWindow(c, sid, v, windowSup.via === "option");
+      if (r.configOptions) setConfigBySession((all) => ({ ...all, [sid]: r.configOptions! }));
+      if (windowSup.via === "ext") setWindowBySession((all) => ({ ...all, [sid]: { via: "ext", current: v === "auto" ? "auto" : r.contextWindow ?? v } }));
+      const n = v === "auto" ? r.contextWindow ?? undefined : r.contextWindow ?? v;
+      if (n) setCtxBySession((all) => ({ ...all, [sid]: { used: all[sid]?.used ?? 0, max: n } }));
+    },
+  } : undefined;
   const optionLabel = (option: ConfigOption) => { const cur = option.options?.find((v) => v.value === option.currentValue); return (option.id === "reasoning_effort" || option.category === "thought_level") ? effortLabel(option.currentValue ?? "", cur?.name) : (cur?.name ?? option.currentValue ?? option.name ?? option.id); };
   const hasSettings = !!(modelOption || thinkingOption || permissionOption || sessionModes);
   const renderItem = (m: ChatItem, i: number) =>
@@ -766,6 +787,7 @@ export default function MobileApp() {
                   </span>
                 )}
                 <div className="spacer" />
+                {open && (ctxBySession[open] || windowBySession[open]) && <ContextMeter used={ctxBySession[open]?.used ?? 0} max={ctxBySession[open]?.max} window={windowCtl} />}
                 {modelOption && <button className="m-chip" data-testid="m-model-chip" onClick={() => { haptic(); setModelSearch(""); setPicker("model"); }}>{optionLabel(modelOption)}</button>}
                 {thinkingOption && (
                   <span className="m-think-anchor">

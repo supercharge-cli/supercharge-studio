@@ -40,6 +40,8 @@ import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type Cli
 import { git, refreshChanges, commitMessageHook, editedPaths } from "./lib/git";
 import { AppData, type Chat, applyTree, ensureFolderProject, findProject, load, mergeCliSessions, normCwd, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
+import { applyWindow, CONTEXT_WINDOW_EXT, windowOption } from "./lib/contextWindow";
+import type { WindowCtl } from "./components/ContextMeter";
 import { contextFromUsageNotification, isResponseCompleted, usedFromResponseCompleted } from "./lib/contextUsage";
 import { isTerminalTarget } from "./lib/terminalInput";
 import { useBrowserOverlay } from "./browser/visibility";
@@ -101,6 +103,24 @@ export default function App() {
   const optionsRef = useRef<Record<string, ConfigOption[]>>({});
   const [ctxBySession, setCtx] = useState<Record<string, { used: number; max?: number; model?: string; fromAgent?: boolean }>>({});
   const ctxMax = useRef<Record<string, number>>({});
+  const [extWindow, setExtWindow] = useState<Record<string, number | "auto" | null>>({});
+  const extWindowRef = useRef(extWindow);
+  const windowSupport = (sid: string): { via: "option" | "ext"; current?: number | "auto" | null } | null => {
+    const c = clientRef.current;
+    if (!c) return null;
+    if (windowOption(optionsRef.current[sid])) return { via: "option" };
+    return c.extensions.methods.includes(CONTEXT_WINDOW_EXT) ? { via: "ext", current: extWindowRef.current[sid] ?? null } : null;
+  };
+  const setWindow = async (sid: string, v: number | "auto") => {
+    const c = clientRef.current, sup = windowSupport(sid);
+    if (!c || !sup) throw new Error("This agent doesn't support changing the context window");
+    const r = await applyWindow(c, sid, v, sup.via === "option");
+    if (r.configOptions) rememberOptions(sid, r.configOptions);
+    if (sup.via === "ext") { extWindowRef.current = { ...extWindowRef.current, [sid]: v === "auto" ? "auto" : r.contextWindow ?? v }; setExtWindow(extWindowRef.current); }
+    const n = v === "auto" ? r.contextWindow ?? undefined : r.contextWindow ?? v;
+    setCtx((all) => { const cur = all[sid]; if (!cur) return all; const next = { ...cur, max: n ?? cur.max }; hubRef.current?.contextUsage(sid, next.used, next.max); return { ...all, [sid]: next }; });
+    return { configOptions: r.configOptions, contextWindow: n ?? null };
+  };
   const rememberWindows = (models: any) => { for (const m of models?.availableModels ?? []) { const t = Number(m?._meta?.totalContextTokens ?? m?._meta?.contextWindow); if (t > 0) ctxMax.current[m.modelId] = t; } };
   const rememberOptions = (sid: string, options: ConfigOption[]) => {
     optionsRef.current = updateSessionOptions(optionsRef.current, sid, options);
@@ -226,6 +246,8 @@ export default function App() {
         resolveUploads: isDesktop() ? (blocks) => invoke<unknown[]>("upload_rewrite", { prompt: blocks, images: agentImages() }) : undefined,
         cancel: (sid) => void clientRef.current?.cancel(sid),
         configOptions: (sid) => optionsRef.current[sid] ?? [],
+        windowSupport: (sid) => windowSupport(sid),
+        setContextWindow: (sid, v) => setWindow(sid, v),
         modes: (sid) => modesRef.current[sid],
         setMode: async (sid, mode) => {
           const c = clientRef.current;
@@ -376,6 +398,7 @@ export default function App() {
         const ctxN = contextFromUsageNotification(method, params);
         if (ctxN) {
           setCtx((all) => ({ ...all, [ctxN.sessionId]: { used: ctxN.used, max: ctxN.max, fromAgent: true } }));
+          hubRef.current?.contextUsage(ctxN.sessionId, ctxN.used, ctxN.max);
         }
         // Dual-emitted response_completed is deduped in AcpClient (legacy copy dropped). Use it only as a
         // context fallback when context_usage is absent; turn_completed still owns the usage ledger.
@@ -928,6 +951,13 @@ export default function App() {
 
   // ---- Composer: slash commands ----
   const modelOption = optionFor(configOptions, "model");
+  // Context window override (config option, else the extension; hidden when the agent offers neither).
+  const windowCtl: WindowCtl | undefined = (() => {
+    const sid = activeChat?.sessionId;
+    const sup = sid ? windowSupport(sid) : null;
+    if (!sid || !sup) return undefined;
+    return { option: sup.via === "option" ? windowOption(configOptions) : undefined, ext: sup.via === "ext", current: sup.current, onSet: async (v) => { await setWindow(sid, v); } };
+  })();
   const permissionOption = optionFor(configOptions, "permission_mode");
   const sessionModes = activeChat?.sessionId ? modesBySession[activeChat.sessionId] : undefined;
   const changeMode = async (mode: string) => {
@@ -1414,7 +1444,7 @@ export default function App() {
                 <span className="muted small">{isBusy ? "Sent when the agent finishes" : "Sending…"}</span>
               </div>
             )}
-            {activeChat?.sessionId && <ModelControls key={activeChat.sessionId} options={configOptions} context={ctxBySession[activeChat.sessionId] && { used: ctxBySession[activeChat.sessionId].used, max: ctxBySession[activeChat.sessionId].max ?? ctxMax.current[modelOption?.currentValue ?? ""] }} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)}><ModeControl modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} /></ModelControls>}
+            {activeChat?.sessionId && <ModelControls key={activeChat.sessionId} options={configOptions} window={windowCtl} context={ctxBySession[activeChat.sessionId] ? { used: ctxBySession[activeChat.sessionId].used, max: ctxBySession[activeChat.sessionId].max ?? ctxMax.current[modelOption?.currentValue ?? ""] } : windowCtl ? { used: 0, max: ctxMax.current[modelOption?.currentValue ?? ""] } : undefined} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)}><ModeControl modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} /></ModelControls>}
             {(atts.length > 0 || attErr) && (
               <div className="att-row" data-testid="attachments">
                 {atts.map((a) => (
