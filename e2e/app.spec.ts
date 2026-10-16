@@ -344,3 +344,24 @@ test("failed turns show an error card with retry", async ({ page }) => {
   await page.getByTestId("retry").click();
   await expect(page.locator(".bubble.agent").last()).toContainText("flaky one");
 });
+
+test("native side browser hides while an overlay covers it and comes back after", async ({ page }) => {
+  await boot(page);
+  await page.evaluate(() => {
+    const calls: { cmd: string; args?: any }[] = [];
+    (window as any).__browserCalls = calls;
+    (window as any).__TAURI_INTERNALS__ = { invoke: async (cmd: string, args?: any) => { calls.push({ cmd, args }); return null; } };
+  });
+  const lastVisible = () => page.evaluate(() => (window as any).__browserCalls.filter((c: any) => c.cmd === "browser_set_visible").at(-1)?.args.visible ?? null);
+  await page.keyboard.press("Control+\\");
+  await expect.poll(() => page.evaluate(() => (window as any).__browserCalls.some((c: any) => c.cmd === "browser_open"))).toBe(true);
+  await expect.poll(lastVisible).toBe(true);
+  await page.keyboard.press("Control+k");
+  await expect(page.getByTestId("palette")).toBeVisible();
+  await expect.poll(lastVisible).toBe(false);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("palette")).toBeHidden();
+  await expect.poll(lastVisible).toBe(true);
+  // Restored in place: bounds are re-sent after showing again.
+  expect(await page.evaluate(() => { const c = (window as any).__browserCalls.filter((x: any) => x.cmd.startsWith("browser_")); const i = c.findLastIndex((x: any) => x.cmd === "browser_set_visible"); return c.slice(i + 1).some((x: any) => x.cmd === "browser_set_bounds"); })).toBe(true);
+});

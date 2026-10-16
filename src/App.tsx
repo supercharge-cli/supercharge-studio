@@ -41,6 +41,7 @@ import { AppData, applyTree, ensureFolderProject, findProject, load, mergeCliSes
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
 import { contextFromUsageNotification, isResponseCompleted, usedFromResponseCompleted } from "./lib/contextUsage";
 import { isTerminalTarget } from "./lib/terminalInput";
+import { useBrowserOverlay } from "./browser/visibility";
 import { APP_VERSION, checkUpdate, type AvailableUpdate } from "./lib/updates";
 
 type View = "chat" | "settings" | "usage";
@@ -112,6 +113,12 @@ export default function App() {
   // First-run CLI setup: missing or too old -> full-screen installer; newer release -> offer an update.
   const [cli, setCli] = useState<CliStatus | null>(null);
   const [cliSetup, setCliSetup] = useState<"missing" | "outdated" | "update" | null>(null);
+  // Native side browser draws above the app: hide it while any of these is up.
+  useBrowserOverlay(!!cliSetup);
+  useBrowserOverlay(palette);
+  useBrowserOverlay(!!pairReq);
+  useBrowserOverlay(!!perm);
+  useBrowserOverlay(!!planAsk);
   useEffect(() => {
     if (!isDesktop()) return;
     void cliStatus(true).then((st) => {

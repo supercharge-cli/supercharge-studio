@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { browser } from "../browser/bridge";
 import { isDesktop } from "../lib/desktop";
+import { browserVisible, scanDocument, useOverlayCount } from "../browser/visibility";
 import type { PlanEntry } from "../acp/types";
 import { FilesPane } from "./FilesPane";
 import { Icon } from "./Icon";
@@ -18,6 +19,39 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
   const [activeTerm, setActiveTerm] = useState("t1");
   const [picker, setPicker] = useState(false);
   const termFocus = useRef<number | null>(null);
+  const aside = useRef<HTMLElement>(null);
+  const overlays = useOverlayCount();
+  const [shown, setShown] = useState(true);
+  const shownRef = useRef(true);
+  const slotRect = () => {
+    const r = slot.current?.getBoundingClientRect();
+    return r ? { x: r.left, y: r.top, width: Math.max(1, r.width), height: Math.max(1, r.height) } : null;
+  };
+  // One rule for the native view: it is shown only when nothing covers its area.
+  useEffect(() => {
+    let raf = 0;
+    const check = () => {
+      raf = 0;
+      const scan = scanDocument(document, aside.current);
+      const r = slot.current?.getBoundingClientRect();
+      setShown(browserVisible({ tab, picker, overlays, ...scan, bounds: r ? { x: r.left, y: r.top, width: r.width, height: r.height } : null }));
+    };
+    const later = () => { if (!raf) raf = requestAnimationFrame(check); };
+    check();
+    const mo = new MutationObserver(later);
+    mo.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", later);
+    const ro = slot.current ? new ResizeObserver(later) : null;
+    if (slot.current) ro!.observe(slot.current);
+    return () => { mo.disconnect(); ro?.disconnect(); window.removeEventListener("resize", later); if (raf) cancelAnimationFrame(raf); };
+  }, [tab, picker, overlays]);
+  useEffect(() => {
+    shownRef.current = shown;
+    if (tab !== "browser" || picker) return;
+    void browser.setVisible(shown);
+    const r = slotRect();
+    if (shown && r) void browser.setBounds(r);
+  }, [shown]);
   useEffect(() => {
     if (!focus) return;
     setPicker(false);
@@ -66,7 +100,12 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
       const r = el.getBoundingClientRect();
       return { x: r.left, y: r.top, width: Math.max(1, r.width), height: Math.max(1, r.height) };
     };
-    void browser.open(url, rect()).catch(() => {});
+    // Hide first if something already covers the panel, so it never flashes on top.
+    void (async () => {
+      if (!shownRef.current) await browser.setVisible(false);
+      await browser.open(url, rect()).catch(() => {});
+      if (shownRef.current) await browser.setVisible(true);
+    })();
     const ro = new ResizeObserver(() => void browser.setBounds(rect()));
     ro.observe(el);
     const resize = () => void browser.setBounds(rect());
@@ -80,7 +119,7 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
   }, [tab, picker]);
 
   return (
-    <aside className="rpanel">
+    <aside className="rpanel" ref={aside}>
       <div className="tabs">
         <button className={tab === "browser" ? "on" : ""} onClick={() => { setPicker(false); setTab("browser"); }}><Icon name="globe" size={14} /> Browser</button>
         <button data-testid="plan-tab" className={tab === "plan" ? "on" : ""} onClick={() => { setPicker(false); setTab("plan"); }}><Icon name="file" size={14} /> Plan{plan.length ? ` (${plan.length})` : ""}</button>

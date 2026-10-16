@@ -165,6 +165,11 @@ struct Bounds {
     height: f64,
 }
 
+/// Set while the app has hidden the side browser (an overlay covers its area).
+/// Moving or reopening the view must not show it again until the app says so.
+static BROWSER_HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+fn browser_hidden() -> bool { BROWSER_HIDDEN.load(std::sync::atomic::Ordering::SeqCst) }
+
 /// Create (or move) the side browser as a child webview of the main window.
 #[tauri::command]
 async fn browser_open(app: AppHandle, url: String, bounds: Bounds) -> Result<(), String> {
@@ -181,6 +186,9 @@ async fn browser_open(app: AppHandle, url: String, bounds: Bounds) -> Result<(),
             LogicalSize::new(bounds.width, bounds.height),
         )
         .map_err(|e| e.to_string())?;
+    if browser_hidden() {
+        return browser_apply_visible(&app, false);
+    }
     Ok(())
 }
 
@@ -242,7 +250,7 @@ mod linux_layout {
                 bw.set_margin_start(x.max(0.0) as i32);
                 bw.set_margin_top(y.max(0.0) as i32);
                 bw.set_size_request(w.max(1.0) as i32, h.max(1.0) as i32);
-                bw.show();
+                if super::browser_hidden() { bw.hide() } else { bw.show() }
             });
         });
     }
@@ -276,6 +284,11 @@ async fn browser_set_bounds(app: AppHandle, bounds: Bounds) -> Result<(), String
 /// webviews always draw above the app UI).
 #[tauri::command]
 async fn browser_set_visible(app: AppHandle, visible: bool) -> Result<(), String> {
+    BROWSER_HIDDEN.store(!visible, std::sync::atomic::Ordering::SeqCst);
+    browser_apply_visible(&app, visible)
+}
+
+fn browser_apply_visible(app: &AppHandle, visible: bool) -> Result<(), String> {
     let Some(wv) = app.get_webview(BROWSER) else { return Ok(()) };
     #[cfg(target_os = "linux")]
     {
