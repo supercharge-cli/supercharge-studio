@@ -5,6 +5,12 @@ import { browserVisible, scanDocument, useOverlayCount } from "../browser/visibi
 import type { PlanEntry } from "../acp/types";
 import { FilesPane } from "./FilesPane";
 import { Icon } from "./Icon";
+// Computer / dev / design mode UI loads when first used.
+const tools = () => import("./BrowserTools");
+const ComputerStage = lazy(() => tools().then((m) => ({ default: m.ComputerStage })));
+const DevDrawer = lazy(() => tools().then((m) => ({ default: m.DevDrawer })));
+const screenSize = () => ({ width: Math.round(window.screen?.width || 1920), height: Math.round(window.screen?.height || 1080) });
+import type { Size } from "../browser/viewport";
 // The terminal pulls in xterm; load it only when the tab is opened.
 const TerminalPane = lazy(() => import("./TerminalPane").then((m) => ({ default: m.TerminalPane })));
 
@@ -23,7 +29,35 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
   const overlays = useOverlayCount();
   const [shown, setShown] = useState(true);
   const shownRef = useRef(true);
+  // Computer mode viewport (null = page fits the panel), dev drawer, design mode.
+  const [vp, setVp] = useState<Size | null>(null);
+  const vpRef = useRef<Size | null>(null);
+  vpRef.current = vp;
+  const stage = useRef<HTMLDivElement>(null);
+  const [dev, setDev] = useState(false);
+  const [design, setDesign] = useState(false);
+  const designOn = design && tab === "browser" && !picker && isDesktop();
+  useEffect(() => {
+    if (!designOn) return;
+    let stop: (() => void) | undefined, gone = false;
+    void tools().then((m) => { if (!gone) stop = m.startDesign(setDesign); });
+    return () => { gone = true; stop?.(); };
+  }, [designOn]);
+  useEffect(() => {
+    browser.onViewport = (v) => { setTab("browser"); setPicker(false); setVp(v); };
+    return () => { browser.onViewport = undefined; browser.viewport = null; };
+  }, []);
+  const firstVp = useRef(true);
+  useEffect(() => {
+    browser.viewport = vp;
+    if (firstVp.current) { firstVp.current = false; return; }
+    if (vp) return; // ComputerStage places the view and sets the zoom.
+    const r = slotRect();
+    void browser.setZoom(1).then(() => r && browser.setBounds(r));
+  }, [vp]);
+  useEffect(() => { if (tab !== "browser" || picker) setVp(null); }, [tab, picker]);
   const slotRect = () => {
+    if (vpRef.current) return null;
     const r = slot.current?.getBoundingClientRect();
     return r ? { x: r.left, y: r.top, width: Math.max(1, r.width), height: Math.max(1, r.height) } : null;
   };
@@ -33,7 +67,7 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
     const check = () => {
       raf = 0;
       const scan = scanDocument(document, aside.current);
-      const r = slot.current?.getBoundingClientRect();
+      const r = (vpRef.current ? stage.current : slot.current)?.getBoundingClientRect();
       setShown(browserVisible({ tab, picker, overlays, ...scan, bounds: r ? { x: r.left, y: r.top, width: r.width, height: r.height } : null }));
     };
     const later = () => { if (!raf) raf = requestAnimationFrame(check); };
@@ -44,7 +78,7 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
     const ro = slot.current ? new ResizeObserver(later) : null;
     if (slot.current) ro!.observe(slot.current);
     return () => { mo.disconnect(); ro?.disconnect(); window.removeEventListener("resize", later); if (raf) cancelAnimationFrame(raf); };
-  }, [tab, picker, overlays]);
+  }, [tab, picker, overlays, vp]);
   useEffect(() => {
     shownRef.current = shown;
     if (tab !== "browser" || picker) return;
@@ -106,9 +140,9 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
       await browser.open(url, rect()).catch(() => {});
       if (shownRef.current) await browser.setVisible(true);
     })();
-    const ro = new ResizeObserver(() => void browser.setBounds(rect()));
+    const resize = () => { if (!vpRef.current) void browser.setBounds(rect()); };
+    const ro = new ResizeObserver(resize);
     ro.observe(el);
-    const resize = () => void browser.setBounds(rect());
     window.addEventListener("resize", resize);
     return () => {
       ro.disconnect();
@@ -172,10 +206,21 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
           >
             <Icon name="globe" size={14} />
             <input value={url} onChange={(e) => setUrl(e.target.value)} aria-label="Address" />
+            <span className="bm-tools">
+              <button type="button" className={`icon sm${vp ? " on" : ""}`} data-testid="computer-toggle" aria-pressed={!!vp} title="Computer mode: open the page at a desktop size" onClick={() => setVp((v) => (v ? null : screenSize()))}><Icon name="monitor" size={14} /></button>
+              <button type="button" className={`icon sm${dev ? " on" : ""}`} data-testid="dev-toggle" aria-pressed={dev} title="Dev mode: console and network" onClick={() => setDev((v) => !v)}><Icon name="code" size={14} /></button>
+              <button type="button" className={`icon sm${design ? " on" : ""}`} data-testid="design-toggle" aria-pressed={design} title="Design mode: pick elements to change (Shift = several, Esc = stop)" onClick={() => setDesign((v) => !v)}><Icon name="cursor" size={14} /></button>
+            </span>
           </form>
+          {design && <div className="bm-hint small" data-testid="design-hint">Click an element to attach it to your message. Shift+click picks several, Enter attaches them, Esc stops.</div>}
           <div ref={slot} className="webslot">
-            {!isDesktop() && <iframe title="browser" src={url} sandbox="allow-scripts allow-forms allow-same-origin" />}
+            {!isDesktop() && !vp && <iframe title="browser" src={url} sandbox="allow-scripts allow-forms allow-same-origin" />}
+            {vp && <div className="empty small"><Icon name="monitor" size={22} /><p>Showing in computer mode ({vp.width}×{vp.height}).</p></div>}
           </div>
+          <Suspense fallback={null}>
+            {dev && <DevDrawer />}
+            {vp && <ComputerStage vp={vp} stage={stage} onSize={setVp} onExit={() => setVp(null)} />}
+          </Suspense>
         </>
       ) : (
         <div className="plan-panel" data-testid="plan-panel">

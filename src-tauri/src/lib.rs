@@ -181,7 +181,7 @@ async fn browser_open(app: AppHandle, url: String, bounds: Bounds) -> Result<(),
     let window = app.get_window("main").ok_or("no main window")?;
     window
         .add_child(
-            WebviewBuilder::new(BROWSER, WebviewUrl::External(parsed)),
+            WebviewBuilder::new(BROWSER, WebviewUrl::External(parsed)).initialization_script(BROWSER_INIT),
             LogicalPosition::new(bounds.x, bounds.y),
             LogicalSize::new(bounds.width, bounds.height),
         )
@@ -303,6 +303,17 @@ fn browser_apply_visible(app: &AppHandle, visible: bool) -> Result<(), String> {
     if visible { wv.show() } else { wv.hide() }.map_err(|e| e.to_string())
 }
 
+/// Dev mode capture, injected into every page of the side browser (see browser_init.js).
+const BROWSER_INIT: &str = include_str!("browser_init.js");
+
+/// Page zoom of the side browser. Computer mode shows a desktop-size viewport scaled to fit:
+/// the view is `width * zoom` wide, so the page lays out at `width` CSS px.
+#[tauri::command]
+async fn browser_set_zoom(app: AppHandle, zoom: f64) -> Result<(), String> {
+    let wv = app.get_webview(BROWSER).ok_or("browser not open")?;
+    wv.set_zoom(zoom.clamp(0.1, 4.0)).map_err(|e| e.to_string())
+}
+
 /// PNG screenshot of the side browser, base64-encoded.
 #[tauri::command]
 async fn browser_screenshot(app: AppHandle) -> Result<String, String> {
@@ -415,7 +426,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_config, host_package, agent_probe, agent_start, agent_stop, agent::agent_info, agent::agent_log, agent::agent_install, cliinstall::cli_status, cliinstall::cli_install, agent::agent_check, agent::agent_free_port, agent::agent_log_note,
             stdio_start, stdio_send, stdio_stop,
-            browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible, browser_screenshot,
+            browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible, browser_screenshot, browser_set_zoom,
             secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info,
             providers::provider_set_key, providers::provider_has_key, providers::provider_seed_from_env, providers::provider_apply, providers::provider_discover_models, agent_restart,
             gateway::gateway_status, gateway::gateway_start, gateway::gateway_firewall_allow, gateway::gateway_firewall_check, gateway::gateway_stop, gateway::gateway_pair_begin, gateway::gateway_pair_answer, gateway::gateway_revoke, gateway::gateway_send, gateway::gateway_relay_set,

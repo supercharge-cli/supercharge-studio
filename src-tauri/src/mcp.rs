@@ -30,6 +30,8 @@ pub fn tools() -> Value {
     let target = || {
         json!({
             "ref": { "type": "integer", "description": "Element ref from the latest browser_snapshot (preferred)" },
+            "x": { "type": "number", "description": "Viewport x in CSS px (alternative: the element at this point; screenshots report their css_per_px scale)" },
+            "y": { "type": "number" },
             "selector": { "type": "string", "description": "CSS selector (alternative to ref)" },
             "element_text": { "type": "string", "description": "Visible text or label of the element (alternative to ref)" }
         })
@@ -66,7 +68,13 @@ pub fn tools() -> Value {
         { "name": "browser_back", "description": "Go back in history.", "inputSchema": obj(json!({}), &[]) },
         { "name": "browser_forward", "description": "Go forward in history.", "inputSchema": obj(json!({}), &[]) },
         { "name": "browser_reload", "description": "Reload the page.", "inputSchema": obj(json!({}), &[]) },
-        { "name": "browser_eval", "description": "Evaluate a JavaScript expression in the page and return its JSON value.",
+        { "name": "browser_console", "description": "Console messages (log/info/warn/error/debug), uncaught errors and unhandled promise rejections captured from the side browser page. Filter by level; `since` returns only entries with seq greater than it.",
+          "inputSchema": obj(json!({ "level": { "type": "string", "enum": ["all", "log", "info", "warn", "error", "debug"] }, "since": { "type": "integer" }, "limit": { "type": "integer" } }), &[]) },
+        { "name": "browser_network", "description": "Network requests made by the side browser page: method, url, status (0 = failed or not reported), duration in ms. `failed_only` keeps status 0 or >= 400.",
+          "inputSchema": obj(json!({ "failed_only": { "type": "boolean" }, "since": { "type": "integer" }, "limit": { "type": "integer" }, "filter": { "type": "string", "description": "Substring of the URL" } }), &[]) },
+        { "name": "browser_viewport", "description": "Computer mode: lay the page out at a desktop size (e.g. width 1920, height 1080) shown large to the user, or mode \"panel\" to go back to the side panel. Screenshots, clicks and coordinates then use this viewport (CSS px).",
+          "inputSchema": obj(json!({ "mode": { "type": "string", "enum": ["computer", "panel"] }, "width": { "type": "integer" }, "height": { "type": "integer" } }), &[]) },
+        { "name": "browser_eval", "description": "Evaluate a JavaScript expression in the page and return its JSON value. The user can turn this off in the browser's dev drawer.",
           "inputSchema": obj(json!({ "expression": { "type": "string" } }), &["expression"]) }
     ])
 }

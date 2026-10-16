@@ -13,7 +13,9 @@ const budgets: { dir: string; label: string; entry: RegExp; entryMax: number; to
   // Includes the project terminal toggle, CLI session sync, browser tools, per-chat model and permission controls, Local/Public, background settings and attachments.
   // all js 72 KB: thinking slider, context meter, icon list, jump-to-latest. Command palette / plan / thinking are lazy.
   // entry 57 KB: CLI reasoning_effort + context_usage wire handling (~0.6 KB gz over 56).
-  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 57 * KB, totalJsMax: 72 * KB, cssMax: 11 * KB },
+  // entry 58 / all js 81 KB: side browser computer, dev and design modes (+0.8 KB entry for the console/network/viewport
+  // tools; +7 KB lazy: BrowserTools and devlog chunks load only when a mode is first switched on). HEAD was already 57.1 / 72.4.
+  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 58 * KB, totalJsMax: 81 * KB, cssMax: 11 * KB },
   // Redesigned chat UI with attachments and sheets; +reasoning labels / thought_level (~1 KB gz).
   { dir: "dist-mobile/assets", label: "mobile", entry: /^mobile-.*\.js$/, entryMax: 32 * KB, totalJsMax: 35 * KB, cssMax: 13 * KB },
 ];

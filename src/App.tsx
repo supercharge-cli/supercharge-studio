@@ -836,6 +836,13 @@ export default function App() {
     }
     if (add.length) setAtts((a) => [...a, ...add]);
   }
+  // Design mode in the side browser: picked elements arrive as context attachments.
+  const addFilesRef = useRef(addFiles);
+  addFilesRef.current = addFiles;
+  useEffect(() => {
+    browser.onDesignPick = (files) => { void addFilesRef.current(files); composerRef.current?.focus(); };
+    return () => { browser.onDesignPick = undefined; };
+  }, []);
   const removeAtt = (id: string) => setAtts((a) => { const x = a.find((y) => y.id === id); if (x?.preview) URL.revokeObjectURL(x.preview); return a.filter((y) => y.id !== id); });
 
   // Native webviews draw above the DOM: hide the side browser while an overlay or another screen is shown.

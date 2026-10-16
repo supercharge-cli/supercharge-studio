@@ -10,7 +10,10 @@
  *   _supercharge/browser/click     { ref } | { selector }  → { ok }
  *   _supercharge/browser/type      { ref|selector, text, submit? } → { ok }
  *   _supercharge/browser/scroll    { dy }                  → { ok }
- *   _supercharge/browser/eval      { expression }          → { value }
+ *   _supercharge/browser/eval      { expression }          → { value } (the user can turn it off)
+ *   _supercharge/browser/console   { level?, since?, limit? } → { entries[] } (dev mode capture)
+ *   _supercharge/browser/network   { failed_only?, filter?, since?, limit? } → { requests[] }
+ *   _supercharge/browser/viewport  { mode: computer|panel, width?, height? } → { mode, viewport }
  *   _supercharge/browser/back      {}                      → { ok }
  *   _supercharge/browser/screenshot {}                     → { mimeType, data } (base64 PNG)
  *                                    or { fallback: "snapshot", ...snapshot } if capture fails
@@ -19,8 +22,10 @@
  */
 import type { AcpClient } from "../acp/client";
 import { invoke, isDesktop, listen } from "../lib/desktop";
+import type { DevStore } from "./devlog";
+import type { Size } from "./viewport";
 
-export const BROWSER_OPS = ["navigate", "snapshot", "screenshot", "click", "type", "press_key", "select_option", "hover", "scroll", "wait_for", "tabs", "eval", "back", "forward", "reload"];
+export const BROWSER_OPS = ["navigate", "snapshot", "screenshot", "click", "type", "press_key", "select_option", "hover", "scroll", "wait_for", "tabs", "console", "network", "viewport", "eval", "back", "forward", "reload"];
 export const BROWSER_METHODS = BROWSER_OPS.map(
   (m) => `_supercharge/browser/${m}`,
 );
@@ -35,6 +40,7 @@ export type Bounds = { x: number; y: number; width: number; height: number };
 const HELPERS = `
 (window.__sc = window.__sc || {
   find(a) {
+    if (a.x != null && a.y != null) { const el = document.elementFromPoint(+a.x, +a.y); if (el) return el; throw new Error("nothing at " + a.x + "," + a.y + " (CSS px inside the " + innerWidth + "x" + innerHeight + " viewport)"); }
     if (a.ref != null) {
       const el = document.querySelector('[data-sc-ref="' + a.ref + '"]');
       if (el) return el;
@@ -150,6 +156,28 @@ export class BrowserController {
   tabs: string[] = [];
   tab = 0;
   private waiters: (() => void)[] = [];
+  /** Dev mode capture, accumulated across page loads. */
+  dev: DevStore | null = null;
+  /** Dev capture store, loaded on first use (keeps the startup bundle small). */
+  async devStore() { const m = await import("./devlog"); return (this.dev ??= new m.DevStore()); }
+  /** The user allows the agent's browser_eval (dev drawer toggle). */
+  allowEval = typeof localStorage === "undefined" || localStorage.getItem("sc.browser.eval") !== "0";
+  /** Computer mode viewport (CSS px), or null in panel mode. */
+  viewport: Size | null = null;
+  /** Set by the panel: enter (size) or leave (null) computer mode. */
+  onViewport?: (vp: Size | null) => void;
+  /** Set by the app: design mode picked elements (context files for the composer). */
+  onDesignPick?: (files: File[]) => void;
+  setAllowEval(v: boolean) { this.allowEval = v; try { localStorage.setItem("sc.browser.eval", v ? "1" : "0"); } catch { /* private mode */ } }
+  async setZoom(zoom: number) { if (isDesktop() && this.bounds) await invoke("browser_set_zoom", { zoom }).catch(() => {}); }
+  /** Pull new console/network entries from the page. Returns true when something changed. */
+  async pullDev() {
+    if (!isDesktop() || !this.bounds) return false;
+    const m = await import("./devlog");
+    const dev = await this.devStore(), c = dev.cursor();
+    const raw = await invoke<string>("browser_eval", { script: m.takeExpr(c.logSince, c.netSince), timeoutMs: 2000 }).catch(() => "");
+    try { const o = JSON.parse(raw); return o.ok ? dev.merge(m.parseTake(o.value)) : false; } catch { return false; }
+  }
 
   /** Make sure the side browser exists, opening the panel if needed. */
   async ensureOpen(timeoutMs = 5000) {
@@ -188,6 +216,7 @@ export class BrowserController {
     if (isDesktop()) await invoke("browser_close").catch(() => {});
   }
   async navigate(url: string) {
+    if (this.dev) await this.pullDev().catch(() => {});
     url = url.trim();
     if (!url) throw new Error("url is required");
     if (!/^([a-z][a-z0-9+.-]*:\/\/|data:|about:)/i.test(url)) url = /^(localhost|127\.|\[::1\])/.test(url) ? `http://${url}` : `https://${url}`;
@@ -244,7 +273,8 @@ export class BrowserController {
       const png = await invoke<string>("browser_screenshot");
       const img = await normalizeImage(png).catch(() => ({ mimeType: "image/png", data: png, width: 0, height: 0 }));
       const meta = await this.evaluate("({ url: location.href, title: document.title })").catch(() => ({ url: this.url, title: "" }));
-      return { ...img, ...meta };
+      const vp = await this.evaluate("({ width: innerWidth, height: innerHeight })").catch(() => null);
+      return { ...img, ...meta, ...(vp ? { viewport: vp, css_per_px: img.width ? Math.round((vp.width / img.width) * 1000) / 1000 : 1, mode: this.viewport ? "computer" : "panel" } : {}) };
     } catch (e: any) {
       const snap = await this.evaluate("__sc.snapshot()").catch(() => ({}));
       return { fallback: "snapshot", error: String(e?.message ?? e), ...snap };
@@ -253,7 +283,7 @@ export class BrowserController {
 
   /** Run one browser operation by short name (shared by ACP extensions and MCP tools). */
   async run(op: string, p: any): Promise<any> {
-    const target = JSON.stringify({ ref: p?.ref ?? null, selector: p?.selector ?? null, text: p?.element_text ?? null });
+    const target = JSON.stringify({ ref: p?.ref ?? null, selector: p?.selector ?? null, text: p?.element_text ?? null, x: p?.x ?? null, y: p?.y ?? null });
     switch (op) {
       case "navigate":
         return this.navigate(String(p?.url ?? ""));
@@ -320,7 +350,23 @@ export class BrowserController {
         else if (action === "close") { const i = p?.index != null ? Number(p.index) : this.tab; this.tabs.splice(i, 1); if (!this.tabs.length) this.tabs = ["about:blank"]; this.tab = Math.min(this.tab, this.tabs.length - 1); await this.navigate(this.tabs[this.tab]); }
         return { tabs: this.tabs.map((url, i) => ({ index: i, url, current: i === this.tab })) };
       }
+      case "console":
+        await this.pullDev();
+        return { entries: (await this.devStore()).console(p ?? {}), note: "Captured since the page loaded; seq is usable as `since`." };
+      case "network":
+        await this.pullDev();
+        return { requests: (await this.devStore()).network(p ?? {}) };
+      case "viewport": {
+        const computer = p?.mode !== "panel";
+        const vp = computer ? { width: Math.round(Number(p?.width) || this.viewport?.width || 1920), height: Math.round(Number(p?.height) || this.viewport?.height || 1080) } : null;
+        await this.ensureOpen();
+        if (!this.onViewport) throw new Error("The browser panel is not open");
+        this.onViewport(vp);
+        await new Promise((r) => setTimeout(r, 400));
+        return { mode: computer ? "computer" : "panel", viewport: await this.evaluate("({ width: innerWidth, height: innerHeight })").catch(() => vp) };
+      }
       case "eval":
+        if (!this.allowEval) throw new Error("The user turned off JavaScript evaluation for the agent (browser dev drawer). Use browser_snapshot, browser_console or browser_network instead.");
         return { value: await this.evaluate(String(p?.expression ?? "undefined")) };
       case "back":
         return this.after(await this.evaluate("(history.back(), true)"));
