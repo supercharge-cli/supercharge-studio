@@ -35,6 +35,7 @@
     <color type="primary" scheme_preference="dark">#1a1a1a</color>
   </branding>
   <releases>
+    <release version="1.0.13" date="2026-10-16"><description><p>Side panel tabs fill the full height; terminals are tabs in the main tab row.</p></description></release>
     <release version="1.0.12" date="2026-10-16"><description><p>Plan approval, file tree, multiple terminals, folder picker and a new logo.</p></description></release>
     <release version="1.0.11" date="2026-10-16"><description><p>No firewall prompts in Public mode; updated protocol names.</p></description></release>
     <release version="1.0.10" date="2026-10-16"><description><p>No console windows from background helpers on Windows.</p></description></release>
