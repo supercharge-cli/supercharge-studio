@@ -237,3 +237,30 @@ jobs:
             gh release create "$TAG" --target "$GITHUB_SHA" --title "Supercharge Studio $TAG" --generate-notes
           fi
           gh release upload "$TAG" dist/* --clobber
+
+  winget:
+    name: winget update
+    needs: publish
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Submit winget update
+        shell: pwsh
+        run: |
+          if (-not $env:WINGET_TOKEN) {
+            Write-Output "::notice::WINGET_TOKEN not set; skipping winget update"
+            exit 0
+          }
+          gh api repos/microsoft/winget-pkgs/contents/manifests/s/Supercharge/SuperchargeStudio --silent 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Output "::notice::Supercharge.SuperchargeStudio is not in winget-pkgs yet; skipping winget update"
+            exit 0
+          }
+          $ver = "$env:TAG".TrimStart('v')
+          $url = "https://github.com/${{ github.repository }}/releases/download/$env:TAG/Supercharge-Studio-windows-x64.msi"
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          .\wingetcreate.exe update Supercharge.SuperchargeStudio --version $ver --urls $url --submit --token $env:WINGET_TOKEN

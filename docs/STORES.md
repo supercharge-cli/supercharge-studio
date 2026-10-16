@@ -21,3 +21,12 @@ Release files have fixed names, so each store package only needs a new tag in th
 - Id `Supercharge.SuperchargeStudio`, MSI installer.
 - Each release: copy the folder to the new version, update `PackageVersion`, `InstallerUrl`, `InstallerSha256` and `ProductCode` (`msiinfo export <msi> Property | grep ProductCode`).
 - Submit: fork `microsoft/winget-pkgs`, put the files in `manifests/s/Supercharge/SuperchargeStudio/<version>/`, open a PR. `wingetcreate update` can automate later versions.
+
+### Automatic winget updates
+
+The `winget` job in `.github/workflows/release.yml` runs after `publish` and submits the new version with `wingetcreate update`. It skips with a notice when:
+
+- the repo secret `WINGET_TOKEN` is missing, or
+- `Supercharge.SuperchargeStudio` isn't merged into winget-pkgs yet (the first version must be merged by hand).
+
+To enable it: from the R3AP3Reditz account, create a classic personal access token (Settings → Developer settings → Personal access tokens → Tokens (classic)) with only the `public_repo` scope, then save it in this repo under Settings → Secrets and variables → Actions as `WINGET_TOKEN`. The update PRs are opened from that account's winget-pkgs fork.
