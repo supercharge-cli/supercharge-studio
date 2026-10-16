@@ -1,6 +1,6 @@
 /** Check the public GitHub release. No key is involved; the apps only read the latest tag. */
 export const RELEASE_REPO = "supercharge-cli/supercharge-studio";
-export const APP_VERSION = "1.0.11";
+export const APP_VERSION = "1.0.12";
 
 export type AvailableUpdate = {
   version: string;

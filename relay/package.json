@@ -1,6 +1,6 @@
 {
   "name": "supercharge-studio-relay",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "private": true,
   "description": "Reference relay for Supercharge Studio mobile pairing (blind, end-to-end encrypted pipe)",
   "license": "Apache-2.0",
