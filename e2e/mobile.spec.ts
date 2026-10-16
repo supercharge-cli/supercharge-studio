@@ -4,6 +4,11 @@ const GW = "http://127.0.0.1:2431";
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 390, height: 844 } });
 
+// Keep runs hermetic: the live release check would open a blocking update sheet whenever a newer release is published.
+test.beforeEach(async ({ page }) => {
+  await page.route(/^https:\/\/api\.github\.com\//, (route) => route.fulfill({ status: 404, body: "{}" }));
+});
+
 async function pair(page: import("@playwright/test").Page) {
   const { uri } = await (await fetch(`${GW}/pair`)).json();
   await page.goto("/mobile.html");
