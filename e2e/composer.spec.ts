@@ -65,5 +65,5 @@ test("composer focus is a single subtle outer border, no inner textarea ring", a
   expect(outer.width).toBe("1px");
   expect(outer.color).not.toBe(before);
   expect(outer.shadow).not.toContain("0px 0px 0px");
-  await page.locator(".composer-wrap").screenshot({ path: "/workspace/out/cm2-composer-focus.png" });
+  await page.locator(".composer-wrap").screenshot({ path: "test-results/shots/cm2-composer-focus.png" });
 });

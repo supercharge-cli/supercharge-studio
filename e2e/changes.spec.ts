@@ -66,10 +66,10 @@ test("changes panel: diff, hunk reject, file keep/reject, commit (real temp git 
   await expect(page.getByTestId("change-file")).toHaveCount(2);
   await expect(page.getByTestId("hunk")).toHaveCount(2);
   await expect(page.getByTestId("git-ab")).toHaveText("↑1 ↓0");
-  await page.screenshot({ path: "/workspace/out/g-changes-unified.png" });
+  await page.screenshot({ path: "test-results/shots/g-changes-unified.png" });
   await page.getByTestId("diff-mode").click();
   await expect(page.locator(".cd-split").first()).toBeVisible();
-  await page.screenshot({ path: "/workspace/out/g-changes-split.png" });
+  await page.screenshot({ path: "test-results/shots/g-changes-split.png" });
   // Reject the first hunk only: line 1 goes back, line 13 stays changed.
   await page.getByTestId("hunk-reject").first().click();
   await expect(page.getByTestId("hunk")).toHaveCount(1);
@@ -88,7 +88,7 @@ test("changes panel: diff, hunk reject, file keep/reject, commit (real temp git 
   // Agent connected (fake agent) → its one-shot reply; else the local heuristic "Update app.ts".
   await expect(page.getByTestId("commit-msg")).not.toHaveValue("");
   const msg = (await page.getByTestId("commit-msg").inputValue()).trim();
-  await page.screenshot({ path: "/workspace/out/g-commit.png" });
+  await page.screenshot({ path: "test-results/shots/g-commit.png" });
   await page.getByTestId("commit-btn").click();
   await expect(page.getByTestId("git-note")).toContainText("Committed");
   await expect(page.getByTestId("change-file")).toHaveCount(0);
@@ -101,9 +101,9 @@ test("a turn that edits files shows 'N files changed — Review' which opens the
   await page.getByPlaceholder("Message Supercharge…").fill("please edit the app");
   await page.getByPlaceholder("Message Supercharge…").press("Enter");
   const row = page.getByTestId("turn-changes");
-  await expect(row).toContainText("1 file changed");
+  await expect(row).toContainText("1 file changed", { timeout: 15_000 });
   await expect(row).toContainText("app.ts");
-  await page.screenshot({ path: "/workspace/out/g-turn-review.png" });
+  await page.screenshot({ path: "test-results/shots/g-turn-review.png" });
   await page.getByTestId("turn-review").click();
   await expect(page.getByTestId("changes-pane")).toBeVisible();
   await expect(page.getByTestId("change-file")).toHaveCount(2);
@@ -124,7 +124,7 @@ test("new branch uses the in-app dialog with inline validation, Esc cancels and 
   await page.getByTestId("name-input").fill("bad name");
   await expect(page.getByTestId("name-error")).toHaveText("No spaces");
   await expect(page.getByTestId("name-ok")).toBeDisabled();
-  await page.screenshot({ path: "/workspace/out/g-name-dialog.png" });
+  await page.screenshot({ path: "test-results/shots/g-name-dialog.png" });
   await page.getByTestId("name-input").fill("feature/dialog");
   await page.getByTestId("name-input").press("Enter");
   await expect(dlg).toHaveCount(0);

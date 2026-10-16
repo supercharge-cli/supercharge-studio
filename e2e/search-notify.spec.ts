@@ -34,7 +34,7 @@ test("Ctrl+K finds text inside past messages and opens the chat at it", async ({
   const hit = page.getByTestId("search-hit").first();
   await expect(hit).toBeVisible();
   await expect(hit.locator("mark")).toHaveText(/zebra config/i);
-  await page.screenshot({ path: "/workspace/out/n-search.png" });
+  await page.screenshot({ path: "test-results/shots/n-search.png" });
   await hit.click();
   await expect(page.getByTestId("palette")).toHaveCount(0);
   await expect(page.locator(".search-flash")).toHaveCount(1);
@@ -68,5 +68,5 @@ test("large dropped images are downscaled before sending", async ({ page }) => {
   });
   await expect(page.getByTestId("attachment")).toHaveCount(1);
   await expect(page.getByTestId("attachment")).toContainText(/big\.(webp|jpg)/);
-  await page.screenshot({ path: "/workspace/out/n-image-chip.png" });
+  await page.screenshot({ path: "test-results/shots/n-image-chip.png" });
 });

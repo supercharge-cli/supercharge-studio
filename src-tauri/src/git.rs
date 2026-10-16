@@ -368,7 +368,7 @@ mod tests {
     fn repo() -> PathBuf {
         let d = std::env::temp_dir().join(format!("scgit-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir_all(&d).unwrap();
-        for a in [vec!["init", "-q", "-b", "main"], vec!["config", "user.email", "t@t"], vec!["config", "user.name", "t"], vec!["config", "commit.gpgsign", "false"]] {
+        for a in [vec!["init", "-q", "-b", "main"], vec!["config", "user.email", "t@t"], vec!["config", "user.name", "t"], vec!["config", "commit.gpgsign", "false"], vec!["config", "core.autocrlf", "false"]] {
             git_in(&d, &a, None).unwrap();
         }
         std::fs::write(d.join("a.txt"), "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n").unwrap();

@@ -23,7 +23,7 @@ test("phone: message search on Recents opens the chat at the match; photo picker
   const hit = page.getByTestId("m-search-hit").first();
   await expect(hit).toBeVisible();
   await expect(hit.locator("mark")).toHaveText(/check is inverted/i);
-  await page.screenshot({ path: "/workspace/out/n-mobile-search.png" });
+  await page.screenshot({ path: "test-results/shots/n-mobile-search.png" });
   await hit.click();
   await expect(page.locator(".m-thread .search-flash")).toHaveCount(1);
 });

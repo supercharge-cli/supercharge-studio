@@ -36,7 +36,7 @@ test("computer mode shows a desktop-size page scaled inside the side panel", asy
   expect(stage.x).toBeGreaterThanOrEqual(panel.x);
   expect(stage.x + stage.width).toBeLessThanOrEqual(panel.x + panel.width);
   await expect(page.getByTestId("computer-zoom")).toHaveText(`${Math.round(((stage.width - 2) / 1920) * 100)}%`);
-  await page.screenshot({ path: "/workspace/out/cm2-computer-fit.png" });
+  await page.screenshot({ path: "test-results/shots/cm2-computer-fit.png" });
   await page.getByLabel("Viewport width").fill("1280");
   await page.getByLabel("Viewport height").fill("800");
   await page.getByLabel("Viewport height").press("Enter");
@@ -44,7 +44,7 @@ test("computer mode shows a desktop-size page scaled inside the side panel", asy
   expect(Math.abs(s2.width / s2.height - 1280 / 800)).toBeLessThan(0.02);
   await page.getByLabel("Zoom").selectOption("0.5");
   await expect(page.getByTestId("computer-zoom")).toHaveText("50%");
-  await page.screenshot({ path: "/workspace/out/cm2-computer-50.png" });
+  await page.screenshot({ path: "test-results/shots/cm2-computer-50.png" });
   await page.getByTestId("computer-toggle").click();
   await expect(mode).toHaveCount(0);
   await expect(page.locator(".webslot iframe")).toHaveCount(1);
@@ -83,12 +83,12 @@ test("dev drawer shows captured console and network; design picks become compose
   await page.getByTestId("dev-toggle").click();
   await expect(page.getByTestId("dev-drawer")).toContainText("TypeError", { timeout: 5000 });
   await expect(page.getByTestId("dev-drawer")).toContainText("Deprecated prop");
-  await page.screenshot({ path: "/workspace/out/bm-dev-console.png" });
+  await page.screenshot({ path: "test-results/shots/bm-dev-console.png" });
   await page.getByTestId("dev-drawer").getByRole("button", { name: /Network/ }).click();
   await expect(page.getByTestId("dev-drawer")).toContainText("/api/checkout");
   await page.getByLabel("Level").selectOption("error");
   await expect(page.getByTestId("dev-drawer")).not.toContainText("/api/plans");
-  await page.screenshot({ path: "/workspace/out/bm-dev-network.png" });
+  await page.screenshot({ path: "test-results/shots/bm-dev-network.png" });
   await page.getByTestId("dev-toggle").click();
   await page.getByTestId("design-toggle").click();
   await expect(page.getByTestId("design-hint")).toBeVisible();
@@ -96,5 +96,5 @@ test("dev drawer shows captured console and network; design picks become compose
   await expect(page.getByTestId("attachments")).toContainText("button.primary.md");
   await expect(page.getByTestId("attachments")).toContainText("button.primary.png");
   await page.locator(".composer textarea").fill("make this button rounded");
-  await page.screenshot({ path: "/workspace/out/bm-design.png" });
+  await page.screenshot({ path: "test-results/shots/bm-design.png" });
 });
