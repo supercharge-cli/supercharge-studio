@@ -15,3 +15,5 @@ server/target
 mobile/src-tauri/gen/android/.kotlin/
 packaging/aur/out/
 scripts/tmp/
+packaging/flatpak/.flatpak-builder/
+packaging/flatpak/build/
