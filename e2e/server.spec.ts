@@ -4,6 +4,11 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// Keep runs hermetic: the live release check would open a blocking update banner whenever a newer release is published.
+test.beforeEach(async ({ page }) => {
+  await page.route(/^https:\/\/api\.github\.com\//, (route) => route.fulfill({ status: 404, body: "{}" }));
+});
+
 /**
  * Headless server end to end: phone UI ↔ (relay) ↔ supercharge-studio-server ↔ ACP agent.
  * Uses a shared-state fake agent (2451) and the reference relay started by the gateway double (2432).

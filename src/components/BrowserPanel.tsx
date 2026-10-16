@@ -82,9 +82,12 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
   useEffect(() => {
     shownRef.current = shown;
     if (tab !== "browser" || picker) return;
-    void browser.setVisible(shown);
     const r = slotRect();
-    if (shown && r) void browser.setBounds(r);
+    // Show first, then re-send bounds so the native view lands in the right place.
+    void (async () => {
+      await browser.setVisible(shown);
+      if (shown && r) await browser.setBounds(r);
+    })();
   }, [shown]);
   useEffect(() => {
     if (!focus) return;

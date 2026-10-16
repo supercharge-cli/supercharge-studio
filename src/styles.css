@@ -76,7 +76,7 @@ input.inline{margin:4px 6px;width:calc(100% - 12px);padding:5px 8px;font-size:13
 .status .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
 .status.ok{color:var(--ok)}.status.bad{color:var(--bad)}
 .notice{display:flex;align-items:center;gap:8px;padding:8px 16px;background:color-mix(in srgb,var(--bad) 12%,transparent);color:var(--fg);font-size:12.5px;border-bottom:1px solid var(--line)}.notice span{flex:1}
-.update-banner{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--acc) 16%,var(--bg))}
+.update-banner{position:fixed;top:0;left:0;right:0;z-index:40;height:auto;min-height:0;padding:6px 16px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--acc) 16%,var(--bg));box-shadow:0 1px 0 rgba(0,0,0,.04);pointer-events:auto}
 .messages{flex:1;overflow:auto}
 .thread{max-width:780px;margin:0 auto;padding:24px 22px 12px;display:flex;flex-direction:column;gap:12px}
 .empty{margin:12vh auto 0;text-align:center;color:var(--muted);max-width:440px}

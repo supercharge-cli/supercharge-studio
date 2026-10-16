@@ -1,5 +1,10 @@
 import { expect, Page, test } from "@playwright/test";
 
+// Keep runs hermetic: the live release check would open a blocking update banner whenever a newer release is published.
+test.beforeEach(async ({ page }) => {
+  await page.route(/^https:\/\/api\.github\.com\//, (route) => route.fulfill({ status: 404, body: "{}" }));
+});
+
 const SETTINGS = { bind: "127.0.0.1:2421", secret: "e2e", transport: "ws", autoStart: false, alwaysApprove: false };
 
 async function boot(page: Page) {
@@ -363,5 +368,9 @@ test("native side browser hides while an overlay covers it and comes back after"
   await expect(page.getByTestId("palette")).toBeHidden();
   await expect.poll(lastVisible).toBe(true);
   // Restored in place: bounds are re-sent after showing again.
-  expect(await page.evaluate(() => { const c = (window as any).__browserCalls.filter((x: any) => x.cmd.startsWith("browser_")); const i = c.findLastIndex((x: any) => x.cmd === "browser_set_visible"); return c.slice(i + 1).some((x: any) => x.cmd === "browser_set_bounds"); })).toBe(true);
+  await expect.poll(() => page.evaluate(() => {
+    const c = (window as any).__browserCalls.filter((x: any) => x.cmd.startsWith("browser_"));
+    const i = c.findLastIndex((x: any) => x.cmd === "browser_set_visible" && x.args?.visible === true);
+    return i >= 0 && c.slice(i + 1).some((x: any) => x.cmd === "browser_set_bounds");
+  })).toBe(true);
 });

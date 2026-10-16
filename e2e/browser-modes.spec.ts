@@ -5,7 +5,7 @@ const PAGE = "data:text/html," + encodeURIComponent(`<body style="font:16px syst
 
 async function boot(page: Page) {
   await page.setViewportSize({ width: 1360, height: 860 });
-  await page.route("https://api.github.com/**", (r) => r.abort());
+  await page.route(/^https:\/\/api\.github\.com\//, (route) => route.fulfill({ status: 404, body: "{}" }));
   await page.addInitScript((s) => {
     if (!localStorage.getItem("supercharge-studio/v1"))
       localStorage.setItem("supercharge-studio/v1", JSON.stringify({ settings: s, groups: [{ id: "g1", name: "Personal", projects: [{ id: "p1", name: "demo", cwd: "/tmp", chats: [] }] }], activeProjectId: "p1" }));

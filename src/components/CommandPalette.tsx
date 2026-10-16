@@ -30,6 +30,17 @@ export function CommandPalette({ commands, onClose }: { commands: Command[]; onC
   );
   useEffect(() => input.current?.focus(), []);
   useEffect(() => setSel(0), [q]);
+  // Close on Escape even when focus is not on the input (e.g. Playwright / stolen focus).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
   const run = (c?: Command) => {
     if (!c) return;
     onClose();
@@ -50,7 +61,7 @@ export function CommandPalette({ commands, onClose }: { commands: Command[]; onC
               if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(list.length - 1, s + 1)); }
               else if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
               else if (e.key === "Enter") { e.preventDefault(); run(list[sel]); }
-              else if (e.key === "Escape") { e.preventDefault(); onClose(); }
+              else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); }
             }}
           />
           <kbd>Esc</kbd>

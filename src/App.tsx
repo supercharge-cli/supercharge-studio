@@ -1059,7 +1059,10 @@ export default function App() {
       else if (mod(e) && k === "\\") { e.preventDefault(); setPanel((x) => !x); }
       else if (mod(e) && k === "l") { e.preventDefault(); setView("chat"); composerRef.current?.focus(); }
       else if (mod(e) && k === ".") { e.preventDefault(); stop(); }
-      else if (k === "escape" && !palette && !perm && viewRef.current !== "chat") setView("chat");
+      else if (k === "escape") {
+        if (palette) { e.preventDefault(); setPalette(false); }
+        else if (!perm && viewRef.current !== "chat") setView("chat");
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1087,14 +1090,15 @@ export default function App() {
   );
 
   return (
-    <div className={`app ${panel && view === "chat" ? "with-panel" : ""} view-${view}`}>
+    <>
       {available && (
-        <div className="notice update-banner" data-testid="update-banner">
+        <div className="notice update-banner" data-testid="update-banner" role="status">
           <span>Supercharge Studio {available.version} is available.</span>
           <button onClick={() => window.open(available.asset || available.page, "_blank")}>Install</button>
           <button className="ghost" onClick={() => setAvailable(null)}>Later</button>
         </div>
       )}
+      <div className={`app ${panel && view === "chat" ? "with-panel" : ""} view-${view}`}>
       {cliSetup && (
         <Suspense fallback={null}><CliSetup
           status={cli}
@@ -1375,6 +1379,7 @@ export default function App() {
         />
       </Suspense>)}
     </div>
+    </>
   );
 }
 

@@ -1,5 +1,10 @@
 import { expect, Page, test } from "@playwright/test";
 
+// Keep runs hermetic: the live release check would open a blocking update banner whenever a newer release is published.
+test.beforeEach(async ({ page }) => {
+  await page.route(/^https:\/\/api\.github\.com\//, (route) => route.fulfill({ status: 404, body: "{}" }));
+});
+
 const SETTINGS = { bind: "127.0.0.1:2421", secret: "e2e", transport: "ws", autoStart: false, alwaysApprove: false, onboarded: true };
 
 async function boot(page: Page) {

@@ -1,6 +1,11 @@
 import { expect, Page, test } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 
+// Keep runs hermetic: the live release check would open a blocking update banner whenever a newer release is published.
+test.beforeEach(async ({ page }) => {
+  await page.route(/^https:\/\/api\.github\.com\//, (route) => route.fulfill({ status: 404, body: "{}" }));
+});
+
 /**
  * Performance budgets: cold start, frame timing while tokens stream, long-chat scrolling,
  * screen transitions, and mobile swipe-back. Results go to test-results/perf.json.

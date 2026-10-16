@@ -1,5 +1,10 @@
 import { expect, Page, test } from "@playwright/test";
 
+// Keep runs hermetic: the live release check would open a blocking update banner whenever a newer release is published.
+test.beforeEach(async ({ page }) => {
+  await page.route(/^https:\/\/api\.github\.com\//, (route) => route.fulfill({ status: 404, body: "{}" }));
+});
+
 async function boot(page: Page, bind: string, extra: Record<string, unknown> = {}) {
   await page.addInitScript(([b, x]) => {
     if (!localStorage.getItem("supercharge-studio/v1"))

@@ -14,4 +14,13 @@ describe("side panel layout", () => {
     expect(panel).toMatch(/terms\.map\(\(t\) => \(\s*<button key=\{t\.id\} data-testid="terminal-tab"/);
     expect(panel).toContain("closeTerm(t.id)");
   });
+
+  it("keeps the update banner outside the app grid as a fixed slim bar", () => {
+    const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+    // Banner is a sibling of .app, not a grid child (a grid child would squeeze the panes).
+    expect(app).toMatch(/<>\s*\{available && \([\s\S]*?update-banner[\s\S]*?\)\}\s*<div className=\{`app/);
+    expect(css).toMatch(/\.update-banner\{[^}]*position:fixed/);
+    expect(css).toMatch(/\.update-banner\{[^}]*top:0/);
+    expect(css).not.toMatch(/\.update-banner\{[^}]*position:sticky/);
+  });
 });
