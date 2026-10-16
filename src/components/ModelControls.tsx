@@ -2,8 +2,10 @@ import { useState, type ReactNode } from "react";
 import type { ConfigOption } from "../acp/types";
 import { optionFor } from "../lib/sessionOptions";
 import { Icon } from "./Icon";
+import { ThinkingControl } from "./ThinkingControl";
+import { ContextMeter } from "./ContextMeter";
 
-export function ModelControls({ options, onSelect, children }: { options: ConfigOption[]; onSelect: (id: string, value: string) => void; children?: ReactNode }) {
+export function ModelControls({ options, onSelect, children, context }: { options: ConfigOption[]; onSelect: (id: string, value: string) => void; children?: ReactNode; context?: { used: number; max?: number } }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const model = optionFor(options, "model");
@@ -30,11 +32,8 @@ export function ModelControls({ options, onSelect, children }: { options: Config
           <p className="muted small">Context is selected automatically from available model information.</p>
         </div>}
       </div>}
-      {reasoning && <label className="model-reasoning" title="Thinking (reasoning effort)"><Icon name="bolt" size={12} /><span>Thinking</span>
-        <select aria-label="Thinking level" data-testid="thinking-level" value={reasoning.currentValue} onChange={(e) => onSelect(reasoning.id, e.target.value)}>
-          {reasoning.options!.map((choice) => <option key={choice.value} value={choice.value}>{choice.name ?? choice.value}</option>)}
-        </select>
-      </label>}
+      {model && <ThinkingControl option={reasoning} modelName={active?.name ?? active?.value} onSelect={(v) => onSelect(reasoning!.id, v)} onModel={() => { setSearch(""); setOpen(true); }} />}
+      {context && <ContextMeter used={context.used} max={context.max} />}
       {children}
     </div>
   );

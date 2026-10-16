@@ -14,6 +14,8 @@ export const defaultGatewayPrefs: GatewayPrefs = { enabled: false, mode: "lan", 
 const gatewayPrefs = (saved?: GatewayPrefs): GatewayPrefs => ensureHostId({ ...defaultGatewayPrefs, ...saved, reach: saved ? reachOf(saved) : "public" });
 
 export type Settings = {
+  /** Model last picked in the composer; new chats start with it when the agent offers it. */
+  lastModel?: string;
   bind: string;
   secret: string;
   transport: "ws" | "stdio";

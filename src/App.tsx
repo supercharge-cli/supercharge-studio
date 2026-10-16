@@ -94,6 +94,9 @@ export default function App() {
     setModesBySession(modesRef.current);
   };
   const optionsRef = useRef<Record<string, ConfigOption[]>>({});
+  const [ctxBySession, setCtx] = useState<Record<string, { used: number; max?: number; model?: string }>>({});
+  const ctxMax = useRef<Record<string, number>>({});
+  const rememberWindows = (models: any) => { for (const m of models?.availableModels ?? []) { const t = Number(m?._meta?.totalContextTokens ?? m?._meta?.contextWindow); if (t > 0) ctxMax.current[m.modelId] = t; } };
   const rememberOptions = (sid: string, options: ConfigOption[]) => {
     optionsRef.current = updateSessionOptions(optionsRef.current, sid, options);
     setOptionsBySession(optionsRef.current);
@@ -216,6 +219,7 @@ export default function App() {
           if (!c) throw new Error("Agent not connected");
           const result = await c.setConfigOption(sid, id, value);
           if (Array.isArray(result?.configOptions)) rememberOptions(sid, result.configOptions);
+    rememberWindows(result?.models ?? (c.initResult?._meta as any)?.modelState);
           return optionsRef.current[sid] ?? [];
         },
         newSession: async (projectId) => {
@@ -343,6 +347,12 @@ export default function App() {
         }
       },
       onNotification: (method, params: any) => {
+        // Per-call usage: input + output of the latest model call is what the context holds now.
+        const ru = params?.update;
+        if (method === "_supercharge/session_notification" && ru?.sessionUpdate === "response_completed" && ru.usage && params.sessionId) {
+          const used = Number(ru.usage.input_tokens ?? ru.usage.inputTokens ?? 0) + Number(ru.usage.cache_read_input_tokens ?? 0) + Number(ru.usage.output_tokens ?? ru.usage.outputTokens ?? 0);
+          if (used > 0) setCtx((all) => ({ ...all, [params.sessionId]: { used } }));
+        }
         if (method === "_supercharge/sessions/changed") { scheduleSync(); return; }
         const n = usageFromNotification(method, params);
         if (n) recordUsage(n.sessionId, n.usage, `${n.sessionId}:${params?.update?.prompt_id ?? params?._meta?.eventId ?? Date.now()}`);
@@ -597,6 +607,10 @@ export default function App() {
       const res = await c.newSession(normCwd(found.project.cwd), { yoloMode: dataRef.current.settings.alwaysApprove }, mcpServers);
       rememberOptions(res.sessionId, res.configOptions ?? []);
       rememberModes(res.sessionId, res.modes);
+      rememberWindows((res as any).models);
+      const last = dataRef.current.settings.lastModel, mo = optionFor(res.configOptions ?? [], "model");
+      if (last && mo && mo.currentValue !== last && mo.options?.some((o) => o.value === last))
+        void c.setConfigOption(res.sessionId, mo.id, last).then((r: any) => { if (Array.isArray(r?.configOptions)) rememberOptions(res.sessionId, r.configOptions); }).catch(() => {});
       loaded.current.add(res.sessionId);
       attached.current.add(res.sessionId);
       update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, sessionId: res.sessionId } : x)) })));
@@ -841,6 +855,7 @@ export default function App() {
   const changeOption = (sid: string, id: string, value: string) => {
     const option = optionsRef.current[sid]?.find((o) => o.id === id);
     if (!option?.options?.some((v) => v.value === value)) return;
+    if (optionFor([option], "model")) update((d) => ({ ...d, settings: { ...d.settings, lastModel: value } }));
     void clientRef.current?.setConfigOption(sid, id, value)
       .then((r: any) => { if (Array.isArray(r?.configOptions)) rememberOptions(sid, r.configOptions); })
       .catch((e: any) => setNotice(`Could not change ${id}: ${e?.message ?? e}`));
@@ -1122,7 +1137,7 @@ export default function App() {
             <div className="crumbs">
               <span className="crumb-dim">{active ? active.group.name : "Supercharge Studio"}</span>
               {active && <Icon name="chevronRight" size={14} />}
-              <strong>{active ? active.project.name : ""}</strong>
+              <strong title={active ? `cwd ${active.project.cwd}` : undefined}>{active ? active.project.name : ""}</strong>
               {activeChat && <span className="crumb-dim chat-crumb">{activeChat.title}</span>}
             </div>
             <div className="spacer" />
@@ -1252,7 +1267,7 @@ export default function App() {
                 <span className="muted small">{isBusy ? "Sent when the agent finishes" : "Sending…"}</span>
               </div>
             )}
-            {activeChat?.sessionId && <ModelControls key={activeChat.sessionId} options={configOptions} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)}><ModeControl modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} /></ModelControls>}
+            {activeChat?.sessionId && <ModelControls key={activeChat.sessionId} options={configOptions} context={ctxBySession[activeChat.sessionId] && { used: ctxBySession[activeChat.sessionId].used, max: ctxMax.current[modelOption?.currentValue ?? ""] }} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)}><ModeControl modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} /></ModelControls>}
             {(atts.length > 0 || attErr) && (
               <div className="att-row" data-testid="attachments">
                 {atts.map((a) => (
@@ -1300,7 +1315,7 @@ export default function App() {
                 <button className="round" aria-label="Send" title="Send (Enter)" onClick={() => void send()} disabled={conn !== "open" || !active || (!draft.trim() && !atts.length)}><Icon name="send" /><span className="sr">Send</span></button>
               )}
             </div>
-            <div className="hint">{active ? <><span>cwd <code>{active.project.cwd}</code> · Enter to send, Shift+Enter for a new line · / commands · @ files</span></> : " "}</div>
+
           </div>
         </main>
       )}

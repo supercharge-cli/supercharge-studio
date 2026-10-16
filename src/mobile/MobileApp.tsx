@@ -151,8 +151,11 @@ export default function MobileApp() {
   const [permPop, setPermPop] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [search, setSearch] = useState("");
-  const [historyView, setHistoryView] = useState<HistoryView>(() => (localStorage.getItem(HISTORY_KEY) === "chats" ? "chats" : "projects"));
+  const [historyView, setHistoryView] = useState<HistoryView>(() => (localStorage.getItem(HISTORY_KEY) === "projects" ? "projects" : "chats"));
   const [drawer, setDrawer] = useState(false);
+  const [modePop, setModePop] = useState(false);
+  const [atBottom, setAtBottom] = useState(true);
+  const stuck = useRef(true);
   const pickView = (v: HistoryView) => { setHistoryView(v); localStorage.setItem(HISTORY_KEY, v); };
   const fileInput = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -174,6 +177,21 @@ export default function MobileApp() {
     setList((r.sessions ?? []).filter((x: Sess) => !seen.has(x.sessionId) && !!seen.add(x.sessionId)));
     setListed(true);
     setProjects(r._meta?.projects ?? []);
+  }, []);
+
+  // Keep the app (and the composer) inside the visible area when the on-screen keyboard opens.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const fit = () => {
+      document.documentElement.style.setProperty("--vvh", `${Math.round(vv.height)}px`);
+      window.scrollTo(0, 0);
+      const el = scroller.current;
+      if (el && stuck.current) el.scrollTop = el.scrollHeight;
+    };
+    fit();
+    vv.addEventListener("resize", fit);
+    return () => vv.removeEventListener("resize", fit);
   }, []);
 
   useEffect(() => {
@@ -323,6 +341,8 @@ export default function MobileApp() {
       setAtts([]);
     }
     setDraft("");
+    stuck.current = true;
+    setAtBottom(true);
     if (inputRef.current) inputRef.current.style.height = "";
     setBusy((b) => ({ ...b, [open]: true }));
     try {
@@ -353,10 +373,20 @@ export default function MobileApp() {
   }
 
   const sess = (open && state[open]) || emptySession();
+  // Stick to the bottom while streaming unless the reader has scrolled up.
   useEffect(() => {
     const el = scroller.current;
-    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 200) el.scrollTop = el.scrollHeight;
+    if (el && stuck.current) el.scrollTop = el.scrollHeight;
   }, [sess]);
+  useEffect(() => { stuck.current = true; setAtBottom(true); }, [open]);
+  const onThreadScroll = () => {
+    const el = scroller.current;
+    if (!el) return;
+    const near = isNearBottom(el.scrollHeight, el.scrollTop, el.clientHeight);
+    stuck.current = near;
+    setAtBottom((v) => (v === near ? v : near));
+  };
+  const jumpToEnd = () => { const el = scroller.current; if (!el) return; stuck.current = true; setAtBottom(true); el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }); };
 
   const grouped = useMemo(() => {
     const m = new Map<string, { project: Project; sessions: Sess[] }>();
@@ -436,6 +466,14 @@ export default function MobileApp() {
         <span className={`m-dot ${conn === "open" ? "ok" : "bad"}`} data-testid="m-status" title={conn}><i /><span className="sr">{conn}</span></span>
         {open && <button className="icon" aria-label="New chat" data-testid="m-new-chat" onClick={() => { haptic(); const pid = list.find((s) => s.sessionId === open)?._meta?.projectId; const p = allProjects.find((x) => x.projectId === pid); if (p) void newChat(p); else setNewSheet(true); }}><Icon name="compose" size={18} /></button>}
       </header>
+      {(conn === "reconnecting" || conn === "closed") && !err && (
+        <div className={`m-conn ${conn}`} role="status" data-testid="m-conn">
+          <span className="m-conn-dot" aria-hidden />
+          <span>{connLabel(conn)}</span>
+          <div className="spacer" />
+          <button className="secondary compact" data-testid="m-reconnect" onClick={() => { haptic(); setRetryKey((k) => k + 1); }}>Reconnect</button>
+        </div>
+      )}
       {err && (
         <div className="notice m-err" role="alert" data-testid="m-err">
           <span>{err}</span>
@@ -453,8 +491,8 @@ export default function MobileApp() {
             {listed && grouped.length > 0 && (
               <>
                 <div className="m-views" role="tablist" aria-label="History">
+                  <button role="tab" aria-selected={historyView === "chats"} className={historyView === "chats" ? "on" : ""} data-testid="m-view-chats" onClick={() => pickView("chats")}>Recents</button>
                   <button role="tab" aria-selected={historyView === "projects"} className={historyView === "projects" ? "on" : ""} data-testid="m-view-projects" onClick={() => pickView("projects")}>Projects</button>
-                  <button role="tab" aria-selected={historyView === "chats"} className={historyView === "chats" ? "on" : ""} data-testid="m-view-chats" onClick={() => pickView("chats")}>Chats</button>
                 </div>
                 <label className="m-search"><Icon name="search" size={15} /><input type="search" placeholder="Search chats" aria-label="Search chats" data-testid="m-search" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
               </>
@@ -487,9 +525,9 @@ export default function MobileApp() {
             {historyView === "chats" && (
               <section className="m-proj" data-testid="m-chat-section">
                 <div className="m-proj-head"><b>Recents</b></div>
-                {chatSections.flatMap((section) => section.rows).map(({ s }, si) => (
-                  <button key={`${s.sessionId}-${si}`} className={`m-chat${s.sessionId === open ? " on" : ""}`} data-testid="m-chat" onClick={() => { setDrawer(false); void openSession(s.sessionId); }}>
-                    <span className="m-chat-title">{s.title || "Untitled"}</span>
+                {chatSections.flatMap((section) => section.rows).map(({ s, project }, si) => (
+                  <button key={`${s.sessionId}-${si}`} className={`m-chat m-chat-recent${s.sessionId === open ? " on" : ""}`} data-testid="m-chat" onClick={() => { setDrawer(false); void openSession(s.sessionId); }}>
+                    <span className="m-chat-body"><span className="m-chat-title">{s.title || "Untitled"}</span><span className="m-chat-sub">{project.name}</span></span>
                     <span className="m-chat-time">{ago(sessionTime(s))}</span>
                     {s._meta?.busy && <i className="m-busy" aria-label="working" />}
                   </button>
@@ -508,7 +546,7 @@ export default function MobileApp() {
       )}
       {open && (
         <div className="m-view" ref={threadView}>
-          <div className="m-thread" ref={scroller} data-testid="m-thread">
+          <div className="m-thread" ref={scroller} data-testid="m-thread" onScroll={onThreadScroll}>
             <div className={`thread${isBusy ? " streaming" : ""}`}>
               {loadingSess === open && sess.items.length === 0 && (
                 <div className="skel-chat" aria-busy="true">
@@ -528,6 +566,7 @@ export default function MobileApp() {
               {isBusy && <div className="typing"><i /><i /><i /></div>}
             </div>
           </div>
+          {!atBottom && sess.items.length > 0 && <button className="m-jump" aria-label="Jump to latest" data-testid="m-jump" onClick={jumpToEnd}><Icon name="chevronDown" size={18} /></button>}
           <div className="m-composer">
             {loadingSess !== open && sess.items.length === 0 && !isBusy && (
               <div className="m-pills">{SUGGESTIONS.map((t) => <button key={t} className="m-pill" onClick={() => { setDraft(t); inputRef.current?.focus(); }}>{t}</button>)}</div>
@@ -556,7 +595,7 @@ export default function MobileApp() {
                 <button className="icon m-attach" aria-label="Attach files" data-testid="m-attach" onClick={() => fileInput.current?.click()}><Icon name="plus" size={20} /></button>
                 {permissionOption && (
                   <span className="m-think-anchor">
-                    <button type="button" className="m-chip m-chip-accent" onClick={() => { haptic(); setPermPop((v) => !v); setThinkPop(false); }}>{optionLabel(permissionOption)}</button>
+                    <button type="button" className="m-chip m-chip-accent" onClick={() => { haptic(); setPermPop((v) => !v); setThinkPop(false); setModePop(false); }}>{optionLabel(permissionOption)}</button>
                     {permPop && (
                       <div className="m-think-pop m-pop-start" role="dialog" aria-label="Access">
                         {permissionOption.options!.map((v) => (
@@ -566,11 +605,23 @@ export default function MobileApp() {
                     )}
                   </span>
                 )}
+                {sessionModes && sessionModes.availableModes.length > 1 && (
+                  <span className="m-think-anchor">
+                    <button type="button" className="m-chip" data-testid="m-mode-chip" onClick={() => { haptic(); setModePop((v) => !v); setPermPop(false); setThinkPop(false); }}>{sessionModes.availableModes.find((x) => x.id === (sess.modeId ?? sessionModes.currentModeId))?.name ?? "Mode"}</button>
+                    {modePop && (
+                      <div className="m-think-pop m-pop-start" role="dialog" aria-label="Mode">
+                        {sessionModes.availableModes.map((m) => (
+                          <button key={m.id} type="button" className="m-pop-item" aria-pressed={m.id === (sess.modeId ?? sessionModes.currentModeId)} onClick={() => { setModePop(false); void client.current?.setMode(open!, m.id).then(() => rememberModes(open!, { ...sessionModes, currentModeId: m.id })).catch((e: any) => setToast(`Could not change work mode: ${e?.message ?? e}`)); }}>{m.name}</button>
+                        ))}
+                      </div>
+                    )}
+                  </span>
+                )}
                 <div className="spacer" />
                 {modelOption && <button className="m-chip" data-testid="m-model-chip" onClick={() => { haptic(); setModelSearch(""); setPicker("model"); }}>{optionLabel(modelOption)}</button>}
                 {thinkingOption && (
                   <span className="m-think-anchor">
-                    <button type="button" className="m-chip" data-testid="m-think-chip" onClick={() => { haptic(); setThinkPop((v) => !v); setPermPop(false); }}>{optionLabel(thinkingOption)}</button>
+                    <button type="button" className="m-chip" data-testid="m-think-chip" onClick={() => { haptic(); setThinkPop((v) => !v); setPermPop(false); setModePop(false); }}>{optionLabel(thinkingOption)}</button>
                     {thinkPop && (
                       <div className="m-think-pop" role="dialog" aria-label="Thinking">
                         <b>{optionLabel(thinkingOption)}</b>
@@ -666,9 +717,9 @@ export default function MobileApp() {
         <div className="m-sheet-bg top">
           <div className="m-sheet" role="dialog" aria-label="Permission request" data-testid="m-perm">
             <div className="m-grabber" aria-hidden />
-            <h3>Allow this tool call?</h3>
-            <p>{perm.req.toolCall.title ?? perm.req.toolCall.toolCallId}</p>
-            {perm.req.toolCall.rawInput != null && <pre className="mono">{JSON.stringify(perm.req.toolCall.rawInput, null, 2)}</pre>}
+            <div className="m-perm-head"><span className="m-perm-icon" aria-hidden><Icon name="alert" size={18} /></span><div><h3>Allow this action?</h3>{permQueue.length > 1 && <small className="muted">{permQueue.length - 1} more waiting</small>}</div></div>
+            <p className="m-perm-title">{perm.req.toolCall.title ?? perm.req.toolCall.toolCallId}</p>
+            {perm.req.toolCall.rawInput != null && <details className="m-perm-details"><summary>Details</summary><pre className="mono">{JSON.stringify(perm.req.toolCall.rawInput, null, 2)}</pre></details>}
             {perm.req.options.map((o) => (
               <button key={o.optionId} className={`m-big ${o.kind.startsWith("reject") ? "secondary" : ""}`} onClick={() => { haptic(12); perm.resolve({ outcome: "selected", optionId: o.optionId }); setPermQueue((pending) => pending.filter((item) => item !== perm)); }}>{o.name}</button>
             ))}
@@ -678,6 +729,15 @@ export default function MobileApp() {
       {toast && <div className="m-toast">{toast}</div>}
     </div>
   );
+}
+
+/** Within 80px of the end counts as "at the bottom", so streaming keeps following. */
+export function isNearBottom(scrollHeight: number, scrollTop: number, clientHeight: number, slack = 80): boolean {
+  return scrollHeight - scrollTop - clientHeight <= slack;
+}
+
+export function connLabel(c: ConnectionState): string {
+  return c === "connecting" ? "Connecting…" : c === "reconnecting" ? "Connection lost, reconnecting…" : "Offline";
 }
 
 /** The phone's Wi-Fi IPv4 address from the native side, if available (used only for error messages). */

@@ -142,3 +142,37 @@ button,a{-webkit-tap-highlight-color:transparent}
 @media (prefers-reduced-motion:reduce){.m-app *{animation:none!important;transition:none!important}}
 @media (min-width:700px){.m-thread .thread,.m-composer,.m-list{max-width:760px;margin:0 auto;width:100%}}
 .m-head-title:disabled{opacity:1;color:var(--fg);cursor:default}
+
+/* v2 polish: keyboard-safe height, 44px targets, recents rows, banners, jump button, permission sheet */
+.m-app{height:var(--vvh,100dvh)}
+.m-top .icon,.m-attach,.m-compose-row .round{min-width:44px;min-height:44px}
+.m-attach{width:44px;height:44px}
+.m-compose-row .round{width:44px;height:44px}
+.m-chip{min-height:36px;padding:8px 10px;border-radius:12px;background:var(--hover);color:var(--fg)}
+.m-chip:active{transform:scale(.97)}
+.m-compose-row{flex-wrap:nowrap;overflow:visible}
+.m-chat{min-height:48px;padding:10px 10px}
+.m-chat-recent{min-height:58px;border-radius:12px}
+.m-chat-body .m-chat-title{font-weight:550}
+.m-chat-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-views button{min-height:40px}
+.m-more{min-height:44px}
+.m-pill{min-height:40px}
+.m-pop-item{min-height:44px}
+.m-thread .bubble.user{background:var(--acc);color:#fff;font-size:15.5px}
+.m-thread .bubble.agent .md p{margin:0 0 10px}
+.m-thread .md-codehead{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 4px 12px}
+.m-thread .md-copy{min-height:36px;min-width:56px;border-radius:10px}
+.m-thread .toolcard summary,.m-thread .toolcard>button,.m-thread .toolcard .tool-head{min-height:44px}
+.m-conn{display:flex;align-items:center;gap:8px;margin:8px 10px 0;padding:8px 12px;border-radius:12px;font-size:13.5px;background:color-mix(in srgb,#e0a030 16%,var(--panel));border:1px solid color-mix(in srgb,#e0a030 40%,var(--line));animation:rise .2s var(--spring-soft) both}
+.m-conn.closed{background:color-mix(in srgb,var(--bad) 14%,var(--panel));border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+.m-conn-dot{width:8px;height:8px;border-radius:50%;background:#e0a030;animation:blink 1s infinite}
+.m-conn.closed .m-conn-dot{background:var(--bad);animation:none}
+.m-conn button{min-height:36px}
+.m-view{position:relative}
+.m-jump{position:absolute;right:16px;bottom:130px;z-index:4;width:44px;height:44px;padding:0;border-radius:50%;display:grid;place-items:center;background:var(--raise);color:var(--fg);border:1px solid var(--line);box-shadow:var(--shadow);animation:pop .2s var(--spring) both}
+.m-perm-head{display:flex;align-items:center;gap:12px}
+.m-perm-head h3{margin:0}
+.m-perm-icon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,#e0a030 18%,transparent);color:#e0a030;flex:none}
+.m-perm-title{margin:4px 0;font-weight:500;word-break:break-word}
+.m-perm-details summary{min-height:44px;display:flex;align-items:center;color:var(--muted);cursor:pointer}

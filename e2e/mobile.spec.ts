@@ -147,3 +147,19 @@ test("attaches files on the phone and uploads them in chunks through the relay",
   await page.getByTestId("m-attach-input").setInputFiles([{ name: "huge.png", mimeType: "image/png", buffer: Buffer.alloc(9 * 1024 * 1024) }]);
   await expect(page.getByTestId("m-attach-error")).toContainText("images can be up to");
 });
+
+test("recents list by default and light theme", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "light" });
+  try {
+    const page = await context.newPage();
+    await pair(page);
+    await expect(page.getByTestId("m-chat-section")).toBeVisible();
+    await expect(page.locator(".m-chat-recent").first()).toContainText("api");
+    if (process.env.SHOTS) await page.waitForTimeout(500);
+    await shot(page, "mobile-recents-light");
+    await page.getByTestId("m-chat").first().click();
+    await expect(page.getByTestId("m-thread")).toContainText("The token check is inverted.");
+    if (process.env.SHOTS) await page.waitForTimeout(500);
+    await shot(page, "mobile-chat-light");
+  } finally { await context.close(); }
+});
