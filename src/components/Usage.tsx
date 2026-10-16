@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { cachedCatalog, type Catalog, effectivePricing, fetchCatalog, isStale } from "../lib/priceCatalog";
 import { aggregate, bucketRange, clearUsage, fmtTokens, fmtUsd, parsePrice, Period, Pricing, UsageRecord } from "../lib/usage";
 import { Icon } from "./Icon";
 
@@ -91,8 +92,13 @@ export function UsageScreen({ records, pricing, onPricing, onClear, onClose }: {
   const [period, setPeriod] = useState<Period>("day");
   const [metric, setMetric] = useState<"tokens" | "cost">("tokens");
   const keys = useMemo(() => bucketRange(period, RANGE[period]), [period]);
-  const agg = useMemo(() => aggregate(records, pricing, period, keys), [records, pricing, period, keys]);
   const models = useMemo(() => [...new Set(records.map((r) => r.model))].sort(), [records]);
+  const [catalog, setCatalog] = useState<Catalog | null>(cachedCatalog);
+  const [priceNote, setPriceNote] = useState("");
+  const refresh = () => { setPriceNote("Updating prices…"); fetchCatalog().then((c) => { setCatalog(c); setPriceNote(""); }).catch(() => setPriceNote("Couldn't reach the price list. Using saved prices.")); };
+  useEffect(() => { if (models.length && isStale(catalog)) refresh(); }, [models.length > 0]);
+  const eff = useMemo(() => effectivePricing(models, pricing, catalog?.prices), [models, pricing, catalog]);
+  const agg = useMemo(() => aggregate(records, eff.pricing, period, keys), [records, eff, period, keys]);
   const t = agg.total;
   return (
     <div className="screen" data-testid="usage-screen">
@@ -124,14 +130,16 @@ export function UsageScreen({ records, pricing, onPricing, onClear, onClose }: {
           <Table title="By provider" rows={agg.byProvider} />
         </div>
         <div className="card">
-          <h4>Pricing (USD per 1M tokens)</h4>
+          <div className="row between"><h4>Pricing (USD per 1M tokens)</h4><button className="ghost compact" data-testid="refresh-prices" onClick={refresh}><Icon name="refresh" size={13} /> Refresh prices</button></div>
+          {priceNote && <p className="muted small" data-testid="price-note">{priceNote}</p>}
           {models.length === 0 && <p className="muted">Models appear here after the agent reports usage for them.</p>}
           {models.map((m) => {
-            const p = pricing[m] ?? { input: 0, output: 0 };
+            const p = eff.pricing[m] ?? { input: 0, output: 0 };
             const set = (k: "input" | "output" | "cached", v: number | undefined) => onPricing({ ...pricing, [m]: { ...p, [k]: v } });
+            const isAuto = eff.auto.has(m);
             return (
               <div className="price-row" key={m} data-testid="price-row">
-                <span className="mono">{m}</span>
+                <span className="mono">{m}{isAuto ? <span className="badge muted" title="Filled from the public price list. Type a price to override it."> auto</span> : pricing[m] ? <button className="ghost compact" title="Use the public price list again" onClick={() => { const { [m]: _, ...rest } = pricing; onPricing(rest); }}>reset</button> : null}</span>
                 <label>Input<PriceInput value={p.input} testId="price-input" onCommit={(v) => set("input", v ?? 0)} /></label>
                 <label>Cached<PriceInput value={p.cached} placeholder="= input" onCommit={(v) => set("cached", v)} /></label>
                 <label>Output<PriceInput value={p.output} testId="price-output" onCommit={(v) => set("output", v ?? 0)} /></label>
