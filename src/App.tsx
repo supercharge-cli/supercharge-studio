@@ -319,7 +319,7 @@ export default function App() {
       clientMeta: browserClientMeta(),
       onStateChange: (st, info) => {
         setConn(st);
-        if (st === "reconnecting") setStatus(`Reconnecting (attempt ${info?.attempt}, ${info?.delayMs}ms)…`);
+        if (st === "reconnecting") setStatus(info?.attempt ? `Reconnecting (attempt ${info.attempt}${info.delayMs != null ? `, retry in ${Math.round(info.delayMs / 100) / 10}s` : ""})…` : "Reconnecting…");
       },
       onUpdate: (sid, u) => {
         if (replaying.current.has(sid)) return; // history re-sent while reattaching tools
@@ -1252,7 +1252,7 @@ export default function App() {
                 <span className="muted small">{isBusy ? "Sent when the agent finishes" : "Sending…"}</span>
               </div>
             )}
-            {activeChat?.sessionId && <ModelControls key={activeChat.sessionId} options={configOptions} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)} />}
+            {activeChat?.sessionId && <ModelControls key={activeChat.sessionId} options={configOptions} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)}><ModeControl modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} /></ModelControls>}
             {(atts.length > 0 || attErr) && (
               <div className="att-row" data-testid="attachments">
                 {atts.map((a) => (
@@ -1300,7 +1300,7 @@ export default function App() {
                 <button className="round" aria-label="Send" title="Send (Enter)" onClick={() => void send()} disabled={conn !== "open" || !active || (!draft.trim() && !atts.length)}><Icon name="send" /><span className="sr">Send</span></button>
               )}
             </div>
-            <div className="hint">{active ? <><span>cwd <code>{active.project.cwd}</code> · Enter to send, Shift+Enter for a new line · / commands · @ files</span>{activeChat?.sessionId && <ModeControl key={activeChat.sessionId} modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} />}</> : " "}</div>
+            <div className="hint">{active ? <><span>cwd <code>{active.project.cwd}</code> · Enter to send, Shift+Enter for a new line · / commands · @ files</span></> : " "}</div>
           </div>
         </main>
       )}

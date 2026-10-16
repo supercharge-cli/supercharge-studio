@@ -1,20 +1,20 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { ConfigOption } from "../acp/types";
 import { optionFor } from "../lib/sessionOptions";
 import { Icon } from "./Icon";
 
-export function ModelControls({ options, onSelect }: { options: ConfigOption[]; onSelect: (id: string, value: string) => void }) {
+export function ModelControls({ options, onSelect, children }: { options: ConfigOption[]; onSelect: (id: string, value: string) => void; children?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const model = optionFor(options, "model");
   const reasoning = optionFor(options, "reasoning_effort");
   const active = model?.options?.find((choice) => choice.value === model.currentValue);
-  if (!model) return null;
-  const choices = model.options!.filter((choice) => `${choice.name ?? ""} ${choice.value}`.toLowerCase().includes(search.toLowerCase()));
+  if (!model && !reasoning && !children) return null;
+  const choices = (model?.options ?? []).filter((choice) => `${choice.name ?? ""} ${choice.value}`.toLowerCase().includes(search.toLowerCase()));
   return (
-    <div className="model-controls">
-      <div className="model-menu-anchor">
-        <button className="secondary model-trigger" data-testid="model-trigger" aria-expanded={open} onClick={() => { setSearch(""); setOpen(!open); }}>
+    <div className="model-controls" data-testid="composer-chips">
+      {model && <div className="model-menu-anchor" onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}>
+        <button className="secondary model-trigger" data-testid="model-trigger" aria-haspopup="dialog" aria-label={`Model: ${active?.name ?? active?.value ?? model.currentValue}. Change model`} title="Choose model" aria-expanded={open} onClick={() => { setSearch(""); setOpen(!open); }}>
           <Icon name="bolt" size={14} /> {active?.name ?? active?.value ?? model.currentValue} <span aria-hidden="true">⌄</span>
         </button>
         {open && <div className="model-picker" data-testid="model-picker" role="dialog" aria-label="Choose model">
@@ -29,12 +29,13 @@ export function ModelControls({ options, onSelect }: { options: ConfigOption[]; 
           </div>
           <p className="muted small">Context is selected automatically from available model information.</p>
         </div>}
-      </div>
-      {reasoning && <label className="model-reasoning">Thinking
+      </div>}
+      {reasoning && <label className="model-reasoning" title="Thinking (reasoning effort)"><Icon name="bolt" size={12} /><span>Thinking</span>
         <select aria-label="Thinking level" data-testid="thinking-level" value={reasoning.currentValue} onChange={(e) => onSelect(reasoning.id, e.target.value)}>
           {reasoning.options!.map((choice) => <option key={choice.value} value={choice.value}>{choice.name ?? choice.value}</option>)}
         </select>
       </label>}
+      {children}
     </div>
   );
 }

@@ -121,9 +121,10 @@ test("renders tool cards in chat without a tools tab", async ({ page }) => {
   await expect(page.getByRole("button", { name: /Tools \(/ })).toHaveCount(0);
 });
 
-test("mode button below the composer changes only the selected chat", async ({ page }) => {
+test("mode chip above the composer changes only the selected chat", async ({ page }) => {
   await boot(page);
   await ask(page, "first chat");
+  await expect(page.getByTestId("composer-chips").getByTestId("mode-trigger")).toBeVisible();
   await page.getByTestId("mode-trigger").click();
   await expect(page.getByTestId("mode-menu")).toContainText("Plan");
   await page.getByTestId("mode-plan").click();
