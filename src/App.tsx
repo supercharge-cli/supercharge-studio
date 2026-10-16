@@ -39,6 +39,7 @@ import { FileEntry, projectFiles, projectReadText } from "./lib/desktop";
 import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type CliStatus, agentLogNote, agentRestart, appConfig, ensureAgent, gateway, invoke, isDesktop, keychainGet, keychainSet, listen, mcpUrl, pickFolder, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
 import { AppData, applyTree, ensureFolderProject, findProject, load, mergeCliSessions, normCwd, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
+import { contextFromUsageNotification, isResponseCompleted, usedFromResponseCompleted } from "./lib/contextUsage";
 import { APP_VERSION, checkUpdate, type AvailableUpdate } from "./lib/updates";
 
 type View = "chat" | "settings" | "usage";
@@ -95,7 +96,7 @@ export default function App() {
     setModesBySession(modesRef.current);
   };
   const optionsRef = useRef<Record<string, ConfigOption[]>>({});
-  const [ctxBySession, setCtx] = useState<Record<string, { used: number; max?: number; model?: string }>>({});
+  const [ctxBySession, setCtx] = useState<Record<string, { used: number; max?: number; model?: string; fromAgent?: boolean }>>({});
   const ctxMax = useRef<Record<string, number>>({});
   const rememberWindows = (models: any) => { for (const m of models?.availableModels ?? []) { const t = Number(m?._meta?.totalContextTokens ?? m?._meta?.contextWindow); if (t > 0) ctxMax.current[m.modelId] = t; } };
   const rememberOptions = (sid: string, options: ConfigOption[]) => {
@@ -348,11 +349,23 @@ export default function App() {
         }
       },
       onNotification: (method, params: any) => {
-        // Per-call usage: input + output of the latest model call is what the context holds now.
-        const ru = params?.update;
-        if (method === "_supercharge/session_notification" && ru?.sessionUpdate === "response_completed" && ru.usage && params.sessionId) {
-          const used = Number(ru.usage.input_tokens ?? ru.usage.inputTokens ?? 0) + Number(ru.usage.cache_read_input_tokens ?? 0) + Number(ru.usage.output_tokens ?? ru.usage.outputTokens ?? 0);
-          if (used > 0) setCtx((all) => ({ ...all, [params.sessionId]: { used } }));
+        // Prefer the agent's context_usage notification over derived response_completed values.
+        const ctxN = contextFromUsageNotification(method, params);
+        if (ctxN) {
+          setCtx((all) => ({ ...all, [ctxN.sessionId]: { used: ctxN.used, max: ctxN.max, fromAgent: true } }));
+        }
+        // Dual-emitted response_completed is deduped in AcpClient (legacy copy dropped). Use it only as a
+        // context fallback when context_usage is absent; turn_completed still owns the usage ledger.
+        if (isResponseCompleted(method, params) && params.sessionId) {
+          const ru = params.update;
+          if (ru?.usage) {
+            const used = usedFromResponseCompleted(ru.usage);
+            if (used > 0) setCtx((all) => {
+              const prev = all[params.sessionId];
+              if (prev?.fromAgent) return all;
+              return { ...all, [params.sessionId]: { used, max: prev?.max } };
+            });
+          }
         }
         if (method === "_supercharge/sessions/changed") { scheduleSync(); return; }
         const n = usageFromNotification(method, params);
@@ -1268,7 +1281,7 @@ export default function App() {
                 <span className="muted small">{isBusy ? "Sent when the agent finishes" : "Sending…"}</span>
               </div>
             )}
-            {activeChat?.sessionId && <ModelControls key={activeChat.sessionId} options={configOptions} context={ctxBySession[activeChat.sessionId] && { used: ctxBySession[activeChat.sessionId].used, max: ctxMax.current[modelOption?.currentValue ?? ""] }} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)}><ModeControl modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} /></ModelControls>}
+            {activeChat?.sessionId && <ModelControls key={activeChat.sessionId} options={configOptions} context={ctxBySession[activeChat.sessionId] && { used: ctxBySession[activeChat.sessionId].used, max: ctxBySession[activeChat.sessionId].max ?? ctxMax.current[modelOption?.currentValue ?? ""] }} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)}><ModeControl modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} /></ModelControls>}
             {(atts.length > 0 || attErr) && (
               <div className="att-row" data-testid="attachments">
                 {atts.map((a) => (

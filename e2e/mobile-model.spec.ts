@@ -11,7 +11,7 @@ test("per-chat model and reasoning pickers follow load, changes, and live update
   ` }));
   await page.route(/\/src\/acp\/client\.ts(?:\?.*)?$/, (route) => route.fulfill({ contentType: "text/javascript", body: `
     const options = {
-      s1: [{ id: "model", currentValue: "fast", options: [{ value: "fast", name: "Fast" }, { value: "deep", name: "Deep" }] }, { id: "reasoning_effort", currentValue: "low", options: [{ value: "low" }, { value: "high" }] }, { id: "permission_mode", currentValue: "ask", options: [{ value: "ask", name: "Ask" }, { value: "always-approve", name: "Always approve" }] }],
+      s1: [{ id: "model", currentValue: "fast", options: [{ value: "fast", name: "Fast" }, { value: "deep", name: "Deep" }] }, { id: "reasoning_effort", category: "thought_level", currentValue: "low", options: [{ value: "low", name: "Low" }, { value: "high", name: "High" }, { value: "xhigh", name: "Extra High" }] }, { id: "permission_mode", currentValue: "ask", options: [{ value: "ask", name: "Ask" }, { value: "always-approve", name: "Always approve" }] }],
       s2: [{ id: "model", currentValue: "deep", options: [{ value: "fast", name: "Fast" }, { value: "deep", name: "Deep" }] }, { id: "permission_mode", currentValue: "ask", options: [{ value: "ask", name: "Ask" }, { value: "always-approve", name: "Always approve" }] }],
     };
     const modes = { s1: "default", s2: "default" };

@@ -100,6 +100,8 @@ export type InitializeResult = {
 export type ConfigOption = {
   id: string;
   name?: string;
+  /** e.g. `thought_level` for the reasoning_effort select */
+  category?: string;
   currentValue?: string;
   options?: { value: string; name?: string }[];
   [k: string]: unknown;

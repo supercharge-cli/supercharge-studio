@@ -76,7 +76,7 @@ wss.on("connection", (ws: WebSocket) => {
   const modesFor = (sid: string) => ({ currentModeId: modeChoices.get(sid) ?? "default", availableModes: [{ id: "default", name: "Agent", description: "Work on the task" }, { id: "plan", name: "Plan", description: "Plan before changing files" }] });
   const optionsFor = (sid: string) => [
     { id: "model", name: "Model", currentValue: modelChoices.get(sid) ?? "studio-test-1", options: [{ value: "studio-test-1", name: "First" }, { value: "studio-test-2", name: "Second" }] },
-    { id: "reasoning_effort", name: "Reasoning Effort", currentValue: reasoningChoices.get(sid) ?? "high", options: [{ value: "off", name: "Off" }, { value: "low", name: "Low" }, { value: "medium", name: "Medium" }, { value: "high", name: "High" }, { value: "xhigh", name: "Extra High" }] },
+    { id: "reasoning_effort", name: "Reasoning Effort", category: "thought_level", currentValue: reasoningChoices.get(sid) ?? "high", options: [{ value: "off", name: "Off" }, { value: "low", name: "Low" }, { value: "medium", name: "Medium" }, { value: "high", name: "High" }, { value: "xhigh", name: "Extra High" }] },
     { id: "permission_mode", name: "Tool permissions", currentValue: permissionChoices.get(sid) ?? "ask", options: [{ value: "ask", name: "Ask" }, { value: "always-approve", name: "Always approve" }] },
   ];
   const send = (m: any) => ws.send(JSON.stringify({ jsonrpc: "2.0", ...m }));
@@ -159,7 +159,7 @@ wss.on("connection", (ws: WebSocket) => {
         const sid = m.params?.sessionId;
         if (!known.has(sid)) return send({ id: m.id, error: { code: -32602, message: "unknown session id" } });
         if (m.params?.configId === "model") modelChoices.set(sid, m.params.value);
-        if (m.params?.configId === "reasoning_effort") reasoningChoices.set(sid, m.params.value);
+        if (m.params?.configId === "reasoning_effort") reasoningChoices.set(sid, m.params.value === "none" ? "off" : m.params.value);
         if (m.params?.configId === "permission_mode") {
           if (!["ask", "always-approve"].includes(m.params.value)) return send({ id: m.id, error: { code: -32602, message: "Invalid permission mode" } });
           permissionChoices.set(sid, m.params.value);
@@ -304,9 +304,11 @@ wss.on("connection", (ws: WebSocket) => {
         const att = (m.params?.prompt ?? []).filter((b: any) => b?.type && b.type !== "text");
         if (att.length) say(sid, `attachments: ${att.map((b: any) => b.type === "image" ? `image(${b.mimeType})` : b.type === "resource" ? `resource(${decodeURIComponent(String(b.resource?.uri ?? "").split("/").pop() ?? "")}${b.resource?.text != null ? ",text" : ",blob"})` : `link(${b.name})`).join(" ")} `);
         if (!/stream|tool|perm|slow|browser|modelfail|edit|long|tokens/.test(text)) say(sid, `echo: ${text}`);
-        // Usage as an extension notification (turn report) and on the prompt result.
+        // Usage: context_usage (preferred by Studio), response_completed (snake_case), and turn report.
         const usage = { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 200, reasoningTokens: 50, modelCalls: 1, modelUsage: { "fake-model": { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 200, reasoningTokens: 50, modelCalls: 1 } } };
-        send({ method: "_supercharge/session_notification", params: { sessionId: sid, update: { sessionUpdate: "response_completed", usage: { input_tokens: 52000, output_tokens: 300, cache_read_input_tokens: 0 } } } });
+        const msgId = `m${nextId++}`;
+        send({ method: "_supercharge/session/context_usage", params: { sessionId: sid, usedTokens: 52300, maxTokens: 200000 } });
+        send({ method: "_supercharge/session_notification", params: { sessionId: sid, update: { sessionUpdate: "response_completed", message_id: msgId, usage: { input_tokens: 52000, output_tokens: 300, cache_read_input_tokens: 0, reasoning_tokens: 50 } } } });
         send({ method: "_supercharge/session/update", params: { sessionId: sid, update: { sessionUpdate: "turn_completed", prompt_id: `p${nextId++}`, stop_reason: "end_turn", usage } } });
         return reply({ stopReason: "end_turn", usage });
       }

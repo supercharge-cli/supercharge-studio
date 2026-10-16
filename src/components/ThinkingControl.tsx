@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ConfigOption } from "../acp/types";
+import { effortLabel, sameEffort } from "../lib/sessionOptions";
 import { Icon } from "./Icon";
 
 /** Thinking-level chip with a popover slider. Levels come from the agent's reasoning_effort option. */
@@ -8,15 +9,15 @@ export function ThinkingControl({ option, modelName, onSelect, onModel }: { opti
   const track = useRef<HTMLDivElement>(null);
   const levels = option?.options ?? [];
   const [drag, setDrag] = useState<number | null>(null);
-  const cur = Math.max(0, levels.findIndex((l) => l.value === option?.currentValue));
+  const cur = Math.max(0, levels.findIndex((l) => sameEffort(l.value, option?.currentValue)));
   const [want, setWant] = useState<number | null>(null);
   useEffect(() => setWant(null), [option?.currentValue]);
   const idx = drag ?? want ?? cur;
-  const def = option && (option as any).defaultValue != null ? Math.max(0, levels.findIndex((l) => l.value === (option as any).defaultValue)) : 0;
+  const def = option && (option as any).defaultValue != null ? Math.max(0, levels.findIndex((l) => sameEffort(l.value, (option as any).defaultValue))) : 0;
   useEffect(() => { if (!open) return; const f = (e: MouseEvent) => { if (!(e.target as Element).closest?.(".thinking-anchor")) setOpen(false); }; addEventListener("mousedown", f); return () => removeEventListener("mousedown", f); }, [open]);
   if (!option || levels.length < 2) return <button className="secondary thinking-chip" data-testid="thinking-chip" disabled title="This agent doesn't offer thinking levels for the current model">Thinking <span aria-hidden="true">⌄</span></button>;
-  const name = (i: number) => levels[i]?.name ?? levels[i]?.value ?? "";
-  const pick = (i: number) => { const j = Math.min(levels.length - 1, Math.max(0, i)); const v = levels[j]; if (v && v.value !== option.currentValue) { setWant(j); onSelect(v.value); } };
+  const name = (i: number) => effortLabel(levels[i]?.value ?? "", levels[i]?.name);
+  const pick = (i: number) => { const j = Math.min(levels.length - 1, Math.max(0, i)); const v = levels[j]; if (v && !sameEffort(v.value, option.currentValue)) { setWant(j); onSelect(v.value); } };
   const at = (x: number) => { const r = track.current!.getBoundingClientRect(); return Math.round(((x - r.left) / r.width) * (levels.length - 1)); };
   const clampI = (i: number) => Math.min(levels.length - 1, Math.max(0, i));
   const pct = (idx / (levels.length - 1)) * 100;

@@ -15,6 +15,7 @@ import { canScan, onPairLink, scanQr } from "./scan";
 import { parsePairUri } from "../gateway/crypto";
 import { type Attachment, deviceBlocks, fmtSize, fromFile, isImage, rejectReason } from "../lib/attachments";
 import { APP_VERSION, checkUpdate, type AvailableUpdate } from "../lib/updates";
+import { effortLabel, reasoningOption } from "../lib/sessionOptions";
 
 /** Light haptic tick where the platform allows it. */
 const haptic = (ms = 8) => { try { navigator.vibrate?.(ms); } catch { /* not supported */ } };
@@ -481,11 +482,11 @@ export default function MobileApp() {
   const isBusy = !!(open && busy[open]);
   const sessionOptions = (open && configBySession[open]) || [];
   const modelOption = sessionOptions.find((o) => o.id === "model" && o.options?.length);
-  const thinkingOption = sessionOptions.find((o) => (o.id === "reasoning_effort" || o.id === "thinking" || o.id === "thinking_level") && o.options?.length);
+  const thinkingOption = reasoningOption(sessionOptions);
   const permissionOption = sessionOptions.find((o) => o.id === "permission_mode" && o.options?.length);
   const sessionModes = open ? modesBySession[open] : undefined;
   const activeOption = sessionOptions.find((o) => o.id === picker);
-  const optionLabel = (option: ConfigOption) => option.options?.find((v) => v.value === option.currentValue)?.name ?? option.currentValue ?? option.name ?? option.id;
+  const optionLabel = (option: ConfigOption) => { const cur = option.options?.find((v) => v.value === option.currentValue); return (option.id === "reasoning_effort" || option.category === "thought_level") ? effortLabel(option.currentValue ?? "", cur?.name) : (cur?.name ?? option.currentValue ?? option.name ?? option.id); };
   const hasSettings = !!(modelOption || thinkingOption || permissionOption || sessionModes);
   const renderItem = (m: ChatItem, i: number) =>
     m.kind === "tool" ? (sess.toolCalls[m.toolCallId] ? <ToolCard key={i} tc={sess.toolCalls[m.toolCallId]} compact /> : null)

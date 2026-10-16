@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { legacyName } from "../src/acp/legacyNames";
 import WebSocket from "ws";
 import { AcpClient, AcpRpcError, AcpTimeoutError, discoverExtensions } from "../src/acp/client";
 import { MockAgent, reply, send, until } from "./mockAgent";
@@ -230,5 +231,24 @@ describe("steer", () => {
     await s.steer("s2", "more");
     expect(calls).toEqual(["cancel s2", "resend s2 more"]);
     expect(combineSteer("fix it ", " and add tests")).toBe("fix it\n\nand add tests");
+  });
+});
+
+describe("CLI context and response_completed", () => {
+  it("delivers context_usage and dedupes dual response_completed", async () => {
+    const notes: [string, any][] = [];
+    mk({ onNotification: (m, p) => notes.push([m, p]) });
+    await client!.connect();
+    await client!.initialize();
+    const s = agent.sockets[0];
+    const rc = { sessionId: "s1", update: { sessionUpdate: "response_completed", message_id: "m1", usage: { input_tokens: 10, output_tokens: 2, cache_read_input_tokens: 0 } } };
+    send(s, { method: "_supercharge/session/context_usage", params: { sessionId: "s1", usedTokens: 52300, maxTokens: 200000 } });
+    send(s, { method: "_supercharge/session_notification", params: rc });
+    send(s, { method: legacyName("session_notification"), params: rc });
+    send(s, { method: "_supercharge/done", params: {} });
+    await until(() => notes.some(([m]) => m === "_supercharge/done"));
+    expect(notes.filter(([m]) => m === "_supercharge/session/context_usage")).toHaveLength(1);
+    expect(notes.filter(([m]) => m === "_supercharge/session_notification")).toHaveLength(1);
+    expect(notes.find(([m]) => m === "_supercharge/session/context_usage")![1]).toEqual({ sessionId: "s1", usedTokens: 52300, maxTokens: 200000 });
   });
 });

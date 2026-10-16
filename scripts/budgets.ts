@@ -11,13 +11,11 @@ const LAZY = /^TerminalPane-/;
 const LAZY_MAX = 90 * KB;
 const budgets: { dir: string; label: string; entry: RegExp; entryMax: number; totalJsMax: number; cssMax: number }[] = [
   // Includes the project terminal toggle, CLI session sync, browser tools, per-chat model and permission controls, Local/Public, background settings and attachments.
-  // all js 67 KB: the side panel is lazy now (entry stays under 56 KB), but plan approval, the file tree,
-  // multiple terminals and the animated logo mark are real new code (~1 KB gz over the old 65 KB total).
-  // all js 72 KB: thinking slider, context meter, price list, jump-to-latest (~3.5 KB gz). The command palette,
-  // plan approval and thinking popover moved to lazy chunks so the entry stays under 56 KB.
-  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 56 * KB, totalJsMax: 72 * KB, cssMax: 11 * KB },
-  // Redesigned chat UI with attachments and sheets.
-  { dir: "dist-mobile/assets", label: "mobile", entry: /^mobile-.*\.js$/, entryMax: 31 * KB, totalJsMax: 33 * KB, cssMax: 13 * KB },
+  // all js 72 KB: thinking slider, context meter, icon list, jump-to-latest. Command palette / plan / thinking are lazy.
+  // entry 57 KB: CLI reasoning_effort + context_usage wire handling (~0.6 KB gz over 56).
+  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 57 * KB, totalJsMax: 72 * KB, cssMax: 11 * KB },
+  // Redesigned chat UI with attachments and sheets; +reasoning labels / thought_level (~1 KB gz).
+  { dir: "dist-mobile/assets", label: "mobile", entry: /^mobile-.*\.js$/, entryMax: 32 * KB, totalJsMax: 35 * KB, cssMax: 13 * KB },
 ];
 let failed = false;
 for (const b of budgets) {

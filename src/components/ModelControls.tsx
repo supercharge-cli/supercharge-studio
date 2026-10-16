@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import type { ConfigOption } from "../acp/types";
-import { optionFor } from "../lib/sessionOptions";
+import { optionFor, reasoningOption } from "../lib/sessionOptions";
 import { Icon } from "./Icon";
 const ThinkingControl = lazy(() => import("./ThinkingControl").then((m) => ({ default: m.ThinkingControl })));
 import { ContextMeter } from "./ContextMeter";
@@ -9,7 +9,7 @@ export function ModelControls({ options, onSelect, children, context }: { option
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const model = optionFor(options, "model");
-  const reasoning = optionFor(options, "reasoning_effort");
+  const reasoning = reasoningOption(options);
   const active = model?.options?.find((choice) => choice.value === model.currentValue);
   if (!model && !reasoning && !children) return null;
   const choices = (model?.options ?? []).filter((choice) => `${choice.name ?? ""} ${choice.value}`.toLowerCase().includes(search.toLowerCase()));
@@ -32,7 +32,7 @@ export function ModelControls({ options, onSelect, children, context }: { option
           <p className="muted small">Context is selected automatically from available model information.</p>
         </div>}
       </div>}
-      {model && <Suspense fallback={null}><ThinkingControl option={reasoning} modelName={active?.name ?? active?.value} onSelect={(v) => onSelect(reasoning!.id, v)} onModel={() => { setSearch(""); setOpen(true); }} /></Suspense>}
+      {(model || reasoning) && <Suspense fallback={null}><ThinkingControl option={reasoning} modelName={active?.name ?? active?.value} onSelect={(v) => reasoning && onSelect(reasoning.id, v)} onModel={() => { setSearch(""); setOpen(true); }} /></Suspense>}
       {context && <ContextMeter used={context.used} max={context.max} />}
       {children}
     </div>
