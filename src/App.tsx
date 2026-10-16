@@ -1078,7 +1078,7 @@ export default function App() {
   function setDraftCaret(text: string, pos = text.length) {
     setDraft(text);
     setCaret(pos);
-    requestAnimationFrame(() => { const t = composerRef.current; if (t) { t.focus(); t.setSelectionRange(pos, pos); t.style.height = "auto"; t.style.height = `${Math.min(t.scrollHeight, 220)}px`; } });
+    requestAnimationFrame(() => { const t = composerRef.current; if (t) { t.focus(); if (t.value === text) t.setSelectionRange(pos, pos); t.style.height = "auto"; t.style.height = `${Math.min(t.scrollHeight, 220)}px`; } });
   }
   function runNative(name: string, args = ""): boolean {
     const c = nativeByName.get(name);
