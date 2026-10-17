@@ -1,0 +1,65 @@
+# Manual Android build: the same steps and signing as the Release workflow, uploaded as an artifact only (no release).
+name: Android
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    name: Android
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: mobile/src-tauri }
+      - run: npm ci
+      - name: Build release APKs (per ABI + universal)
+        working-directory: mobile
+        run: |
+          export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          npx tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64
+          mkdir -p ../rel/unsigned
+          for f in src-tauri/gen/android/app/build/outputs/apk/*/release/*.apk; do
+            abi=$(basename "$(dirname "$(dirname "$f")")")
+            # Gradle flavors are arm64 / arm / x86_64; drop anything else.
+            case "$abi" in arm64|arm|x86_64) cp "$f" "../rel/unsigned/supercharge-studio-android-$abi.apk" ;; esac
+          done
+          npx tauri android build --apk --target aarch64 armv7 x86_64
+          f=$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -1)
+          cp "$f" ../rel/unsigned/supercharge-studio-android-universal.apk
+          ls -l ../rel/unsigned
+      - name: Sign (only when the signing secrets are set)
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+        run: |
+          mkdir -p rel/out
+          if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ]; then
+            echo "No signing secrets: publishing unsigned APKs."
+            for f in rel/unsigned/*.apk; do cp "$f" "rel/out/$(basename "${f%.apk}")-unsigned.apk"; done
+            exit 0
+          fi
+          export KEY_PASS="${KEY_PASS:-$KS_PASS}"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          for f in rel/unsigned/*.apk; do
+            out="rel/out/$(basename "$f")"
+            "$BT/zipalign" -f -p 4 "$f" "$RUNNER_TEMP/aligned.apk"
+            "$BT/apksigner" sign --ks "$RUNNER_TEMP/release.jks" --ks-pass env:KS_PASS \
+              --ks-key-alias "${KEY_ALIAS:-supercharge-studio}" --key-pass env:KEY_PASS \
+              --out "$out" "$RUNNER_TEMP/aligned.apk"
+            "$BT/apksigner" verify "$out"
+          done
+          rm -f "$RUNNER_TEMP/release.jks"
+          ls -l rel/out
+      - uses: actions/upload-artifact@v4
+        with: { name: android-apks, path: "rel/out/*.apk", if-no-files-found: error }
