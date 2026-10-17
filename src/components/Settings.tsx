@@ -1,9 +1,11 @@
-import { ReactNode, useState } from "react";
+import { lazy, ReactNode, Suspense, useState } from "react";
+import { pickSetup, type SetupStatus } from "../lib/setup";
 import type { ApiFormat, Provider, Settings as S } from "../lib/store";
 import { parseAgentUrl, uid } from "../lib/store";
 import type { ConfigOption } from "../acp/types";
 import { Icon } from "./Icon";
 import { themeList } from "../lib/themes";
+const ProviderSetup = lazy(() => import("./ProviderSetup"));
 import { agentInfo, agentLog, providerDiscoverModels, type AgentInfo, type DiscoveredModel } from "../lib/desktop";
 
 type Props = {
@@ -19,6 +21,10 @@ type Props = {
   onActivate: (p: Provider, all: Provider[]) => Promise<void>;
   /** Extra section rendered under "Devices" (mobile pairing). */
   devices?: ReactNode;
+  /** Agent connection: its `_supercharge/setup/*` methods win over the desktop shell's. */
+  acp?: { hasExtension(m: string): boolean; ext<T = any>(m: string, p?: unknown): Promise<T> } | null;
+  openUrl?: (url: string) => void;
+  onSetupSaved?: (s: SetupStatus) => void;
 };
 
 const SECTIONS = [
@@ -103,6 +109,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
   const [providerError, setProviderError] = useState("");
+  const [setup] = useState(() => pickSetup(props.acp));
   const providers = s.providers ?? [];
   const setProviders = (ps: Provider[]) => set({ ...s, providers: ps });
 
@@ -159,6 +166,10 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
 
         {tab === "providers" && (
           <div className="stack">
+            {setup ? (
+              <div className="card" data-testid="setup-card"><Suspense fallback={<p className="muted">Loading…</p>}><ProviderSetup api={setup} open={props.openUrl ?? ((u) => window.open(u, "_blank"))} onSaved={(st) => { set({ ...s, activeProviderId: undefined }); props.onSetupSaved?.(st); }} /></Suspense></div>
+            ) : <p className="muted">Provider setup needs the desktop app.</p>}
+            <h4 className="set-sub">Studio providers</h4>
             <p className="muted">Providers are written to the Supercharge agent config; the active one becomes the default model. Keys stay in secure storage.</p>
             {providerError && <p className="danger-text" role="alert">{providerError}</p>}
             {providers.length === 0 && <div className="empty-card">No providers yet. Add one to use your own API key.</div>}

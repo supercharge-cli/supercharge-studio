@@ -12,6 +12,8 @@ import { createServer } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import { b64, Channel, deviceKey, hmac, random, sessionKey } from "../src/gateway/crypto";
 import { GatewayHub } from "../src/gateway/hub";
+import { fakeSetup } from "./fakeSetup";
+const setupFake = fakeSetup();
 // @ts-ignore plain JS module
 import { startRelay } from "../relay/server.mjs";
 let relayStats: any = {};
@@ -68,6 +70,7 @@ const hub: GatewayHub = new GatewayHub((d, m) => conns.get(d)?.(m), {
     return s.sessionId;
   },
   focus() {},
+  setup: (op, p) => setupFake.run(op, p),
   windowSupport: (sid) => ({ via: "ext", current: windows.get(sid) ?? null }),
   async setContextWindow(sid, v) {
     windows.set(sid, v === "auto" ? null : v);

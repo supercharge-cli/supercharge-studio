@@ -263,29 +263,35 @@ pub async fn provider_apply(provider: Provider) -> Result<Vec<String>, String> {
         let text = std::fs::read_to_string(&path).unwrap_or_default();
         let mut doc: DocumentMut = text.parse().map_err(|e| format!("config.toml: {e}"))?;
         let keys = apply_to_doc(&mut doc, &provider, key.as_deref());
-        if let Some(d) = path.parent() {
-            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
-        }
-        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| e.to_string())?.as_nanos();
-        let tmp = path.with_extension(format!("toml.tmp.{}.{}", std::process::id(), stamp));
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(&tmp).map_err(|e| e.to_string())?;
-        let result = file.write_all(doc.to_string().as_bytes())
-            .and_then(|_| file.sync_all())
-            .and_then(|_| std::fs::rename(&tmp, &path));
-        if result.is_err() { let _ = std::fs::remove_file(&tmp); }
-        result.map_err(|e| e.to_string())?;
+        write_atomic(&path, &doc.to_string())?;
         Ok(keys)
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Atomic 0600 write (temp file + rename), shared with `/setup`-style saves.
+pub fn write_atomic(path: &std::path::Path, text: &str) -> Result<(), String> {
+    if let Some(d) = path.parent() {
+        std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+    }
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?.as_nanos();
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("tmp");
+    let tmp = path.with_extension(format!("{ext}.tmp.{}.{}", std::process::id(), stamp));
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&tmp).map_err(|e| e.to_string())?;
+    let result = file.write_all(text.as_bytes())
+        .and_then(|_| file.sync_all())
+        .and_then(|_| std::fs::rename(&tmp, path));
+    if result.is_err() { let _ = std::fs::remove_file(&tmp); }
+    result.map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

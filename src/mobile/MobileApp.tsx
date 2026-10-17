@@ -1,7 +1,7 @@
 import { cleanPermission } from "../lib/labels";
 import { clip, Deduper, defaultNotifyPrefs, notifyTitle, shouldNotify, type NotifyKind, type NotifyPrefs } from "../lib/notify";
 import type { Hit, SearchIndex } from "../lib/searchIndex";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AcpClient, ConnectionState } from "../acp/client";
 import { applyUpdate, ChatItem, emptySession, SessionState } from "../acp/session";
 import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionModes } from "../acp/types";
@@ -20,6 +20,13 @@ import { APP_VERSION, checkUpdate, type AvailableUpdate } from "../lib/updates";
 import { effortLabel, reasoningOption } from "../lib/sessionOptions";
 import { ContextMeter, type WindowCtl } from "../components/ContextMeter";
 import { applyWindow, windowOption } from "../lib/contextWindow";
+/** Provider setup on the paired computer (same steps as the CLI's /setup), loaded on first open. */
+const PhoneSetup = lazy(() => Promise.all([import("../components/ProviderSetup"), import("../lib/setup")]).then(([m, s]) => ({
+  default: function PhoneSetup({ client, onClose }: { client: AcpClient; onClose: () => void }) {
+    const api = useMemo(() => s.rpcSetup((op, p) => client.ext("_supercharge/setup", { ...p, op })), [client]);
+    return <m.default api={api} open={(u) => window.open(u, "_blank")} onClose={onClose} />;
+  },
+})));
 
 /** Light haptic tick where the platform allows it. */
 const haptic = (ms = 8) => { try { navigator.vibrate?.(ms); } catch { /* not supported */ } };
@@ -191,6 +198,7 @@ export default function MobileApp() {
   const [thinkPop, setThinkPop] = useState(false);
   const [permPop, setPermPop] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [historyView, setHistoryView] = useState<HistoryView>(() => (localStorage.getItem(HISTORY_KEY) === "projects" ? "projects" : "chats"));
   const [drawer, setDrawer] = useState(false);
@@ -705,6 +713,7 @@ export default function MobileApp() {
             </div>
           <div className="m-fab-row">
             <button className="m-fab m-disconnect" data-testid="m-disconnect" onClick={() => { haptic(); setConfirmDisconnect(true); }}>Disconnect</button>
+            {(client.current?.initResult?.agentCapabilities as any)?._meta?.supercharge?.setup && <button className="m-fab m-disconnect" data-testid="m-setup" aria-label="Provider setup" onClick={() => { haptic(); setDrawer(false); setSetupOpen(true); }}><Icon name="server" size={16} /></button>}
             {listed && allProjects.length > 0 && (
               <button className="m-fab" data-testid="m-fab" aria-label="New chat" onClick={() => { haptic(); setDrawer(false); if (allProjects.length === 1) void newChat(allProjects[0]); else setNewSheet(true); }}><Icon name="compose" size={18} /> New chat</button>
             )}
@@ -845,6 +854,14 @@ export default function MobileApp() {
                 ))}
               </span>
             </div>
+          </div>
+        </div>
+      )}
+      {setupOpen && client.current && (
+        <div className="m-sheet-bg top" onClick={() => setSetupOpen(false)}>
+          <div className="m-sheet m-setup-sheet" role="dialog" aria-label="Provider setup" data-testid="m-setup-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="m-grabber" aria-hidden />
+            <Suspense fallback={<p className="muted">Loading…</p>}><PhoneSetup client={client.current} onClose={() => setSetupOpen(false)} /></Suspense>
           </div>
         </div>
       )}

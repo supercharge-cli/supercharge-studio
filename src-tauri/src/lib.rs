@@ -30,6 +30,7 @@ mod background;
 mod uploads;
 mod mcp;
 mod providers;
+mod setup;
 mod terminal;
 mod pick;
 mod screenshot;
@@ -431,6 +432,7 @@ pub fn run() {
             browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible, browser_screenshot, browser_set_zoom,
             secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info,
             providers::provider_set_key, providers::provider_has_key, providers::provider_seed_from_env, providers::provider_apply, providers::provider_discover_models, agent_restart,
+            setup::setup_status, setup::setup_models, setup::setup_save, setup::setup_device_start, setup::setup_device_poll, setup::setup_device_cancel, setup::setup_open,
             gateway::gateway_status, gateway::gateway_start, gateway::gateway_firewall_allow, gateway::gateway_firewall_check, gateway::gateway_stop, gateway::gateway_pair_begin, gateway::gateway_pair_answer, gateway::gateway_revoke, gateway::gateway_send, gateway::gateway_relay_set,
             files::fs_list, files::fs_read_text, background::background_get, background::background_set, upload_chunk, upload_rewrite,
             terminal::term_open, terminal::term_write, terminal::term_resize, terminal::term_close,

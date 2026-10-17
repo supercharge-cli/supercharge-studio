@@ -242,6 +242,7 @@ export default function App() {
           if (!f) return Promise.reject(new Error("Unknown session"));
           return runPrompt(f.project.id, f.chat.id, text, from, extra ?? []);
         },
+        setup: (op, params) => setupFor(op, params),
         upload: isDesktop() ? (params) => invoke("upload_chunk", { params }) : undefined,
         resolveUploads: isDesktop() ? (blocks) => invoke<unknown[]>("upload_rewrite", { prompt: blocks, images: agentImages() }) : undefined,
         cancel: (sid) => void clientRef.current?.cancel(sid),
@@ -536,6 +537,34 @@ export default function App() {
   function agentImages() {
     return (clientRef.current?.initResult?.agentCapabilities as any)?.promptCapabilities?.image !== false;
   }
+
+  /** After the /setup-style wizard saved a provider: the Studio list no longer owns the default. */
+  async function setupSaved() {
+    update((d) => ({ ...d, settings: { ...d.settings, activeProviderId: undefined } }));
+    // An agent that saved it over ACP reloads itself; a config written by the desktop shell needs a restart.
+    if (clientRef.current?.hasExtension("_supercharge/setup/save") || !isDesktop()) return;
+    try {
+      const st = dataRef.current.settings;
+      if ((await agentRestart(st.bind, secretRef.current || st.secret, st.alwaysApprove)) === "external") setNotice("Provider saved to the agent config. Restart `supercharge agent serve` to use it.");
+      await connect();
+    } catch (e: any) { setNotice(`Provider saved, but the agent did not restart: ${e?.message ?? e}`); }
+  }
+  const setupFor = async (op: string, params: any) => {
+    const api = (await import("./lib/setup")).pickSetup(clientRef.current);
+    if (!api) throw new Error("Provider setup needs the desktop app");
+    const str = (k: string) => (typeof params?.[k] === "string" ? params[k] : "");
+    const fmt = (["chat_completions", "messages", "responses"].includes(params?.format) ? params.format : "chat_completions") as "chat_completions" | "messages" | "responses";
+    const key = typeof params?.apiKey === "string" ? params.apiKey : undefined;
+    switch (op) {
+      case "status": return api.status();
+      case "models": return api.models(str("providerId"), str("baseUrl"), key, fmt);
+      case "save": { const r = await api.save({ providerId: str("providerId"), baseUrl: str("baseUrl"), apiKey: key, format: fmt, modelId: str("modelId"), modelName: str("modelName") }); void setupSaved(); return r; }
+      case "device_start": return api.deviceStart();
+      case "device_poll": return api.devicePoll();
+      case "device_cancel": await api.deviceCancel(); return {};
+    }
+    throw new Error("Unknown setup step");
+  };
 
   async function activateProvider(p: Provider, all: Provider[]) {
     update((d) => ({ ...d, settings: { ...d.settings, providers: all } }));
@@ -1268,6 +1297,9 @@ export default function App() {
           desktop={isDesktop()}
           onProviderKey={(id, key) => providerSetKey(id, key)}
           onActivate={activateProvider}
+          acp={clientRef.current}
+          openUrl={(url) => void invoke("setup_open", { url }).catch(() => window.open(url, "_blank"))}
+          onSetupSaved={() => void setupSaved()}
           onClose={() => setView("chat")}
           devices={<DevicesSection desktop={isDesktop()} prefs={gwPrefs} onPrefs={(g) => update((d) => ({ ...d, settings: { ...d.settings, gateway: g } }))} />}
           onConfig={(id, v) => { if (activeChat?.sessionId) changeOption(activeChat.sessionId, id, v); }}

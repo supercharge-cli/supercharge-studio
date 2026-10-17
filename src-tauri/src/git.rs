@@ -266,7 +266,7 @@ pub async fn git_open_pr(root: String) -> Result<String, String> {
     .await
 }
 
-fn open_url(url: &str) -> Result<(), String> {
+pub(crate) fn open_url(url: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     let mut c = { let mut c = hidden::std_cmd("rundll32"); c.args(["url.dll,FileProtocolHandler", url]); c };
     #[cfg(target_os = "macos")]

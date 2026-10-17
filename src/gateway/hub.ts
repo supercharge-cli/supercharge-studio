@@ -4,7 +4,7 @@
  *
  * Allowed device → desktop methods: initialize, session/list, session/load, session/new,
  * session/prompt, session/cancel, session/set_mode, session/set_config_option,
- * _supercharge/focus, _supercharge/session/context_window, _supercharge/ping (heartbeat), _supercharge/upload (chunked file upload; prompts link uploads by id). Everything else is rejected.
+ * _supercharge/focus, _supercharge/session/context_window, _supercharge/setup (provider setup on the computer, {op}), _supercharge/ping (heartbeat), _supercharge/upload (chunked file upload; prompts link uploads by id). Everything else is rejected.
  * Desktop → device: session/update (live + replay), session/request_permission (fan-out,
  * first answer wins), _supercharge/permission/resolved, _supercharge/handoff,
  * _supercharge/sessions/changed.
@@ -33,6 +33,8 @@ export interface HubHost {
   windowSupport?(sessionId: string): { via: "option" | "ext"; current?: number | "auto" | null } | null;
   /** Apply a context-window override; returns the session's config options and the resolved window. */
   setContextWindow?(sessionId: string, value: number | "auto"): Promise<{ configOptions?: ConfigOption[]; contextWindow?: number | null }>;
+  /** Provider setup on this computer (the CLI's /setup steps): status, models, save, device_start, device_poll, device_cancel. */
+  setup?(op: string, params: any): Promise<unknown>;
   /** Make sure a session's history is available (e.g. load it from the agent). */
   ensureLoaded?(sessionId: string): Promise<void>;
 }
@@ -40,7 +42,8 @@ export interface HubHost {
 type Msg = { jsonrpc?: "2.0"; id?: number | string; method?: string; params?: any; result?: any; error?: any };
 type Send = (deviceId: string, msg: Msg) => void;
 
-const ALLOWED = new Set(["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "session/set_config_option", "session/set_mode", "_supercharge/focus", "_supercharge/upload", "_supercharge/ping", "_supercharge/session/context_window"]);
+const ALLOWED = new Set(["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "session/set_config_option", "session/set_mode", "_supercharge/focus", "_supercharge/upload", "_supercharge/ping", "_supercharge/session/context_window", "_supercharge/setup"]);
+const SETUP_OPS = new Set(["status", "models", "save", "device_start", "device_poll", "device_cancel"]);
 const MAX_REPLAY = 3000;
 
 export class GatewayHub {
@@ -153,7 +156,7 @@ export class GatewayHub {
         case "initialize":
           return this.reply(deviceId, id, {
             protocolVersion: 1,
-            agentCapabilities: { loadSession: true, sessionCapabilities: { list: {} }, promptCapabilities: { image: true, embeddedContext: true }, _meta: { supercharge: { upload: !!this.host.upload } } },
+            agentCapabilities: { loadSession: true, sessionCapabilities: { list: {} }, promptCapabilities: { image: true, embeddedContext: true }, _meta: { supercharge: { upload: !!this.host.upload, setup: !!this.host.setup } } },
             agentInfo: { name: "supercharge-studio-gateway", title: "Supercharge Studio" },
             authMethods: [],
             _meta: { supercharge: { gateway: { version: 1, projects: this.host.projects() } } },
@@ -242,6 +245,13 @@ export class GatewayHub {
           const r = await this.host.setContextWindow(sid, value);
           if (r.configOptions) this.update(sid, { sessionUpdate: "config_option_update", configOptions: r.configOptions });
           return this.reply(deviceId, id, { contextWindow: r.contextWindow ?? (value === "auto" ? null : value), overridden: value !== "auto" });
+        }
+        case "_supercharge/setup": {
+          const op = String(params?.op ?? "");
+          if (!this.host.setup) return this.fail(deviceId, id, -32601, "Provider setup is not available");
+          if (!SETUP_OPS.has(op)) return this.fail(deviceId, id, -32602, "Unknown setup step");
+          const r = await this.host.setup(op, params);
+          return this.reply(deviceId, id, op === "models" ? { models: r } : op === "device_poll" ? { status: r } : r ?? {});
         }
         case "_supercharge/focus":
           this.host.focus(String(params.sessionId ?? ""));

@@ -18,12 +18,16 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
 import { writeFileSync } from "fs";
+import { fakeSetup } from "./fakeSetup";
 
 // Session state is per connection, unless FAKE_AGENT_SHARED=1 (one agent serving several
 // clients, as the headless server e2e needs).
 type Listed = { sessionId: string; cwd: string; title?: string; updatedAt?: string };
 type St = { n: number; listed: Listed[]; known: Set<string>; modelFixed?: boolean; loads: { sessionId: string; cwd: string; mcp: string[] }[] };
 const CLI = process.env.FAKE_AGENT_CLI === "1";
+// The CLI fake also offers the proposed ACP provider-setup extension (`_supercharge/setup/<op>`).
+const SETUP_METHODS = ["status", "models", "save", "device_start", "device_poll", "device_cancel"].map((op) => `_supercharge/setup/${op}`);
+const setupFake = fakeSetup();
 const ago = (m: number) => new Date(Date.now() - m * 60000).toISOString();
 const cliSeed = (): Listed[] => [
   { sessionId: "cli-a1", cwd: "/srv/alpha", title: "Fix login bug", updatedAt: ago(5) },
@@ -111,7 +115,7 @@ wss.on("connection", (ws: WebSocket) => {
         return reply({
           protocolVersion: 1,
           agentCapabilities: CLI
-            ? { loadSession: true, sessionCapabilities: { list: {}, resume: {} }, mcpCapabilities: { http: true }, _meta: { supercharge: { methods: ["_supercharge/session/context_window"], ...(process.env.FAKE_AGENT_STEER === "1" ? { steer: true } : {}) } } }
+            ? { loadSession: true, sessionCapabilities: { list: {}, resume: {} }, mcpCapabilities: { http: true }, _meta: { supercharge: { methods: ["_supercharge/session/context_window", ...SETUP_METHODS], ...(process.env.FAKE_AGENT_STEER === "1" ? { steer: true } : {}) } } }
             : { loadSession: false, _meta: { "supercharge/demo": true } },
           authMethods: [],
           _meta: { agentVersion: "fake-1.0", availableCommands: [{ name: "help", description: "Show help" }, { name: "setup", description: "Configure provider" }] },
@@ -339,6 +343,11 @@ wss.on("connection", (ws: WebSocket) => {
         return reply({ contextWindow: winFor(sid), overridden: n != null });
       }
       default:
+        if (CLI && SETUP_METHODS.includes(m.method)) {
+          const op = m.method.split("/").pop();
+          try { const r = await setupFake.run(op, m.params); return reply(op === "models" ? { models: r } : op === "device_poll" ? { status: r } : r); }
+          catch (e: any) { return send({ id: m.id, error: { code: -32000, message: e.message } }); }
+        }
         if (m.id != null) send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });
     }
   });

@@ -1,0 +1,21 @@
+.psetup{display:flex;flex-direction:column;gap:10px;min-width:0}
+.psetup-head{display:flex;align-items:center;gap:6px;min-height:30px}
+.psetup-head .spacer{flex:1}
+.psetup-head .icon{width:30px;height:30px;display:grid;place-items:center;border-radius:8px}
+.psetup input{width:100%;box-sizing:border-box}
+.psetup-list{display:flex;flex-direction:column;gap:2px;max-height:min(56vh,460px);overflow:auto;border:1px solid var(--line);border-radius:10px;padding:4px;background:var(--bg2);outline:none}
+.psetup-row{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;text-align:left;background:none;color:var(--fg);padding:8px 10px;border-radius:8px;min-height:36px;width:100%}
+.psetup-row span{color:var(--muted);font-size:12.5px;min-width:0;overflow-wrap:anywhere}
+.psetup-row.on{background:var(--acc-bg)}
+.psetup-row.rec b,.psetup-row.rec span{color:var(--acc2)}
+.psetup-form{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.psetup-form label{display:flex;flex-direction:column;gap:6px;width:100%}
+.psetup-key{display:flex;gap:6px}
+.psetup-key input{flex:1;min-width:0;font-family:ui-monospace,monospace}
+.psetup-device ol{margin:4px 0 8px 18px;padding:0;display:flex;flex-direction:column;gap:4px}
+.psetup-device a{color:var(--acc2);overflow-wrap:anywhere}
+.psetup-code{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 10px}
+.psetup-code code{font:600 22px/1.2 ui-monospace,monospace;letter-spacing:.12em;padding:8px 14px;border-radius:10px;background:var(--raise);border:1px solid var(--line);user-select:all}
+.psetup-wait{display:flex;align-items:center;gap:8px}
+.psetup-spin{width:12px;height:12px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--acc);animation:psetup-spin .8s linear infinite;flex:none}
+@keyframes psetup-spin{to{transform:rotate(1turn)}}

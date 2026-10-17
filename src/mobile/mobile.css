@@ -193,3 +193,4 @@ button,a{-webkit-tap-highlight-color:transparent}
 @media (max-width:400px){.m-compose-row .m-attach{width:38px;min-width:38px}.m-compose-row .m-chip{padding:8px 8px}}
 .m-compose-row>[data-testid=m-model-chip]{flex-shrink:4;max-width:28%}
 @media (min-width:350px){.m-compose-row>.m-think-anchor{min-width:4.5em}}
+.m-setup-sheet{max-height:90vh}.m-setup-sheet .psetup-row{min-height:44px}.m-setup-sheet .psetup-list{max-height:none}
