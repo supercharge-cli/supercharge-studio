@@ -22,9 +22,9 @@ import { ContextMeter, type WindowCtl } from "../components/ContextMeter";
 import { applyWindow, windowOption } from "../lib/contextWindow";
 /** Provider setup on the paired computer (same steps as the CLI's /setup), loaded on first open. */
 const PhoneSetup = lazy(() => Promise.all([import("../components/ProviderSetup"), import("../lib/setup")]).then(([m, s]) => ({
-  default: function PhoneSetup({ client, onClose }: { client: AcpClient; onClose: () => void }) {
+  default: function PhoneSetup({ client, onClose, sessionId }: { client: AcpClient; onClose: () => void; sessionId: () => string | undefined }) {
     const api = useMemo(() => s.rpcSetup((op, p) => client.ext("_supercharge/setup", { ...p, op })), [client]);
-    return <m.default api={api} open={(u) => window.open(u, "_blank")} onClose={onClose} />;
+    return <m.default api={api} open={(u) => window.open(u, "_blank")} onClose={onClose} sessionId={sessionId} />;
   },
 })));
 
@@ -861,7 +861,7 @@ export default function MobileApp() {
         <div className="m-sheet-bg top" onClick={() => setSetupOpen(false)}>
           <div className="m-sheet m-setup-sheet" role="dialog" aria-label="Provider setup" data-testid="m-setup-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="m-grabber" aria-hidden />
-            <Suspense fallback={<p className="muted">Loading…</p>}><PhoneSetup client={client.current} onClose={() => setSetupOpen(false)} /></Suspense>
+            <Suspense fallback={<p className="muted">Loading…</p>}><PhoneSetup client={client.current} onClose={() => setSetupOpen(false)} sessionId={() => activeSessionRef.current ?? undefined} /></Suspense>
           </div>
         </div>
       )}

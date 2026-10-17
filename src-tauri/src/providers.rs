@@ -1,6 +1,7 @@
 //! Model providers managed by the app and applied to the Supercharge agent config
-//! (~/.supercharge/config.toml). Each provider's models become `[model.studio-<id>-<n>]`
-//! tables; the active provider's first model becomes the default for every role.
+//! (~/.supercharge/config.toml). Each provider's models become `[model.studio-<id>-<hash>]`
+//! tables and the active provider's first model becomes `[models] default`. Nothing else:
+//! no `allowed_models`, no role or fork models, so every other configured model stays usable.
 //! API keys are read from secure storage here, never sent through the UI.
 
 use serde::{Deserialize, Serialize};
@@ -8,7 +9,7 @@ use serde_json::Value;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::time::Duration;
-use toml_edit::{value, Array, DocumentMut, Item, Table};
+use toml_edit::{value, DocumentMut, Item, Table};
 
 use crate::secrets;
 
@@ -143,7 +144,80 @@ pub async fn provider_discover_models(id: String, base_url: String) -> Result<Ve
         discover_models(&base_url, key.as_deref())
     }).await.map_err(|_| "model discovery failed".to_string())?
 }
-const ROLE_KEYS: &[&str] = &["default", "web_search", "session_summary", "prompt_suggestion", "image_description"];
+/// Role and background models older builds pointed at the Studio default. Never written now.
+const ROLE_KEYS: &[&str] = &["web_search", "session_summary", "prompt_suggestion", "image_description"];
+
+/// An id the Studio provider list generated: `studio-<slug>-<16 hex>` (or the first
+/// releases' `studio-<slug>-<n>`). Anything else is the user's and is left alone.
+pub fn is_studio_id(s: &str) -> bool {
+    let Some((slug, tail)) = s.strip_prefix(PREFIX).and_then(|r| r.rsplit_once('-')) else { return false };
+    let lower_hex = |b: u8| b.is_ascii_digit() || (b'a'..=b'f').contains(&b);
+    !slug.is_empty() && slug.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && ((tail.len() == 16 && tail.bytes().all(lower_hex)) || (!tail.is_empty() && tail.len() <= 4 && tail.bytes().all(|b| b.is_ascii_digit())))
+}
+
+/// Undo what older Studio builds wrote that locked the agent to one model: Studio ids in
+/// `[models] allowed_models` (the key goes when nothing else is left), role models
+/// (`web_search`, `session_summary`, `prompt_suggestion`, `image_description`),
+/// `[ui] fork_secondary_model`, and a `[models] default` naming a Studio model that no longer
+/// exists. Values the user wrote (any id that is not a Studio id) stay. True when it changed.
+pub fn clean_studio_locks(doc: &mut DocumentMut) -> bool {
+    let mut changed = false;
+    let live: Vec<String> = doc.get("model").and_then(Item::as_table)
+        .map(|t| t.iter().map(|(k, _)| k.to_string()).filter(|k| is_studio_id(k)).collect()).unwrap_or_default();
+    if let Some(m) = doc.get_mut("models").and_then(Item::as_table_mut) {
+        let mut empty = false;
+        if let Some(arr) = m.get_mut("allowed_models").and_then(Item::as_array_mut) {
+            let before = arr.len();
+            arr.retain(|v| !v.as_str().is_some_and(is_studio_id));
+            if arr.len() != before { changed = true; empty = arr.is_empty(); }
+        }
+        if empty { m.remove("allowed_models"); }
+        for k in ROLE_KEYS {
+            if m.get(k).and_then(Item::as_str).is_some_and(is_studio_id) { m.remove(k); changed = true; }
+        }
+        if m.get("default").and_then(Item::as_str).is_some_and(|d| is_studio_id(d) && !live.iter().any(|l| l == d)) {
+            m.remove("default");
+            changed = true;
+        }
+    }
+    if let Some(ui) = doc.get_mut("ui").and_then(Item::as_table_mut) {
+        if ui.get("fork_secondary_model").and_then(Item::as_str).is_some_and(is_studio_id) { ui.remove("fork_secondary_model"); changed = true; }
+    }
+    changed
+}
+
+/// Read the agent config, clean old Studio lock-ins, apply `edit`, and write it back. When the
+/// cleanup changed anything, the file as it was is copied to `config.toml.bak` first (an
+/// existing backup is kept; the new one then gets a timestamped name).
+pub fn edit_config<T>(path: &std::path::Path, edit: impl FnOnce(&mut DocumentMut) -> Result<T, String>) -> Result<T, String> {
+    let text = std::fs::read_to_string(path).unwrap_or_default();
+    let mut doc: DocumentMut = text.parse().map_err(|e| format!("config.toml: {e}"))?;
+    let cleaned = clean_studio_locks(&mut doc);
+    let out = edit(&mut doc)?;
+    if cleaned { backup(path, &text)?; }
+    write_atomic(path, &doc.to_string())?;
+    Ok(out)
+}
+
+fn backup(path: &std::path::Path, text: &str) -> Result<(), String> {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("config.toml");
+    let mut bak = path.with_file_name(format!("{name}.bak"));
+    if bak.exists() {
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        bak = path.with_file_name(format!("{name}.{stamp}.bak"));
+    }
+    write_atomic(&bak, text)
+}
+
+/// Startup pass: rewrite the config only when old Studio lock-ins are present (backed up first).
+/// A missing or unparsable config is left untouched.
+pub fn clean_config_file(path: &std::path::Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else { return false };
+    let Ok(mut doc) = text.parse::<DocumentMut>() else { return false };
+    if !clean_studio_locks(&mut doc) { return false; }
+    backup(path, &text).and_then(|_| write_atomic(path, &doc.to_string())).is_ok()
+}
 
 pub fn key_account(id: &str) -> String {
     format!("provider:{id}")
@@ -201,23 +275,11 @@ pub fn apply_to_doc(doc: &mut DocumentMut, active: &Provider, api_key: Option<&s
             keys.push(key);
         }
     }
-    if let Some(first) = keys.first().cloned() {
+    if let Some(first) = keys.first() {
         if !doc.contains_table("models") {
             doc.insert("models", Item::Table(Table::new()));
         }
-        let models = doc["models"].as_table_mut().unwrap();
-        for k in ROLE_KEYS {
-            models.insert(k, value(first.as_str()));
-        }
-        let mut allowed = Array::new();
-        for k in &keys {
-            allowed.push(k.as_str());
-        }
-        models.insert("allowed_models", value(allowed));
-        if !doc.contains_table("ui") {
-            doc.insert("ui", Item::Table(Table::new()));
-        }
-        doc["ui"]["fork_secondary_model"] = value(first.as_str());
+        doc["models"]["default"] = value(first.as_str());
     }
     keys
 }
@@ -259,11 +321,7 @@ pub async fn provider_apply(provider: Provider) -> Result<Vec<String>, String> {
     }
     tauri::async_runtime::spawn_blocking(move || {
         let key = secrets::get(&key_account(&provider.id)).0;
-        let path = config_path();
-        let text = std::fs::read_to_string(&path).unwrap_or_default();
-        let mut doc: DocumentMut = text.parse().map_err(|e| format!("config.toml: {e}"))?;
-        let keys = apply_to_doc(&mut doc, &provider, key.as_deref());
-        write_atomic(&path, &doc.to_string())?;
+        let keys = edit_config(&config_path(), |doc| Ok(apply_to_doc(doc, &provider, key.as_deref())))?;
         Ok(keys)
     })
     .await
@@ -449,9 +507,82 @@ mod tests {
         assert!(!s.contains("studio-a-"));
         assert!(s.contains("base_url = \"https://api.example.com\""));
         assert_eq!(doc["models"]["default"].as_str(), Some(keys[0].as_str()));
-        assert_eq!(doc["models"]["session_summary"].as_str(), Some(keys[0].as_str()));
-        assert_eq!(doc["ui"]["fork_secondary_model"].as_str(), Some(keys[0].as_str()));
+        for k in ROLE_KEYS { assert!(doc["models"].get(k).is_none(), "{k}"); }
+        assert!(doc["models"].get("allowed_models").is_none());
+        assert!(doc["ui"].get("fork_secondary_model").is_none());
         assert_eq!(doc["ui"]["yolo"].as_bool(), Some(false));
         assert_eq!(doc["model"][&keys[0]]["api_backend"].as_str(), Some("responses"));
+    }
+
+    #[test]
+    fn recognizes_only_generated_studio_ids() {
+        let key = catalog_key(&p("my-prov", &["m"]), 0);
+        assert!(is_studio_id(&key) && is_studio_id("studio-a-1") && is_studio_id("studio-open-router-12"));
+        for s in ["studio-", "studio-a", "studio-a-", "studio-mine", "studio-A-1", "studio-a-0123456789ABCDEF", "studio-a-12345", "mine", "model-5"] {
+            assert!(!is_studio_id(s), "{s}");
+        }
+    }
+
+    #[test]
+    fn never_writes_allowed_models_or_role_models() {
+        let mut doc: DocumentMut = "[models]\nweb_search = \"mine\"\n\n[model.mine]\nmodel = \"keep\"\n".parse().unwrap();
+        let keys = apply_to_doc(&mut doc, &p("a", &["m1", "m2"]), Some("k"));
+        let s = doc.to_string();
+        assert!(!s.contains("allowed_models") && !s.contains("session_summary") && !s.contains("prompt_suggestion")
+            && !s.contains("image_description") && !s.contains("fork_secondary_model"), "{s}");
+        assert_eq!(doc["models"]["web_search"].as_str(), Some("mine"));
+        assert_eq!(doc["models"]["default"].as_str(), Some(keys[0].as_str()));
+        assert!(doc["model"].get("mine").is_some());
+    }
+
+    #[test]
+    fn cleanup_removes_only_what_studio_wrote() {
+        let k = catalog_key(&p("a", &["m1"]), 0);
+        let gone = "studio-old-0123456789abcdef";
+        let text = format!("[models]\ndefault = \"{k}\"\nweb_search = \"{k}\"\nsession_summary = \"{gone}\"\nprompt_suggestion = \"mine\"\nimage_description = \"{k}\"\nallowed_models = [\"{k}\", \"studio-a-2\"]\n\n[model.{k}]\nmodel = \"m1\"\n\n[model.mine]\nmodel = \"x\"\n\n[ui]\nfork_secondary_model = \"{k}\"\nyolo = true\n");
+        let mut doc: DocumentMut = text.parse().unwrap();
+        assert!(clean_studio_locks(&mut doc));
+        let m = &doc["models"];
+        assert!(m.get("allowed_models").is_none() && m.get("web_search").is_none() && m.get("session_summary").is_none() && m.get("image_description").is_none());
+        assert_eq!(m["prompt_suggestion"].as_str(), Some("mine"));
+        assert_eq!(m["default"].as_str(), Some(k.as_str()), "a live Studio default stays");
+        assert!(doc["ui"].get("fork_secondary_model").is_none());
+        assert_eq!(doc["ui"]["yolo"].as_bool(), Some(true));
+        assert!(doc["model"].get(&k).is_some() && doc["model"].get("mine").is_some());
+        assert!(!clean_studio_locks(&mut doc), "second pass is a no-op");
+        // A hand-written list keeps its own entries; a dangling Studio default goes.
+        let mut doc: DocumentMut = format!("[models]\ndefault = \"{gone}\"\nallowed_models = [\"mine\", \"{gone}\"]\n\n[ui]\nfork_secondary_model = \"mine\"\n").parse().unwrap();
+        assert!(clean_studio_locks(&mut doc));
+        assert!(doc["models"].get("default").is_none());
+        assert_eq!(doc["models"]["allowed_models"].as_array().unwrap().iter().filter_map(|v| v.as_str()).collect::<Vec<_>>(), ["mine"]);
+        assert_eq!(doc["ui"]["fork_secondary_model"].as_str(), Some("mine"));
+        let mut user: DocumentMut = "[models]\ndefault = \"mine\"\nallowed_models = [\"mine\"]\nweb_search = \"studio-mine\"\n".parse().unwrap();
+        assert!(!clean_studio_locks(&mut user));
+    }
+
+    #[test]
+    fn cleanup_file_backs_up_first_and_runs_once() {
+        let dir = std::env::temp_dir().join(format!("scs-clean-{}-{}", std::process::id(), line!()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        let k = catalog_key(&p("a", &["m1"]), 0);
+        let text = format!("# mine\n[models]\ndefault = \"{k}\"\nweb_search = \"{k}\"\nallowed_models = [\"{k}\"]\n\n[model.{k}]\nmodel = \"m1\"\n\n[ui]\nfork_secondary_model = \"{k}\"\n");
+        std::fs::write(&path, &text).unwrap();
+        assert!(clean_config_file(&path));
+        assert_eq!(std::fs::read_to_string(dir.join("config.toml.bak")).unwrap(), text);
+        let now = std::fs::read_to_string(&path).unwrap();
+        assert!(now.contains("# mine") && now.contains(&format!("default = \"{k}\"")));
+        assert!(!now.contains("allowed_models") && !now.contains("web_search") && !now.contains("fork_secondary_model"));
+        assert!(!clean_config_file(&path), "nothing left to clean");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2, "no second backup");
+        // Saving through edit_config cleans too, and keeps the first backup.
+        std::fs::write(&path, &text).unwrap();
+        edit_config(&path, |doc| Ok(apply_to_doc(doc, &p("b", &["x"]), None))).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("config.toml.bak")).unwrap(), text);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 3, "a timestamped second backup");
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert!(!saved.contains("allowed_models") && !saved.contains("web_search") && !saved.contains("fork_secondary_model") && !saved.contains(&k));
+        assert!(!clean_config_file(dir.join("missing.toml").as_path()));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

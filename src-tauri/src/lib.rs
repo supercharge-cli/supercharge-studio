@@ -405,6 +405,8 @@ pub fn run() {
         .manage(AppState::default())
         .manage(terminal::Terms::new())
         .setup(|app| {
+            // Undo model lock-ins older builds wrote to the agent config (backed up first).
+            providers::clean_config_file(&providers::config_path());
             mcp::start(app.handle().clone());
             // One window holding two webviews: the app UI (auto-resized to the window) and,
             // on demand, the side browser placed over the UI's browser slot.

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CUSTOM, CUSTOM_MODEL, FORMATS, PROVIDERS, filterModels, filterProviders, pickSetup, pollDevice, rpcSetup, type SetupApi } from "../src/lib/setup";
+import { CUSTOM, CUSTOM_MODEL, FORMATS, PROVIDERS, filterModels, filterProviders, keyReusable, normBase, pickSetup, pollDevice, rpcSetup, switchedLive, type SetupApi } from "../src/lib/setup";
 import { GatewayHub, type HubHost } from "../src/gateway/hub";
 
 describe("provider setup catalog", () => {
@@ -78,5 +78,28 @@ describe("setup over JSON-RPC", () => {
     const bare = new GatewayHub((_d, m) => sent.push(m), { ...host, setup: undefined } as HubHost);
     await bare.receive("d", { id: 5, method: "_supercharge/setup", params: { op: "status" } });
     expect(sent.at(-1).error.code).toBe(-32601);
+  });
+});
+
+describe("save: key reuse and live session switch", () => {
+  it("reuses a saved key only for the same base URL, like the CLI", () => {
+    const st = { providerId: "one", baseUrl: "https://api.one.example/v1", hasKey: true, nousSignedIn: false };
+    expect(normBase(" api.one.example/v1/models/ ")).toBe("https://api.one.example/v1");
+    expect(keyReusable(st, "https://api.one.example/v1/")).toBe(true);
+    expect(keyReusable(st, "https://api.two.example/v1")).toBe(false);
+    expect(keyReusable({ ...st, hasKey: false }, st.baseUrl)).toBe(false);
+    expect(keyReusable(st, "")).toBe(false);
+    expect(keyReusable(null, st.baseUrl)).toBe(false);
+  });
+  it("sends the open chat's sessionId to the agent and reads switchedSessions", async () => {
+    const ext = vi.fn(async () => ({ saved: true, modelId: "m", switchedSessions: ["s1"] }));
+    const api = pickSetup({ hasExtension: (m) => m === "_supercharge/setup/save", ext })!;
+    const r = await api.save({ providerId: "two", baseUrl: "https://api.two.example/v1", format: "chat_completions", modelId: "m", sessionId: "s1" });
+    expect(ext).toHaveBeenLastCalledWith("_supercharge/setup/save", { providerId: "two", baseUrl: "https://api.two.example/v1", format: "chat_completions", modelId: "m", sessionId: "s1" });
+    expect(switchedLive(r)).toBe(true);
+    await api.save({ providerId: "two", baseUrl: "https://api.two.example/v1", format: "chat_completions", modelId: "m" });
+    expect(ext.mock.calls.at(-1)).toEqual(["_supercharge/setup/save", { providerId: "two", baseUrl: "https://api.two.example/v1", format: "chat_completions", modelId: "m" }]);
+    expect(switchedLive({ hasKey: true })).toBe(false);
+    expect(switchedLive(undefined)).toBe(false);
   });
 });

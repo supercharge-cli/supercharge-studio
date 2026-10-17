@@ -25,6 +25,8 @@ type Props = {
   acp?: { hasExtension(m: string): boolean; ext<T = any>(m: string, p?: unknown): Promise<T> } | null;
   openUrl?: (url: string) => void;
   onSetupSaved?: (s: SetupStatus) => void;
+  /** The open chat's agent session, switched to the saved model right away when the agent can. */
+  sessionId?: () => string | undefined;
 };
 
 const SECTIONS = [
@@ -167,7 +169,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
         {tab === "providers" && (
           <div className="stack">
             {setup ? (
-              <div className="card" data-testid="setup-card"><Suspense fallback={<p className="muted">Loading…</p>}><ProviderSetup api={setup} open={props.openUrl ?? ((u) => window.open(u, "_blank"))} onSaved={(st) => { set({ ...s, activeProviderId: undefined }); props.onSetupSaved?.(st); }} /></Suspense></div>
+              <div className="card" data-testid="setup-card"><Suspense fallback={<p className="muted">Loading…</p>}><ProviderSetup api={setup} sessionId={props.sessionId} open={props.openUrl ?? ((u) => window.open(u, "_blank"))} onSaved={(st) => { set({ ...s, activeProviderId: undefined }); props.onSetupSaved?.(st); }} /></Suspense></div>
             ) : <p className="muted">Provider setup needs the desktop app.</p>}
             <h4 className="set-sub">Studio providers</h4>
             <p className="muted">Providers are written to the Supercharge agent config; the active one becomes the default model. Keys stay in secure storage.</p>

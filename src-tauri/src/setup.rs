@@ -12,13 +12,12 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use toml_edit::{value, DocumentMut, Item, Table};
 
-use crate::providers::{config_path, write_atomic};
+use crate::providers::{clean_studio_locks, config_path, edit_config, is_studio_id, write_atomic};
 
 const MAX_MODELS: usize = 500;
 const MAX_KEY: usize = 8192;
 const MAX_BODY: u64 = 4 * 1024 * 1024;
 const SETUP_ID: &str = "setup";
-const STUDIO_PREFIX: &str = "studio-";
 const PORTAL: &str = "https://portal.nousresearch.com";
 const NOUS_INFERENCE: &str = "https://inference-api.nousresearch.com/v1";
 const NOUS_SCOPE: &str = "inference:invoke";
@@ -157,21 +156,17 @@ fn table<'a>(t: &'a mut Table, name: &str) -> Result<&'a mut Table, String> {
     t.entry(name).or_insert_with(|| Item::Table(Table::new())).as_table_mut().ok_or_else(|| format!("[{name}] is not a table"))
 }
 
-/// Remove what the older Studio provider list wrote (`[model.studio-*]` and the role
-/// keys pointing at them), so the `/setup` provider is the only one in charge.
+/// Saving a `/setup` provider retires the older Studio provider list: its `[model.studio-*]`
+/// tables and a `[models] default` naming one go, plus the lock-ins `clean_studio_locks` removes.
+/// User-written models and lists are left alone.
 fn drop_studio(doc: &mut DocumentMut) {
+    clean_studio_locks(doc);
     if let Some(m) = doc.get_mut("model").and_then(Item::as_table_mut) {
-        let stale: Vec<String> = m.iter().map(|(k, _)| k.to_string()).filter(|k| k.starts_with(STUDIO_PREFIX)).collect();
+        let stale: Vec<String> = m.iter().map(|(k, _)| k.to_string()).filter(|k| is_studio_id(k)).collect();
         for k in stale { m.remove(&k); }
     }
-    let studio = |i: &Item| i.as_str().is_some_and(|s| s.starts_with(STUDIO_PREFIX));
     if let Some(m) = doc.get_mut("models").and_then(Item::as_table_mut) {
-        let stale: Vec<String> = m.iter().filter(|(_, v)| studio(v)).map(|(k, _)| k.to_string()).collect();
-        for k in stale { m.remove(&k); }
-        if m.get("allowed_models").and_then(Item::as_array).is_some_and(|a| a.iter().all(|v| v.as_str().is_some_and(|s| s.starts_with(STUDIO_PREFIX)))) { m.remove("allowed_models"); }
-    }
-    if let Some(ui) = doc.get_mut("ui").and_then(Item::as_table_mut) {
-        if ui.get("fork_secondary_model").is_some_and(studio) { ui.remove("fork_secondary_model"); }
+        if m.get("default").and_then(Item::as_str).is_some_and(is_studio_id) { m.remove("default"); }
     }
 }
 
@@ -180,7 +175,7 @@ fn drop_studio(doc: &mut DocumentMut) {
 pub struct SaveReq {
     pub provider_id: String,
     pub base_url: String,
-    /// None = keep the saved key (or the Nous login token).
+    /// None = keep the saved key when the base URL matches (or use the Nous login token).
     pub api_key: Option<String>,
     pub format: String,
     pub model_id: String,
@@ -239,10 +234,13 @@ fn saved_provider(doc: &DocumentMut) -> Option<&Table> {
     doc.get("model_providers")?.get(SETUP_ID)?.as_table()
 }
 
-/// The saved `/setup` key, when the saved provider matches `provider_id`.
-fn saved_key(doc: &DocumentMut, provider_id: &str) -> String {
+/// The saved `/setup` key, only when the saved provider has the same base URL (as the CLI
+/// does since 1.3.42): a key saved for one provider is never sent to another.
+fn saved_key(doc: &DocumentMut, base_url: &str) -> String {
     let Some(p) = saved_provider(doc) else { return String::new() };
-    if p.get("id").and_then(Item::as_str).unwrap_or("custom") != provider_id { return String::new() }
+    let Ok(want) = normalize_base_url(base_url) else { return String::new() };
+    let same = p.get("base_url").and_then(Item::as_str).and_then(|b| normalize_base_url(b).ok()).is_some_and(|b| b.eq_ignore_ascii_case(&want));
+    if !same { return String::new() }
     p.get("api_key").and_then(Item::as_str).filter(|k| plausible_key(k)).unwrap_or_default().to_owned()
 }
 
@@ -404,7 +402,7 @@ pub async fn setup_status() -> Result<Status, String> { blocking(|| Ok(status_of
 #[tauri::command]
 pub async fn setup_models(provider_id: String, base_url: String, api_key: Option<String>, format: String) -> Result<Vec<SetupModel>, String> {
     blocking(move || {
-        let fallback = api_key_or(&provider_id, api_key).unwrap_or_default();
+        let fallback = api_key_or(&base_url, api_key);
         let key = if provider_id == "nous" {
             nous_token().or_else(|e| if fallback.trim().is_empty() { Err(e) } else { Ok(fallback) })?
         } else { fallback };
@@ -412,19 +410,15 @@ pub async fn setup_models(provider_id: String, base_url: String, api_key: Option
     }).await
 }
 
-fn api_key_or(provider_id: &str, key: Option<String>) -> Option<String> {
-    Some(key.unwrap_or_else(|| saved_key(&load(), provider_id)))
+fn api_key_or(base_url: &str, key: Option<String>) -> String {
+    key.unwrap_or_else(|| saved_key(&load(), base_url))
 }
 
 #[tauri::command]
 pub async fn setup_save(req: SaveReq) -> Result<Status, String> {
     blocking(move || {
-        let key = if req.provider_id == "nous" && req.api_key.is_none() { nous_token()? } else { api_key_or(&req.provider_id, req.api_key.clone()).unwrap_or_default() };
-        let path = config_path();
-        let mut doc: DocumentMut = std::fs::read_to_string(&path).unwrap_or_default().parse().map_err(|e| format!("config.toml: {e}"))?;
-        apply(&mut doc, &req, &key)?;
-        write_atomic(&path, &doc.to_string())?;
-        Ok(status_of(&doc))
+        let key = if req.provider_id == "nous" && req.api_key.is_none() { nous_token()? } else { api_key_or(&req.base_url, req.api_key.clone()) };
+        edit_config(&config_path(), |doc| { apply(doc, &req, &key)?; Ok(status_of(doc)) })
     }).await
 }
 
@@ -516,11 +510,27 @@ mod tests {
     }
 
     #[test]
-    fn saved_key_only_for_the_same_provider() {
+    fn saved_key_only_for_the_same_base_url() {
         let mut doc = DocumentMut::new();
-        apply(&mut doc, &req("groq", "https://api.groq.com/openai/v1", "chat_completions", "m"), "gk").unwrap();
-        assert_eq!(saved_key(&doc, "groq"), "gk");
-        assert_eq!(saved_key(&doc, "openai"), "");
+        apply(&mut doc, &req("one", "https://api.one.example/v1", "chat_completions", "m"), "gk").unwrap();
+        assert_eq!(saved_key(&doc, "https://api.one.example/v1"), "gk");
+        assert_eq!(saved_key(&doc, "api.one.example/v1/"), "gk");
+        assert_eq!(saved_key(&doc, "https://api.two.example/v1"), "");
+        assert_eq!(saved_key(&doc, "https://api.one.example/other/v1"), "");
+        assert_eq!(saved_key(&DocumentMut::new(), "https://api.one.example/v1"), "");
+    }
+
+    #[test]
+    fn setup_save_never_writes_allowed_or_role_models_and_keeps_user_lists() {
+        let mut doc: DocumentMut = "[models]\nallowed_models = [\"mine\", \"studio-a-1\"]\nweb_search = \"mine\"\n\n[model.mine]\nmodel = \"x\"\n".parse().unwrap();
+        apply(&mut doc, &req("two", "https://api.two.example/v1", "chat_completions", "m2"), "k").unwrap();
+        let s = doc.to_string();
+        for k in ["session_summary", "prompt_suggestion", "image_description", "fork_secondary_model", "studio-a-1"] { assert!(!s.contains(k), "{k}: {s}"); }
+        assert_eq!(doc["models"]["web_search"].as_str(), Some("mine"));
+        assert_eq!(doc["models"]["allowed_models"].as_array().unwrap().len(), 1);
+        let mut fresh = DocumentMut::new();
+        apply(&mut fresh, &req("two", "https://api.two.example/v1", "chat_completions", "m2"), "k").unwrap();
+        assert!(!fresh.to_string().contains("allowed_models"));
     }
 
     #[test]

@@ -549,17 +549,24 @@ export default function App() {
   }
 
   /** After the /setup-style wizard saved a provider: the Studio list no longer owns the default. */
-  async function setupSaved() {
+  async function setupSaved(r?: unknown) {
     update((d) => ({ ...d, settings: { ...d.settings, activeProviderId: undefined } }));
     setFallbackModel({}); setModelTick((n) => n + 1);
-    // An agent that saved it over ACP reloads itself; a config written by the desktop shell needs a restart.
-    if (clientRef.current?.hasExtension("_supercharge/setup/save") || !isDesktop()) return;
+    // An agent that saved it over ACP switched its chats (switchedSessions) or reloaded itself;
+    // only a config written by the desktop shell needs a restart.
+    const { switchedLive } = await import("./lib/setup");
+    if (switchedLive(r) || clientRef.current?.hasExtension("_supercharge/setup/save") || !isDesktop()) return;
     try {
       const st = dataRef.current.settings;
       if ((await agentRestart(st.bind, secretRef.current || st.secret, st.alwaysApprove)) === "external") setNotice("Provider saved to the agent config. Restart `supercharge agent serve` to use it.");
       await connect();
     } catch (e: any) { setNotice(`Provider saved, but the agent did not restart: ${e?.message ?? e}`); }
   }
+  /** The open chat's agent session, if it has one. */
+  const activeSessionId = () => {
+    const d = dataRef.current;
+    return findProject(d, d.activeProjectId)?.project.chats.find((c) => c.id === d.activeChatId)?.sessionId || undefined;
+  };
   const setupFor = async (op: string, params: any) => {
     const api = (await import("./lib/setup")).pickSetup(clientRef.current);
     if (!api) throw new Error("Provider setup needs the desktop app");
@@ -569,7 +576,7 @@ export default function App() {
     switch (op) {
       case "status": return api.status();
       case "models": return api.models(str("providerId"), str("baseUrl"), key, fmt);
-      case "save": { const r = await api.save({ providerId: str("providerId"), baseUrl: str("baseUrl"), apiKey: key, format: fmt, modelId: str("modelId"), modelName: str("modelName") }); void setupSaved(); return r; }
+      case "save": { const r = await api.save({ providerId: str("providerId"), baseUrl: str("baseUrl"), apiKey: key, format: fmt, modelId: str("modelId"), modelName: str("modelName"), sessionId: str("sessionId") || activeSessionId() }); void setupSaved(r); return r; }
       case "device_start": return api.deviceStart();
       case "device_poll": return api.devicePoll();
       case "device_cancel": await api.deviceCancel(); return {};
@@ -1337,7 +1344,8 @@ export default function App() {
           onActivate={activateProvider}
           acp={clientRef.current}
           openUrl={(url) => void invoke("setup_open", { url }).catch(() => window.open(url, "_blank"))}
-          onSetupSaved={() => void setupSaved()}
+          onSetupSaved={(st) => void setupSaved(st)}
+          sessionId={activeSessionId}
           onClose={() => setView("chat")}
           devices={<DevicesSection desktop={isDesktop()} prefs={gwPrefs} onPrefs={(g) => update((d) => ({ ...d, settings: { ...d.settings, gateway: g } }))} />}
           onConfig={(id, v) => { if (activeChat?.sessionId) changeOption(activeChat.sessionId, id, v); }}

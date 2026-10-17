@@ -56,14 +56,34 @@ export function filterModels(models: SetupModel[], query: string): SetupModel[] 
 }
 
 export type SetupStatus = { providerId?: string | null; baseUrl?: string | null; format?: string | null; model?: string | null; hasKey: boolean; nousSignedIn: boolean };
-/** `apiKey` undefined keeps the saved key (or the Nous login token). */
-export type SaveReq = { providerId: string; baseUrl: string; apiKey?: string; format: Fmt; modelId: string; modelName?: string };
+/**
+ * `apiKey` undefined keeps the saved key when the base URL matches (or uses the Nous login token).
+ * `sessionId`: the chat to switch right away; agents with `_supercharge/setup/save` take it
+ * (omitted = every open chat). The desktop shell ignores it.
+ */
+export type SaveReq = { providerId: string; baseUrl: string; apiKey?: string; format: Fmt; modelId: string; modelName?: string; sessionId?: string };
+/** An agent save reports the chats it already switched; then no restart is needed. */
+export type SaveResult = SetupStatus & { switchedSessions?: string[] };
+
+/** Base URL as `/setup` compares it: https added, trailing `/` and `/models` dropped, lowercased. */
+export function normBase(u?: string | null): string {
+  let t = (u ?? "").trim();
+  if (!t) return "";
+  if (!t.includes("://")) t = `https://${t}`;
+  t = t.replace(/\/+$/, "").replace(/\/models$/i, "").replace(/\/+$/, "");
+  return t.toLowerCase();
+}
+/** The saved key is reused only for the same base URL, so a key never goes to another provider. */
+export const keyReusable = (status: SetupStatus | null | undefined, baseUrl: string) =>
+  !!status?.hasKey && !!normBase(baseUrl) && normBase(status.baseUrl) === normBase(baseUrl);
+/** True when the save already applied to running chats (no agent restart needed). */
+export const switchedLive = (r: unknown) => Array.isArray((r as SaveResult | null)?.switchedSessions);
 export type DeviceStart = { userCode: string; verificationUri: string; expiresIn: number; interval: number };
 
 export interface SetupApi {
   status(): Promise<SetupStatus>;
   models(providerId: string, baseUrl: string, apiKey: string | undefined, format: Fmt): Promise<SetupModel[]>;
-  save(r: SaveReq): Promise<SetupStatus>;
+  save(r: SaveReq): Promise<SaveResult>;
   deviceStart(): Promise<DeviceStart>;
   /** One token check: "pending" | "slow_down" | "done". */
   devicePoll(): Promise<string>;
@@ -76,7 +96,7 @@ export const SETUP_OPS = ["status", "models", "save", "device_start", "device_po
 export const desktopSetup: SetupApi = {
   status: () => invoke("setup_status"),
   models: (providerId, baseUrl, apiKey, format) => invoke("setup_models", { providerId, baseUrl, apiKey: apiKey ?? null, format }),
-  save: (req) => invoke("setup_save", { req: { ...req, apiKey: req.apiKey ?? null } }),
+  save: ({ sessionId: _s, ...req }) => invoke("setup_save", { req: { ...req, apiKey: req.apiKey ?? null } }),
   deviceStart: () => invoke("setup_device_start"),
   devicePoll: () => invoke("setup_device_poll"),
   deviceCancel: () => invoke("setup_device_cancel"),
@@ -87,7 +107,7 @@ export function rpcSetup(call: (op: string, params: Record<string, unknown>) => 
   return {
     status: () => call("status", {}),
     models: (providerId, baseUrl, apiKey, format) => call("models", { providerId, baseUrl, apiKey, format }).then((r) => r?.models ?? r ?? []),
-    save: (r) => call("save", r),
+    save: ({ sessionId, ...r }) => call("save", sessionId ? { ...r, sessionId } : r),
     deviceStart: () => call("device_start", {}),
     devicePoll: () => call("device_poll", {}).then((r) => (typeof r === "string" ? r : r?.status ?? "pending")),
     deviceCancel: () => call("device_cancel", {}).then(() => {}),

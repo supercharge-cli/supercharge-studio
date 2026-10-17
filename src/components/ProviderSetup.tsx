@@ -1,5 +1,5 @@
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
-import { CUSTOM, CUSTOM_MODEL, FORMATS, filterModels, filterProviders, pollDevice, type DeviceStart, type Fmt, type SetupApi, type SetupModel, type SetupProvider, type SetupStatus } from "../lib/setup";
+import { CUSTOM, CUSTOM_MODEL, FORMATS, filterModels, filterProviders, keyReusable, pollDevice, type DeviceStart, type Fmt, type SetupApi, type SetupModel, type SetupProvider, type SetupStatus } from "../lib/setup";
 import { Icon } from "./Icon";
 import "./provider-setup.css";
 
@@ -10,7 +10,7 @@ const TITLE: Record<Step, string> = { provider: "choose provider", url: "base UR
  * The CLI's `/setup` wizard: provider → (base URL) → API format → API key → model, or the
  * Nous Research device-code login. Saves to the Supercharge config the CLI reads.
  */
-export default function ProviderSetup({ api, open, onSaved, onClose }: { api: SetupApi; open: (url: string) => void; onSaved?: (s: SetupStatus) => void; onClose?: () => void }) {
+export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }: { api: SetupApi; open: (url: string) => void; onSaved?: (s: SetupStatus) => void; onClose?: () => void; sessionId?: () => string | undefined }) {
   const [step, setStep] = useState<Step>("provider");
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [filter, setFilter] = useState("");
@@ -31,14 +31,15 @@ export default function ProviderSetup({ api, open, onSaved, onClose }: { api: Se
 
   const go = (s: Step) => { setStep(s); setSel(0); setFilter(""); };
   const fail = (e: any, back: Step) => { setErr({ msg: String(e?.message ?? e), back }); setStep("error"); };
-  const keepKey = !!status?.hasKey && status.providerId === prov.id;
-  const apiKey = (p: SetupProvider) => (key.trim() && !p.device ? key.trim() : p.device || (!!status?.hasKey && status.providerId === p.id) ? undefined : "");
+  // Like the CLI: a blank key reuses the saved one only for the same base URL.
+  const keepKey = keyReusable(status, url);
+  const apiKey = (p: SetupProvider, u = url) => (key.trim() && !p.device ? key.trim() : p.device || keyReusable(status, u) ? undefined : "");
 
   async function fetchModels(back: Step, p = prov, u = url, f = fmt) {
     const g = ++gen.current;
     setBusyText("Fetching models from the provider…"); setStep("busy");
     try {
-      const m = await api.models(p.id, u, apiKey(p), f);
+      const m = await api.models(p.id, u, apiKey(p, u), f);
       if (g !== gen.current) return;
       setModels(m); go("model");
     } catch (e) { if (g === gen.current) fail(e, back); }
@@ -47,7 +48,7 @@ export default function ProviderSetup({ api, open, onSaved, onClose }: { api: Se
     const g = ++gen.current;
     setBusyText("Saving provider configuration…"); setStep("busy");
     try {
-      const s = await api.save({ providerId: prov.id, baseUrl: url, apiKey: apiKey(prov), format: fmt, modelId, modelName });
+      const s = await api.save({ providerId: prov.id, baseUrl: url, apiKey: apiKey(prov), format: fmt, modelId, modelName, sessionId: sessionId?.() || undefined });
       if (g !== gen.current) return;
       setStatus(s); setStep("done"); onSaved?.(s);
     } catch (e) { if (g === gen.current) fail(e, "model"); }
