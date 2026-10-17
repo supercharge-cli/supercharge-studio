@@ -185,3 +185,11 @@ button,a{-webkit-tap-highlight-color:transparent}
 .search-flash{animation:sflash 2s ease}@keyframes sflash{0%,40%{outline:2px solid var(--acc)}100%{outline:2px solid transparent}}
 .ctx-meter{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);padding:0 4px}.ctx-meter circle{fill:none;stroke-width:2.5}.ctx-bg{stroke:var(--line)}.ctx-fg{stroke:var(--acc);stroke-linecap:round}.ctx-meter.warm .ctx-fg{stroke:var(--warn)}.ctx-meter.hot .ctx-fg{stroke:var(--bad)}
 .ctx-anchor{position:relative;display:inline-flex}.ctx-btn{background:none;border:0;min-height:36px}
+/* Compose row: icons and send never shrink; chips share what's left and truncate with an ellipsis. */
+.m-compose-row{gap:4px;min-width:0}.m-compose-row>*{flex:none}
+.m-compose-row>.m-think-anchor,.m-compose-row>.m-chip{flex:0 1 auto;min-width:0}
+.m-compose-row .m-chip{display:block;max-width:100%;min-width:3em;line-height:20px;padding:8px 10px}
+.m-compose-row>.spacer{flex:1 1 0;min-width:0}
+@media (max-width:400px){.m-compose-row .m-attach{width:38px;min-width:38px}.m-compose-row .m-chip{padding:8px 8px}}
+.m-compose-row>[data-testid=m-model-chip]{flex-shrink:4;max-width:28%}
+@media (min-width:350px){.m-compose-row>.m-think-anchor{min-width:4.5em}}
