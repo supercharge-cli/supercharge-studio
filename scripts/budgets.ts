@@ -22,8 +22,8 @@ const budgets: { dir: string; label: string; entry: RegExp; entryMax: number; to
   // context-window picker (+2.2 KB gz entry; imageResize, notifyDeliver, searchIndex and ContextWindowPop are lazy chunks).
   // all js 101 / css 13.5 KB: provider setup matching the CLI's /setup (catalog + wizard + device-code login,
   // ~5.2 KB js and 0.7 KB css gz, all in lazy chunks loaded when Settings → Providers opens).
-  // entry 64 / all js 102 KB: CI builds gzip ~0.3 KB larger than local ones; keep headroom.
-  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 64 * KB, totalJsMax: 102 * KB, cssMax: 13.5 * KB },
+  // entry 65 / all js 104 KB: CI builds gzip ~0.3 KB larger than local ones; keep headroom for provider setup + model fallback.
+  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 65 * KB, totalJsMax: 104 * KB, cssMax: 13.5 * KB },
   // Redesigned chat UI with attachments and sheets; +reasoning labels / thought_level (~1 KB gz).
   // entry 36 / all js 41 / css 14 KB: Recents message search, alerts, photo/camera button, context ring + window picker.
   // all js 46 / css 15 KB: the same provider setup sheet (lazy, ~5.3 KB js + 0.7 KB css gz).
