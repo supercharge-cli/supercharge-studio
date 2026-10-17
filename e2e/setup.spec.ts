@@ -124,3 +124,32 @@ test.describe("phone", () => {
     await expect(sheet.getByTestId("setup-done")).toContainText("model-a");
   });
 });
+
+test("desktop: the model picker stays in the composer after a provider setup save", async ({ page }) => {
+  await page.addInitScript((s) => {
+    if (!localStorage.getItem("supercharge-studio/v1")) localStorage.setItem("supercharge-studio/v1", JSON.stringify({ settings: s, onboarded: true, groups: [{ id: "g1", name: "Personal", projects: [{ id: "p1", name: "demo", cwd: "/tmp", chats: [] }] }], activeProjectId: "p1" }));
+  }, SETTINGS);
+  await page.goto("/");
+  await expect(page.locator(".status")).toHaveText("open");
+  await page.getByTestId("open-settings").click();
+  await page.getByTestId("tab-providers").click();
+  await page.getByTestId("setup-filter").fill("groq");
+  await page.getByTestId("setup-filter").press("Enter");
+  await page.getByTestId("setup-f-chat_completions").click();
+  await page.getByTestId("setup-key").fill("gsk-good");
+  await page.getByTestId("setup-fetch").click();
+  await page.getByTestId("setup-model").nth(1).click();
+  await expect(page.getByTestId("setup-done")).toContainText("model-b");
+  // The agent now advertises no `model` option (like the CLI after /setup): the picker falls back to the provider's list.
+  await page.getByTestId("new-chat").first().click();
+  await page.locator(".composer textarea").fill("hi");
+  await page.locator(".composer textarea").press("Enter");
+  const trigger = page.getByTestId("model-trigger");
+  await expect(trigger).toBeVisible();
+  await expect(trigger).toContainText("Model B");
+  await trigger.click();
+  await expect(page.getByTestId("model-choice")).toHaveCount(3);
+  if (process.env.MODEL_SHOT) await page.screenshot({ path: process.env.MODEL_SHOT });
+  await page.getByTestId("model-choice").filter({ hasText: "Model A" }).click();
+  await expect(trigger).toContainText("Model A");
+});

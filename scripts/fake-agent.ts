@@ -74,6 +74,8 @@ wss.on("connection", (ws: WebSocket) => {
   const pending = new Map<number, (m: any) => void>();
   const cancelled = new Set<string>();
   const modelChoices = new Map<string, string>();
+  // Like the CLI after a /setup save (or FAKE_AGENT_NO_MODEL=1): no `model` config option and no model state.
+  let noModel = process.env.FAKE_AGENT_NO_MODEL === "1";
   const reasoningChoices = new Map<string, string>();
   const permissionChoices = new Map<string, string>();
   const modeChoices = new Map<string, string>();
@@ -88,7 +90,7 @@ wss.on("connection", (ws: WebSocket) => {
     return { id: "context_window", name: "Context window", currentValue: cur ? String(cur) : "auto", options: base.map((v) => ({ value: v, name: v })) };
   };
   const optionsFor = (sid: string) => [
-    { id: "model", name: "Model", currentValue: modelChoices.get(sid) ?? "studio-test-1", options: [{ value: "studio-test-1", name: "First" }, { value: "studio-test-2", name: "Second" }] },
+    ...(noModel ? [] : [{ id: "model", name: "Model", currentValue: modelChoices.get(sid) ?? "studio-test-1", options: [{ value: "studio-test-1", name: "First" }, { value: "studio-test-2", name: "Second" }] }]),
     { id: "reasoning_effort", name: "Reasoning Effort", category: "thought_level", currentValue: reasoningChoices.get(sid) ?? "high", options: [{ value: "off", name: "Off" }, { value: "low", name: "Low" }, { value: "medium", name: "Medium" }, { value: "high", name: "High" }, { value: "xhigh", name: "Extra High" }] },
     { id: "permission_mode", name: "Tool permissions", currentValue: permissionChoices.get(sid) ?? "ask", options: [{ value: "ask", name: "Ask" }, { value: "always-approve", name: "Always approve" }] },
     ...(CLI ? [] : [windowOpt(sid)]),
@@ -167,7 +169,7 @@ wss.on("connection", (ws: WebSocket) => {
           sessionId: `fake-${st.n}`,
           configOptions: optionsFor(`fake-${st.n}`),
           modes: modesFor(`fake-${st.n}`),
-          models: { currentModelId: "studio-test-1", availableModels: [{ modelId: "studio-test-1", name: "First", _meta: { totalContextTokens: 200000 } }, { modelId: "studio-test-2", name: "Second", _meta: { totalContextTokens: 1000000 } }] },
+          models: noModel ? undefined : { currentModelId: "studio-test-1", availableModels: [{ modelId: "studio-test-1", name: "First", _meta: { totalContextTokens: 200000 } }, { modelId: "studio-test-2", name: "Second", _meta: { totalContextTokens: 1000000 } }] },
         });
       case "session/set_config_option": {
         const sid = m.params?.sessionId;
@@ -345,7 +347,7 @@ wss.on("connection", (ws: WebSocket) => {
       default:
         if (CLI && SETUP_METHODS.includes(m.method)) {
           const op = m.method.split("/").pop();
-          try { const r = await setupFake.run(op, m.params); return reply(op === "models" ? { models: r } : op === "device_poll" ? { status: r } : r); }
+          try { const r = await setupFake.run(op, m.params); if (op === "save") noModel = true; return reply(op === "models" ? { models: r } : op === "device_poll" ? { status: r } : r); }
           catch (e: any) { return send({ id: m.id, error: { code: -32000, message: e.message } }); }
         }
         if (m.id != null) send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });

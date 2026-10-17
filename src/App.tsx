@@ -45,6 +45,7 @@ import type { WindowCtl } from "./components/ContextMeter";
 import { contextFromUsageNotification, isResponseCompleted, usedFromResponseCompleted } from "./lib/contextUsage";
 import { isTerminalTarget } from "./lib/terminalInput";
 import { useBrowserOverlay } from "./browser/visibility";
+import { agentModel, saveSetupModel, sessionModel, setupModel, type ModelOpt } from "./lib/modelFallback";
 import { APP_VERSION, checkUpdate, type AvailableUpdate } from "./lib/updates";
 
 type View = "chat" | "settings" | "usage";
@@ -93,6 +94,13 @@ export default function App() {
   const [pairReq, setPairReq] = useState<{ pairingId: string; name: string } | null>(null);
   const [devicesOnline, setDevicesOnline] = useState(0);
   const [optionsBySession, setOptionsBySession] = useState<Record<string, ConfigOption[]>>({});
+  /** Model picker fallback when the agent advertises no `model` option (see lib/modelFallback). */
+  const [fallbackModel, setFallbackModel] = useState<Record<string, ModelOpt | undefined>>({});
+  const sessModels = useRef<Record<string, unknown>>({});
+  const [modelTick, setModelTick] = useState(0);
+  const fallbackRef = useRef<{ opt?: ModelOpt; pick?: (sid: string, v: string) => Promise<void> }>({});
+  /** Agent options plus the fallback model picker (shared with the phone through the hub). */
+  const withModel = (sid: string) => { const o = optionsRef.current[sid] ?? [], f = fallbackRef.current.opt; return agentModel(o) || !f ? o : [f, ...o.filter((x) => x.id !== "model")]; };
   const [modesBySession, setModesBySession] = useState<Record<string, SessionModes>>({});
   const modesRef = useRef<Record<string, SessionModes>>({});
   const rememberModes = (sid: string, modes?: SessionModes) => {
@@ -247,7 +255,7 @@ export default function App() {
         upload: isDesktop() ? (params) => invoke("upload_chunk", { params }) : undefined,
         resolveUploads: isDesktop() ? (blocks) => invoke<unknown[]>("upload_rewrite", { prompt: blocks, images: agentImages() }) : undefined,
         cancel: (sid) => void clientRef.current?.cancel(sid),
-        configOptions: (sid) => optionsRef.current[sid] ?? [],
+        configOptions: (sid) => withModel(sid),
         windowSupport: (sid) => windowSupport(sid),
         setContextWindow: (sid, v) => setWindow(sid, v),
         modes: (sid) => modesRef.current[sid],
@@ -265,10 +273,11 @@ export default function App() {
         setConfigOption: async (sid, id, value) => {
           const c = clientRef.current;
           if (!c) throw new Error("Agent not connected");
+          if (id === "model" && !agentModel(optionsRef.current[sid]) && fallbackRef.current.pick) { await fallbackRef.current.pick(sid, value); return withModel(sid); }
           const result = await c.setConfigOption(sid, id, value);
           if (Array.isArray(result?.configOptions)) rememberOptions(sid, result.configOptions);
     rememberWindows(result?.models ?? (c.initResult?._meta as any)?.modelState);
-          return optionsRef.current[sid] ?? [];
+          return withModel(sid);
         },
         newSession: async (projectId) => {
           const cid = newChat(projectId, false);
@@ -542,6 +551,7 @@ export default function App() {
   /** After the /setup-style wizard saved a provider: the Studio list no longer owns the default. */
   async function setupSaved() {
     update((d) => ({ ...d, settings: { ...d.settings, activeProviderId: undefined } }));
+    setFallbackModel({}); setModelTick((n) => n + 1);
     // An agent that saved it over ACP reloads itself; a config written by the desktop shell needs a restart.
     if (clientRef.current?.hasExtension("_supercharge/setup/save") || !isDesktop()) return;
     try {
@@ -712,6 +722,7 @@ export default function App() {
       rememberOptions(res.sessionId, res.configOptions ?? []);
       rememberModes(res.sessionId, res.modes);
       rememberWindows((res as any).models);
+      sessModels.current[res.sessionId] = (res as any).models;
       const last = dataRef.current.settings.lastModel, mo = optionFor(res.configOptions ?? [], "model");
       if (last && mo && mo.currentValue !== last && mo.options?.some((o) => o.value === last))
         void c.setConfigOption(res.sessionId, mo.id, last).then((r: any) => { if (Array.isArray(r?.configOptions)) rememberOptions(res.sessionId, r.configOptions); }).catch(() => {});
@@ -781,7 +792,7 @@ export default function App() {
       const sid = chat.sessionId;
       await c.loadSession(sid, cwd, mcp)
         .catch(async (e: any) => { if (await recoverModel(c, sid, chatId, e)) return c.loadSession(sid, cwd, mcp); throw e; })
-        .then((r: any) => { failedLoads.current.delete(sid); attached.current.add(sid); if (Array.isArray(r?.configOptions)) rememberOptions(sid, r.configOptions); rememberModes(sid, r?.modes); })
+        .then((r: any) => { failedLoads.current.delete(sid); attached.current.add(sid); if (Array.isArray(r?.configOptions)) rememberOptions(sid, r.configOptions); rememberModes(sid, r?.modes); if (r?.models) sessModels.current[sid] = r.models; })
         .catch((e: any) => { loaded.current.delete(sid); failedLoads.current.add(sid); pushItem(chatId, { kind: "system", text: `Could not load this chat's history: ${e?.message ?? e}`, error: "load" } as any); });
       flush();
       setLoadingChats((l) => { const n = new Set(l); n.delete(chatId); return n; });
@@ -981,7 +992,31 @@ export default function App() {
   const openSettings = (section?: "connection" | "devices" | "providers" | "agent" | "appearance") => { setSettingsSection(section); setView("settings"); };
 
   // ---- Composer: slash commands ----
-  const modelOption = optionFor(configOptions, "model");
+  const realModel = agentModel(configOptions);
+  const activeSid = activeChat?.sessionId;
+  useEffect(() => {
+    if (!activeSid || realModel) return;
+    let live = true;
+    void (async () => {
+      const m = sessionModel(sessModels.current[activeSid]) ?? await (async () => { const api = (await import("./lib/setup")).pickSetup(clientRef.current); return api ? setupModel(api) : undefined; })();
+      if (live) setFallbackModel((all) => ({ ...all, [activeSid]: m }));
+    })();
+    return () => { live = false; };
+  }, [activeSid, !!realModel, modelTick, status]);
+  const modelOption: ModelOpt | undefined = realModel ?? (activeSid ? fallbackModel[activeSid] : undefined);
+  fallbackRef.current.opt = activeSid && fallbackModel[activeSid] ? fallbackModel[activeSid] : fallbackRef.current.opt;
+  const pickerOptions = modelOption ? [modelOption, ...configOptions.filter((o) => o.id !== "model")] : configOptions;
+  const pickFallback = async (sid: string, value: string) => {
+    const m = fallbackModel[sid] ?? fallbackRef.current.opt; const c = clientRef.current;
+    if (!m || !c) return;
+    update((d) => ({ ...d, settings: { ...d.settings, lastModel: value } }));
+    setFallbackModel((all) => ({ ...all, [sid]: { ...m, currentValue: value } }));
+    try {
+      if (m.source === "session") await c.request("session/set_model", { sessionId: sid, modelId: value });
+      else { const api = (await import("./lib/setup")).pickSetup(c); if (!api) throw new Error("Provider setup needs the desktop app"); await saveSetupModel(api, m, value); await setupSaved(); }
+    } catch (e: any) { setFallbackModel((all) => ({ ...all, [sid]: m })); setNotice(`Could not change model: ${e?.message ?? e}`); throw e; }
+  };
+  fallbackRef.current.pick = pickFallback;
   // Context window override (config option, else the extension; hidden when the agent offers neither).
   const windowCtl: WindowCtl | undefined = (() => {
     const sid = activeChat?.sessionId;
@@ -1011,6 +1046,7 @@ export default function App() {
     } catch (e: any) { setNotice(`Could not change tool permissions: ${e?.message ?? e}`); throw e; }
   };
   const changeOption = (sid: string, id: string, value: string) => {
+    if (id === "model" && !agentModel(optionsRef.current[sid])) return void pickFallback(sid, value).catch(() => {});
     const option = optionsRef.current[sid]?.find((o) => o.id === id);
     if (!option?.options?.some((v) => v.value === value)) return;
     if (optionFor([option], "model")) update((d) => ({ ...d, settings: { ...d.settings, lastModel: value } }));
@@ -1478,7 +1514,7 @@ export default function App() {
                 <span className="muted small">{isBusy ? "Sent when the agent finishes" : "Sending…"}</span>
               </div>
             )}
-            {activeChat?.sessionId && <ModelControls key={activeChat.sessionId} options={configOptions} window={windowCtl} context={ctxBySession[activeChat.sessionId] ? { used: ctxBySession[activeChat.sessionId].used, max: ctxBySession[activeChat.sessionId].max ?? ctxMax.current[modelOption?.currentValue ?? ""] } : windowCtl ? { used: 0, max: ctxMax.current[modelOption?.currentValue ?? ""] } : undefined} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)}><ModeControl modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} /></ModelControls>}
+            {activeChat?.sessionId && <ModelControls key={activeChat.sessionId} options={pickerOptions} window={windowCtl} context={ctxBySession[activeChat.sessionId] ? { used: ctxBySession[activeChat.sessionId].used, max: ctxBySession[activeChat.sessionId].max ?? ctxMax.current[modelOption?.currentValue ?? ""] } : windowCtl ? { used: 0, max: ctxMax.current[modelOption?.currentValue ?? ""] } : undefined} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)}><ModeControl modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} /></ModelControls>}
             {(atts.length > 0 || attErr) && (
               <div className="att-row" data-testid="attachments">
                 {atts.map((a) => (
