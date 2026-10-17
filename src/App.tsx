@@ -187,6 +187,7 @@ export default function App() {
     setSessions((all) => {
       const next = { ...all };
       for (const { cid, u } of q) next[cid] = applyUpdate(next[cid] ?? emptySession(), u);
+      sessionsRef.current = next;
       return next;
     });
   }, []);
@@ -824,6 +825,7 @@ export default function App() {
         r = await c.prompt(sid, text, extra);
       }
       flush();
+      await new Promise((ok) => setTimeout(ok, 0)); // let the flushed updates render before reading sessionsRef
       // Prefer the agent's turn report; fall back to `usage` on the prompt result.
       if ((r as any).usage && !turnUsage.current.has(sid)) recordUsage(sid, (r as any).usage, `${sid}:result:${Date.now()}`);
       if (r.stopReason !== "end_turn") pushItem(chatId, { kind: "system", text: `stopped: ${r.stopReason}` });
