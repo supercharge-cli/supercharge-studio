@@ -1,6 +1,6 @@
 [package]
 name = "supercharge-studio"
-version = "1.0.17"
+version = "1.0.18"
 description = "Supercharge Studio — desktop ACP client for Supercharge"
 license = "Apache-2.0"
 edition = "2021"
