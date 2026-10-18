@@ -15,8 +15,8 @@ export const MIN_H = 120;
 
 /** Full-screen or modal UI: always hides the browser while present. */
 export const BLOCKING_SELECTOR = ".cli-setup, .modal-bg, .palette-bg, [aria-modal='true'], [data-hides-browser]";
-/** Popovers and menus: hide the browser only if they overlap it. */
-export const POPOVER_SELECTOR = "[role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox']";
+/** Popovers, menus and the fixed update banner: hide the browser only if they overlap it. */
+export const POPOVER_SELECTOR = ".update-banner, [role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox']";
 
 export type Rect = { x: number; y: number; width: number; height: number };
 

@@ -16,7 +16,7 @@ import { defaultDeviceName, loadCreds, pendingCredsFromCode, saveCreds } from ".
 import { canScan, onPairLink, scanQr } from "./scan";
 import { parsePairUri } from "../gateway/crypto";
 import { type Attachment, deviceBlocks, fmtSize, fromFile, isImage, rejectReason } from "../lib/attachments";
-import { APP_VERSION, checkUpdate, type AvailableUpdate } from "../lib/updates";
+import { APP_VERSION, checkUpdate, pickApk, UPDATE_EVERY } from "../lib/updates";
 import { effortLabel, reasoningOption } from "../lib/sessionOptions";
 import { ContextMeter, type WindowCtl } from "../components/ContextMeter";
 import { applyWindow, windowOption } from "../lib/contextWindow";
@@ -168,9 +168,22 @@ export default function MobileApp() {
   const perm = permQueue[0] ?? null;
   const [handoff, setHandoff] = useState<string | null>(null);
   const [toast, setToast] = useState("");
-  const [update, setUpdate] = useState<AvailableUpdate | null>(null);
+  // Android downloads the APK in the background (checked against SHA256SUMS) and the system installer
+  // replaces the app in place; iOS links to the release. On launch and every 6 hours.
+  const [update, setUpdate] = useState<any>(null);
   useEffect(() => {
-    void checkUpdate(APP_VERSION, "mobile").then((next) => next && setUpdate(next)).catch(() => {});
+    const A = (window as any).SuperchargeAndroid, on = (e: any) => setUpdate((u: any) => u && { ...u, ...e.detail });
+    let found = 0;
+    const run = () => checkUpdate(APP_VERSION, pickApk).then((n: any) => {
+      if (found || !n) return setUpdate((u: any) => u && { ...u, hide: 0 });
+      found = 1;
+      if (A?.downloadUpdate && n.sums) A.downloadUpdate(n.asset, n.sums, n.assetName), (n.p = 0);
+      setUpdate(n);
+    }).catch(() => {});
+    addEventListener("supercharge:update", on);
+    void run();
+    const t = setInterval(run, UPDATE_EVERY);
+    return () => { clearInterval(t); removeEventListener("supercharge:update", on); };
   }, []);
   const [listed, setListed] = useState(false);
   const [loadingSess, setLoadingSess] = useState<string | null>(null);
@@ -604,14 +617,14 @@ export default function MobileApp() {
 
   return (
     <div className="m-app">
-      {update && (
+      {update && !update.hide && (
         <div className="m-sheet-bg top" data-testid="m-update">
-          <div className="m-sheet" role="dialog" aria-label="Update available" onClick={(e) => e.stopPropagation()}>
+          <div className="m-sheet" role="dialog" aria-label="Update" onClick={(e) => e.stopPropagation()}>
             <div className="m-grabber" aria-hidden />
-            <h3>Update {update.version} is available</h3>
-            <p className="muted">Install the new phone app. Pairing stays when the update is signed with the same key.</p>
-            <button className="m-big" onClick={() => window.open(update.asset || update.page, "_blank")}>Install</button>
-            <button className="m-big secondary" onClick={() => setUpdate(null)}>Later</button>
+            <h3>{update.ready ? "Update ready" : `Update ${update.version}`}</h3>
+            {update.err ? <p className="muted">{update.err}</p> : update.p != null && !update.ready && <progress data-testid="m-update-progress" max={1} value={update.p || undefined} />}
+            {(update.ready || update.p == null) && <button className="m-big" onClick={() => update.ready ? (window as any).SuperchargeAndroid.installUpdate() : window.open(update.err ? update.asset : update.page)}>{update.ready ? "Restart" : update.err ? "Download manually" : "Install"}</button>}
+            <button className="m-big secondary" onClick={() => setUpdate({ ...update, hide: 1 })}>Later</button>
           </div>
         </div>
       )}

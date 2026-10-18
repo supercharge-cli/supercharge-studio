@@ -8,6 +8,12 @@ name: Release
 #   ANDROID_KEYSTORE_PASS  keystore password
 #   ANDROID_KEY_ALIAS      key alias (default: supercharge-studio)
 #   ANDROID_KEY_PASS       key password (defaults to the keystore password)
+#
+# Optional in-app update signing (Windows, macOS, AppImage). Without these the desktop
+# builds are unsigned for the updater and no latest.json is published; the apps then
+# offer the manual download instead:
+#   TAURI_SIGNING_PRIVATE_KEY           updater private key (contents of the key file)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password
 on:
   push:
     tags: ["v*"]
@@ -53,15 +59,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
       - run: npm ci
-      - run: npx tauri build ${{ matrix.args }}
+      - name: Build (updater bundles and signatures only when the signing key is set)
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            npx tauri build ${{ matrix.args }} --config '{"bundle":{"createUpdaterArtifacts":true}}'
+          else
+            echo "::notice::TAURI_SIGNING_PRIVATE_KEY not set: building without updater signatures"
+            unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+            npx tauri build ${{ matrix.args }}
+          fi
       - name: Collect
         shell: bash
         run: |
           mkdir -p rel
           # Fixed, versionless names so releases/latest/download/<name> never changes.
-          # The version stays inside the package metadata.
-          find src-tauri/target -path '*release/bundle/*' -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) | while read -r f; do
+          # The version stays inside the package metadata. Updater bundles (.app.tar.gz) and
+          # signatures (.sig) are only there when the signing key is set.
+          find src-tauri/target -path '*release/bundle/*' -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \
+            -o -name '*.AppImage.sig' -o -name '*.msi.sig' -o -name '*-setup.exe.sig' -o -name '*.app.tar.gz' -o -name '*.app.tar.gz.sig' \) | while read -r f; do
             case "$f" in
+              *.AppImage.sig)      n=Supercharge-Studio-linux-x86_64.AppImage.sig ;;
+              *.msi.sig)           n=Supercharge-Studio-windows-x64.msi.sig ;;
+              *-setup.exe.sig)     n=Supercharge-Studio-windows-x64-setup.exe.sig ;;
+              *.app.tar.gz)        n=Supercharge-Studio-macos-universal.app.tar.gz ;;
+              *.app.tar.gz.sig)    n=Supercharge-Studio-macos-universal.app.tar.gz.sig ;;
               *.AppImage)   n=Supercharge-Studio-linux-x86_64.AppImage ;;
               *.deb)        n=supercharge-studio-linux-amd64.deb ;;
               *.rpm)        n=supercharge-studio-linux-x86_64.rpm ;;
@@ -226,6 +251,8 @@ jobs:
           mkdir -p out
           find dist -type f | while read -r f; do n=$(basename "$f" | tr ' ' '-'); cp "$f" "out/$n"; done
           rm -rf dist && mv out dist
+          # In-app updater manifest (skipped when the desktop builds are not signed).
+          node scripts/latest-json.mjs dist "$TAG" "${{ github.repository }}"
           cd dist && sha256sum * > SHA256SUMS && ls -l
           # Every asset name must be versionless so releases/latest/download/<name> is stable.
           if ls | grep -E '[0-9]+\.[0-9]+\.[0-9]+'; then echo "versioned asset name found"; exit 1; fi

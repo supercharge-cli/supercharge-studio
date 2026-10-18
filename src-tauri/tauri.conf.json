@@ -12,7 +12,7 @@
   "app": {
     "windows": [],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://models.dev ws://127.0.0.1:* ws://localhost:* ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:"
+      "csp": "default-src 'self'; connect-src 'self' https://models.dev https://api.github.com ws://127.0.0.1:* ws://localhost:* ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:"
     }
   },
   "bundle": {
@@ -42,6 +42,17 @@
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhGQjhGQTk3MDkwQzBFNzMKUldSekRnd0psL3E0ait4RlozVE4wY09GRkc1Y2IvNVphWlZXZGVMYUY0ekMxblZEYVhiQ1hOZ1YK",
+      "endpoints": [
+        "https://github.com/supercharge-cli/supercharge-studio/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

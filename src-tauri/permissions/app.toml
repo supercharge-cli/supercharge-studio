@@ -9,4 +9,5 @@ commands.allow = [
   "fs_list", "fs_read_text",
     "background_get", "background_set", "upload_chunk", "upload_rewrite", "gateway_firewall_allow", "host_package",
   "term_open", "term_write", "term_resize", "term_close", "pick_folder",
+  "update_download", "update_restart",
 ]

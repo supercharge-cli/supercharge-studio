@@ -8,6 +8,7 @@
     "core:webview:allow-create-webview",
     "core:event:default",
     "notification:default",
+    "process:allow-restart",
     "allow-app"
   ],
   "webviews": [

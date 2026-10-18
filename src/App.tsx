@@ -46,7 +46,8 @@ import { contextFromUsageNotification, isResponseCompleted, usedFromResponseComp
 import { isTerminalTarget } from "./lib/terminalInput";
 import { useBrowserOverlay } from "./browser/visibility";
 import { agentModel, saveSetupModel, sessionModel, setupModel, type ModelOpt } from "./lib/modelFallback";
-import { APP_VERSION, checkUpdate, type AvailableUpdate } from "./lib/updates";
+import { APP_VERSION, checkUpdate, pickAsset, UPDATE_EVERY, type AvailableUpdate } from "./lib/updates";
+const UpdateBanner = lazy(() => import("./components/UpdateBanner"));
 
 type View = "chat" | "settings" | "usage";
 type PermState = { req: PermissionRequest; resolve: (o: PermissionOutcome) => void; token?: number };
@@ -60,14 +61,17 @@ export default function App() {
   const [status, setStatus] = useState("");
   const [notice, setNotice] = useState("");
   const [available, setAvailable] = useState<AvailableUpdate | null>(null);
+  // On launch and every 6 hours; a found update downloads in the background (UpdateBanner).
   useEffect(() => {
     let stop = false;
-    void (async () => {
+    const run = async () => {
       const format = isDesktop() ? await invoke<string>("host_package").catch(() => undefined) : undefined;
-      const next = await checkUpdate(APP_VERSION, "desktop", format).catch(() => null);
-      if (!stop && next) setAvailable(next);
-    })();
-    return () => { stop = true; };
+      const next = await checkUpdate(APP_VERSION, (all) => pickAsset(all, format), format).catch(() => null);
+      if (!stop && next) setAvailable((a) => a ?? next);
+    };
+    void run();
+    const t = setInterval(run, UPDATE_EVERY);
+    return () => { stop = true; clearInterval(t); };
   }, []);
   const [sessions, setSessions] = useState<Record<string, SessionState>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
@@ -1299,11 +1303,7 @@ export default function App() {
   return (
     <>
       {available && (
-        <div className="notice update-banner" data-testid="update-banner" role="status">
-          <span>Supercharge Studio {available.version} is available.</span>
-          <button onClick={() => window.open(available.asset || available.page, "_blank")}>Install</button>
-          <button className="ghost" onClick={() => setAvailable(null)}>Later</button>
-        </div>
+        <Suspense fallback={null}><UpdateBanner u={available} onLater={() => setAvailable(null)} /></Suspense>
       )}
       <div className={`app ${panel && view === "chat" ? "with-panel" : ""} view-${view}`}>
       {cliSetup && (

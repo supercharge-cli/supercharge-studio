@@ -36,6 +36,7 @@ mod pick;
 mod screenshot;
 mod secrets;
 mod agent;
+mod updater;
 
 const BROWSER: &str = "browser";
 
@@ -60,11 +61,24 @@ fn app_config() -> serde_json::Value {
     })
 }
 
-/// Which installer the update prompt should offer: rpm, deb, exe, or dmg.
+/// How this copy was installed, for the updater: appimage, rpm, deb, exe or dmg.
 #[tauri::command]
 fn host_package() -> String {
     #[cfg(target_os = "linux")]
     {
+        if std::env::var_os("APPIMAGE").is_some() {
+            return "appimage".into();
+        }
+        // Ask the package managers who owns this binary; fall back to the distro family.
+        if let Ok(exe) = std::env::current_exe() {
+            let owns = |bin: &str, arg: &str| hidden::std_cmd(bin).args([arg]).arg(&exe).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success());
+            if owns("rpm", "-qf") {
+                return "rpm".into();
+            }
+            if owns("dpkg", "-S") {
+                return "deb".into();
+            }
+        }
         let os = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
         return if os.contains("fedora") || os.contains("rhel") || os.contains("centos") || os.contains("suse") { "rpm".into() } else { "deb".into() };
     }
@@ -402,6 +416,8 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| background::show_main(app)))
         .plugin(tauri_plugin_autostart::Builder::new().args([background::BACKGROUND_ARG]).build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState::default())
         .manage(terminal::Terms::new())
         .setup(|app| {
@@ -429,7 +445,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            app_config, host_package, agent_probe, agent_start, agent_stop, agent::agent_info, agent::agent_log, agent::agent_install, cliinstall::cli_status, cliinstall::cli_install, agent::agent_check, agent::agent_free_port, agent::agent_log_note,
+            app_config, host_package, updater::update_download, updater::update_restart, agent_probe, agent_start, agent_stop, agent::agent_info, agent::agent_log, agent::agent_install, cliinstall::cli_status, cliinstall::cli_install, agent::agent_check, agent::agent_free_port, agent::agent_log_note,
             stdio_start, stdio_send, stdio_stop,
             browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible, browser_screenshot, browser_set_zoom,
             secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info,

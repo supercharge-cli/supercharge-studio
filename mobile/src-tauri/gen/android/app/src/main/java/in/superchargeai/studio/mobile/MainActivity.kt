@@ -125,12 +125,23 @@ class MainActivity : TauriActivity() {
     try { nm.notify(chat.hashCode(), n) } catch (e: Exception) { /* blocked */ }
   }
 
+  private fun emitUpdate(json: String) {
+    runOnUiThread { webView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('supercharge:update',{detail:$json}))", null) }
+  }
+
   inner class Bridge {
     @JavascriptInterface
     fun keepAlive(on: Boolean) { runOnUiThread { setKeepAlive(on) } }
 
     @JavascriptInterface
     fun notify(chat: String, title: String, body: String, sound: Boolean) { runOnUiThread { showAlert(chat, title, body, sound) } }
+
+    /** Background APK download for the in-app update (see AppUpdate). */
+    @JavascriptInterface
+    fun downloadUpdate(url: String, sums: String, name: String) { AppUpdate.download(applicationContext, url, sums, name) { emitUpdate(it) } }
+
+    @JavascriptInterface
+    fun installUpdate() { runOnUiThread { AppUpdate.install(this@MainActivity) { emitUpdate(it) } } }
   }
 
   companion object {

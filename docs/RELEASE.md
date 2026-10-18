@@ -28,12 +28,49 @@ Base: `https://github.com/supercharge-cli/supercharge-studio/releases/latest/dow
 | iOS simulator build (unsigned) | `supercharge-studio-ios-simulator.zip` | macos |
 | AUR | `PKGBUILD`, `SRCINFO.txt` | archlinux container |
 | Checksums | `SHA256SUMS` | |
+| Updater manifest (signed builds only) | `latest.json`, plus `*.AppImage.sig`, `*-setup.exe.sig`, `*.msi.sig`, `Supercharge-Studio-macos-universal.app.tar.gz` (+ `.sig`) | |
 
 Without signing secrets the APKs are published as `supercharge-studio-android-<abi>-unsigned.apk`;
 `scripts/sign-release.sh` uploads the signed copies under the stable names above.
 
 The AUR `PKGBUILD` pins the tag (`releases/download/vX.Y.Z/supercharge-studio-linux-amd64.deb`)
 and saves it as `supercharge-studio-X.Y.Z.deb`, so each AUR version stays reproducible.
+
+## In-app updates
+
+The apps check the latest release on launch and every 6 hours, download the update in the
+background with a progress bar, install it, then offer **Restart** / **Later**:
+
+| Installed as | How it updates |
+|---|---|
+| Windows (setup.exe / msi), macOS (.app), Linux AppImage | Signed updater bundle from `latest.json` (`releases/latest/download/latest.json`). macOS and AppImage install right away; Windows runs its installer on Restart and the installer starts the new version. |
+| Linux rpm / deb | The package is downloaded, checked against `SHA256SUMS` and installed with `pkexec dnf install -y` (or `rpm -U`) / `pkexec apt install -y` (or `dpkg -i`); the system asks for the password. Restart starts the new binary. |
+| Android | The APK is downloaded and checked against `SHA256SUMS`; Restart opens the system installer (the user confirms). Same signing key, so it updates in place. |
+| iOS | Links to the release. |
+
+Any failure falls back to a **Download manually** link.
+
+### Updater signing (optional)
+
+`latest.json` and the `.sig` / `.app.tar.gz` assets are only published when these secrets are set;
+without them the release still builds and the desktop apps fall back to the manual download
+(rpm/deb and Android updates don't need them):
+
+| Secret | Value |
+|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | contents of the updater private key |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | its password |
+
+The public key is in `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`). Set the secrets from
+the machine that holds the key (nothing is printed):
+
+```sh
+gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.supercharge-studio-keys/updater.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD < ~/.supercharge-studio-keys/updater.password
+```
+
+Keep the key out of the repository. Losing it means installed apps can no longer update
+themselves (they fall back to the manual download).
 
 ## Android signing (optional)
 

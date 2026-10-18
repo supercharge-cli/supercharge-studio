@@ -39,6 +39,9 @@ tauri-plugin-autostart = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
 portable-pty = "0.8"
+# In-app updates (signed bundles: Windows, macOS, AppImage) and the relaunch afterwards.
+tauri-plugin-updater = { version = "2.14.0", default-features = false, features = ["rustls-tls", "zip"] }
+tauri-plugin-process = "2"
 
 [profile.release]
 codegen-units = 1

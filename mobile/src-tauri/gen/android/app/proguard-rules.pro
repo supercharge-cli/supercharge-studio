@@ -28,3 +28,6 @@
 -keep class com.fasterxml.jackson.** { *; }
 -dontwarn com.fasterxml.jackson.**
 -keepclassmembers class org.json.** { *; }
+
+# Methods the page calls on the WebView bridge (window.SuperchargeAndroid).
+-keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }

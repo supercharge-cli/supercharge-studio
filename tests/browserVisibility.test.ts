@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { browserVisible, intersects, overlayCount, pushOverlay, subscribeOverlays, MIN_W } from "../src/browser/visibility";
+import { browserVisible, intersects, overlayCount, pushOverlay, subscribeOverlays, MIN_W, POPOVER_SELECTOR } from "../src/browser/visibility";
 
 const bounds = { x: 800, y: 40, width: 400, height: 600 };
 const base = { tab: "browser", picker: false, overlays: 0, blocking: 0, popovers: [], bounds };
@@ -19,6 +19,11 @@ describe("side browser visibility rule", () => {
     expect(browserVisible({ ...base, bounds: null })).toBe(false);
     expect(browserVisible({ ...base, bounds: { ...bounds, width: MIN_W - 1 } })).toBe(false);
     expect(browserVisible({ ...base, bounds: { ...bounds, height: 10 } })).toBe(false);
+  });
+  it("treats the fixed update banner as a popover (hidden where it overlaps)", () => {
+    expect(POPOVER_SELECTOR).toContain(".update-banner");
+    expect(browserVisible({ ...base, popovers: [{ x: 0, y: 0, width: 1360, height: 44 }] })).toBe(false);
+    expect(browserVisible({ ...base, popovers: [{ x: 0, y: 0, width: 1360, height: 30 }] })).toBe(true);
   });
   it("hides only for popovers that overlap its area", () => {
     expect(browserVisible({ ...base, popovers: [{ x: 100, y: 500, width: 300, height: 200 }] })).toBe(true);

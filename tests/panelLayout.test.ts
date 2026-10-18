@@ -18,7 +18,9 @@ describe("side panel layout", () => {
   it("keeps the update banner outside the app grid as a fixed slim bar", () => {
     const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
     // Banner is a sibling of .app, not a grid child (a grid child would squeeze the panes).
-    expect(app).toMatch(/<>\s*\{available && \([\s\S]*?update-banner[\s\S]*?\)\}\s*<div className=\{`app/);
+    expect(app).toMatch(/<>\s*\{available && \([\s\S]*?<UpdateBanner[\s\S]*?\)\}\s*<div className=\{`app/);
+    const banner = readFileSync(new URL("../src/components/UpdateBanner.tsx", import.meta.url), "utf8");
+    expect(banner).toContain('className="notice update-banner"');
     expect(css).toMatch(/\.update-banner\{[^}]*position:fixed/);
     expect(css).toMatch(/\.update-banner\{[^}]*top:0/);
     expect(css).not.toMatch(/\.update-banner\{[^}]*position:sticky/);
