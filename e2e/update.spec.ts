@@ -58,7 +58,7 @@ const calls = (page: Page, cmd: string) => page.evaluate((cmd) => (window as any
 test("rpm install: progress, verified package install, Update ready, Restart relaunches", async ({ page }) => {
   const banner = await bootDesktop(page, "rpm");
   await expect(banner).toContainText("Downloading Supercharge Studio 9.9.9");
-  expect(await calls(page, "update_download")).toEqual([{ pkg: { url: REL + "supercharge-studio-linux-x86_64.rpm", name: "supercharge-studio-linux-x86_64.rpm", sums: REL + "SHA256SUMS", format: "rpm" } }]);
+  expect(await calls(page, "update_download")).toEqual([{ pkg: { url: REL + "supercharge-studio-linux-x86_64.rpm", name: "supercharge-studio-linux-x86_64.rpm", format: "rpm" } }]);
   await page.evaluate(() => (window as any).__upd.emit("update://progress", { done: 50, total: 100 }));
   await expect(page.getByTestId("update-progress")).toHaveJSProperty("value", 0.5);
   await page.evaluate(() => (window as any).__upd.done("native"));
@@ -108,7 +108,7 @@ test.describe("phone", () => {
     await openPhone(page);
     const sheet = page.getByTestId("m-update");
     await expect(sheet).toContainText("Update 9.9.9");
-    expect(await page.evaluate(() => (window as any).__android.dl)).toEqual([[REL + "supercharge-studio-android-arm64.apk", REL + "SHA256SUMS", "supercharge-studio-android-arm64.apk"]]);
+    expect(await page.evaluate(() => (window as any).__android.dl)).toEqual([[REL + "supercharge-studio-android-arm64.apk", REL + "latest.json", "supercharge-studio-android-arm64.apk"]]);
     const send = (detail: unknown) => page.evaluate((d) => window.dispatchEvent(new CustomEvent("supercharge:update", { detail: d })), detail);
     await send({ p: 0.4 });
     await expect(page.getByTestId("m-update-progress")).toHaveJSProperty("value", 0.4);

@@ -13,8 +13,9 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * In-app update: downloads the release APK in the background, checks it against the
- * release's SHA256SUMS and hands it to the system installer (the user confirms; the
+ * In-app update: downloads the release APK over HTTPS in the background, checks it against
+ * the sha256 the same release's latest.json lists for it (no entry: refused) and hands it
+ * to the system installer (the user confirms; the
  * update is signed with the same key, so it replaces the app in place).
  * Progress goes to the page as `supercharge:update` events: {p}, {ready}, {err}.
  */
@@ -24,27 +25,34 @@ object AppUpdate {
 
   private fun file(ctx: Context) = File(File(ctx.cacheDir, "updates").apply { mkdirs() }, "update.apk")
 
-  /** Hex SHA256 for `name` in a `sha256sum` listing. */
-  fun expectedSha(sums: String, name: String): String? = sums.lineSequence().mapNotNull { l ->
-    val p = l.trim().split(Regex("\\s+"))
-    if (p.size >= 2 && p[1].trimStart('*') == name && p[0].length == 64) p[0].lowercase() else null
-  }.firstOrNull()
+  /** Lowercase hex sha256 that latest.json lists for `name`, only if its URL is `url`. */
+  fun expectedSha(manifest: String, name: String, url: String): String? = try {
+    val p = JSONObject(manifest).getJSONObject("packages").getJSONObject(name)
+    val h = p.getString("sha256")
+    if (p.getString("url") == url && h.length == 64 && h.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) h.lowercase() else null
+  } catch (e: Exception) { null }
 
+  /** HTTPS only, including where redirects lead. */
   private fun open(u: String) = (URL(u).openConnection() as HttpURLConnection).apply {
     instanceFollowRedirects = true
     connectTimeout = 20000
     readTimeout = 60000
     setRequestProperty("User-Agent", "supercharge-studio")
+    check(u.startsWith("https://")) { "not an HTTPS download" }
+    connect()
+    check(url.protocol == "https" && responseCode in 200..299) { "download failed ($responseCode)" }
   }
 
-  fun download(ctx: Context, url: String, sums: String, name: String, emit: (String) -> Unit) {
+  /** `manifest` is the URL of the same release's latest.json. */
+  fun download(ctx: Context, url: String, manifest: String, name: String, emit: (String) -> Unit) {
     if (running) return
     running = true
     Thread {
       try {
-        require(url.startsWith(PREFIX) && sums.startsWith(PREFIX) && !url.contains("..")) { "not a release download" }
-        val want = expectedSha(open(sums).inputStream.use { it.readBytes().toString(Charsets.UTF_8) }, name)
-          ?: error("$name is not listed in SHA256SUMS")
+        val tag = url.removePrefix(PREFIX).substringBefore('/')
+        require(url.startsWith(PREFIX) && !url.contains("..") && tag.isNotEmpty() && url == "$PREFIX$tag/$name" && manifest == "$PREFIX$tag/latest.json") { "not a release download" }
+        val want = expectedSha(open(manifest).inputStream.use { it.readBytes().toString(Charsets.UTF_8) }, name, url)
+          ?: error("$name is not listed in latest.json, refusing to install")
         val out = file(ctx)
         val tmp = File(out.path + ".part")
         val c = open(url)

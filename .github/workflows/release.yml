@@ -10,8 +10,8 @@ name: Release
 #   ANDROID_KEY_PASS       key password (defaults to the keystore password)
 #
 # Optional in-app update signing (Windows, macOS, AppImage). Without these the desktop
-# builds are unsigned for the updater and no latest.json is published; the apps then
-# offer the manual download instead:
+# builds are unsigned for the updater and latest.json only lists the rpm/deb/APK sha256s;
+# the desktop apps then offer the manual download instead:
 #   TAURI_SIGNING_PRIVATE_KEY           updater private key (contents of the key file)
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password
 on:
@@ -251,7 +251,7 @@ jobs:
           mkdir -p out
           find dist -type f | while read -r f; do n=$(basename "$f" | tr ' ' '-'); cp "$f" "out/$n"; done
           rm -rf dist && mv out dist
-          # In-app updater manifest (skipped when the desktop builds are not signed).
+          # In-app updater manifest: signed bundles (when the key is set) and package sha256s.
           node scripts/latest-json.mjs dist "$TAG" "${{ github.repository }}"
           cd dist && sha256sum * > SHA256SUMS && ls -l
           # Every asset name must be versionless so releases/latest/download/<name> is stable.

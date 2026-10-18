@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { checkUpdate, isNewer, pickApk, pickAsset } from "../src/lib/updates";
 // @ts-expect-error plain ESM script without types
-import { buildLatest, TARGETS } from "../scripts/latest-json.mjs";
+import { buildLatest, PACKAGES, TARGETS } from "../scripts/latest-json.mjs";
 
 const REL = "https://github.com/supercharge-cli/supercharge-studio/releases/download/v1.0.18/";
 const names = [
@@ -50,7 +50,7 @@ describe("update check", () => {
   afterEach(() => vi.unstubAllGlobals());
   const stub = (body: unknown, ok = true) => vi.stubGlobal("fetch", vi.fn(async () => ({ ok, json: async () => body })));
 
-  it("returns the newer release with the asset, SHA256SUMS and install format", async () => {
+  it("returns the newer release with the asset, latest.json and install format", async () => {
     stub({ tag_name: "v1.0.18", html_url: "https://github.com/supercharge-cli/supercharge-studio/releases/tag/v1.0.18", assets });
     const u = await checkUpdate("1.0.17", (all) => pickAsset(all, "rpm"), "rpm");
     expect(u).toEqual({
@@ -58,7 +58,7 @@ describe("update check", () => {
       page: "https://github.com/supercharge-cli/supercharge-studio/releases/tag/v1.0.18",
       asset: REL + "supercharge-studio-linux-x86_64.rpm",
       assetName: "supercharge-studio-linux-x86_64.rpm",
-      sums: REL + "SHA256SUMS",
+      manifest: REL + "latest.json",
       format: "rpm",
     });
     expect((fetch as any).mock.calls[0][0]).toBe("https://api.github.com/repos/supercharge-cli/supercharge-studio/releases/latest");
@@ -85,7 +85,21 @@ describe("latest.json", () => {
     // Asset names stay versionless (the release check rejects versioned names).
     for (const n of Object.keys(TARGETS)) expect(n).not.toMatch(/\d+\.\d+\.\d+/);
   });
-  it("is skipped when nothing is signed", () => {
+  it("lists url + sha256 for the rpm, deb and signed APKs", () => {
+    const h = (c: string) => c.repeat(64);
+    const shas = Object.fromEntries(PACKAGES.map((n: string, i: number) => [n, h("abcdef"[i])]));
+    const l = buildLatest(sigs, "v1.0.18", "supercharge-cli/supercharge-studio", "2026-10-18T00:00:00Z", { ...shas, "supercharge-studio-android-arm64-unsigned.apk": h("1"), "x.rpm": h("2") });
+    expect(Object.keys(l.packages)).toEqual(PACKAGES);
+    expect(l.packages["supercharge-studio-linux-x86_64.rpm"]).toEqual({ url: REL + "supercharge-studio-linux-x86_64.rpm", sha256: h("a") });
+    expect(l.packages["supercharge-studio-linux-amd64.deb"].sha256).toBe(h("b"));
+    expect(l.packages["supercharge-studio-android-universal.apk"].url).toBe(REL + "supercharge-studio-android-universal.apk");
+    // Malformed hashes are left out (the apps then refuse to install that package).
+    expect(buildLatest({}, "v1.0.18", "a/b", "d", { "supercharge-studio-linux-x86_64.rpm": "nothex" })).toBeNull();
+  });
+  it("still lists packages without updater signatures, and is skipped when there is nothing", () => {
+    const l = buildLatest({}, "v1.0.18", "a/b", "d", { "supercharge-studio-linux-amd64.deb": "f".repeat(64) });
+    expect(l.platforms).toEqual({});
+    expect(Object.keys(l.packages)).toEqual(["supercharge-studio-linux-amd64.deb"]);
     expect(buildLatest({}, "v1.0.18", "a/b")).toBeNull();
   });
 });

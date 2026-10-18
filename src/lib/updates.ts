@@ -9,8 +9,8 @@ export type AvailableUpdate = {
   page: string;
   asset?: string;
   assetName?: string;
-  /** The release's SHA256SUMS (rpm/deb and Android installs are checked against it). */
-  sums?: string;
+  /** The release's latest.json (rpm/deb and APK installs must match its sha256). */
+  manifest?: string;
   /** How this copy was installed (desktop: appimage, rpm, deb, exe, dmg). */
   format?: string;
 };
@@ -51,6 +51,6 @@ export async function checkUpdate(current: string, pick: (all: Asset[]) => Asset
   if (!isNewer(tag, current)) return null;
   const all: Asset[] = body.assets ?? [];
   const asset = pick(all);
-  const sums = all.find((a) => a.name === "SHA256SUMS")?.browser_download_url;
-  return { version: tag.replace(/^v/, ""), page: String(body.html_url ?? ""), asset: asset?.browser_download_url, assetName: asset?.name, sums, format };
+  const manifest = all.find((a) => a.name === "latest.json")?.browser_download_url;
+  return { version: tag.replace(/^v/, ""), page: String(body.html_url ?? ""), asset: asset?.browser_download_url, assetName: asset?.name, manifest, format };
 }

@@ -168,7 +168,7 @@ export default function MobileApp() {
   const perm = permQueue[0] ?? null;
   const [handoff, setHandoff] = useState<string | null>(null);
   const [toast, setToast] = useState("");
-  // Android downloads the APK in the background (checked against SHA256SUMS) and the system installer
+  // Android downloads the APK in the background (must match latest.json's sha256) and the system installer
   // replaces the app in place; iOS links to the release. On launch and every 6 hours.
   const [update, setUpdate] = useState<any>(null);
   useEffect(() => {
@@ -177,7 +177,7 @@ export default function MobileApp() {
     const run = () => checkUpdate(APP_VERSION, pickApk).then((n: any) => {
       if (found || !n) return setUpdate((u: any) => u && { ...u, hide: 0 });
       found = 1;
-      if (A?.downloadUpdate && n.sums) A.downloadUpdate(n.asset, n.sums, n.assetName), (n.p = 0);
+      if (A?.downloadUpdate && n.manifest) A.downloadUpdate(n.asset, n.manifest, n.assetName), (n.p = 0);
       setUpdate(n);
     }).catch(() => {});
     addEventListener("supercharge:update", on);

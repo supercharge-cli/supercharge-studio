@@ -28,7 +28,7 @@ Base: `https://github.com/supercharge-cli/supercharge-studio/releases/latest/dow
 | iOS simulator build (unsigned) | `supercharge-studio-ios-simulator.zip` | macos |
 | AUR | `PKGBUILD`, `SRCINFO.txt` | archlinux container |
 | Checksums | `SHA256SUMS` | |
-| Updater manifest (signed builds only) | `latest.json`, plus `*.AppImage.sig`, `*-setup.exe.sig`, `*.msi.sig`, `Supercharge-Studio-macos-universal.app.tar.gz` (+ `.sig`) | |
+| Updater manifest | `latest.json` (package sha256s; signed bundles when the key is set), plus `*.AppImage.sig`, `*-setup.exe.sig`, `*.msi.sig`, `Supercharge-Studio-macos-universal.app.tar.gz` (+ `.sig`) | |
 
 Without signing secrets the APKs are published as `supercharge-studio-android-<abi>-unsigned.apk`;
 `scripts/sign-release.sh` uploads the signed copies under the stable names above.
@@ -44,17 +44,18 @@ background with a progress bar, install it, then offer **Restart** / **Later**:
 | Installed as | How it updates |
 |---|---|
 | Windows (setup.exe / msi), macOS (.app), Linux AppImage | Signed updater bundle from `latest.json` (`releases/latest/download/latest.json`). macOS and AppImage install right away; Windows runs its installer on Restart and the installer starts the new version. |
-| Linux rpm / deb | The package is downloaded, checked against `SHA256SUMS` and installed with `pkexec dnf install -y` (or `rpm -U`) / `pkexec apt install -y` (or `dpkg -i`); the system asks for the password. Restart starts the new binary. |
-| Android | The APK is downloaded and checked against `SHA256SUMS`; Restart opens the system installer (the user confirms). Same signing key, so it updates in place. |
+| Linux rpm / deb | The package is downloaded over HTTPS from this repo's release, checked against the sha256 that release's `latest.json` lists for it (no match or no entry: not installed) and installed with `pkexec dnf install -y` (or `rpm -U`) / `pkexec apt install -y` (or `dpkg -i`); the system asks for the password. Restart starts the new binary. |
+| Android | The APK is downloaded over HTTPS and checked against the sha256 in the release's `latest.json` (no match or no entry: not installed); Restart opens the system installer (the user confirms). Same signing key, so it updates in place. |
 | iOS | Links to the release. |
 
 Any failure falls back to a **Download manually** link.
 
 ### Updater signing (optional)
 
-`latest.json` and the `.sig` / `.app.tar.gz` assets are only published when these secrets are set;
-without them the release still builds and the desktop apps fall back to the manual download
-(rpm/deb and Android updates don't need them):
+`latest.json` always lists the url + sha256 of the rpm, deb and signed APKs (`packages`). Its
+`platforms` entries and the `.sig` / `.app.tar.gz` assets are only published when these secrets
+are set; without them the release still builds and the Windows/macOS/AppImage apps fall back to
+the manual download (rpm/deb and Android updates don't need them):
 
 | Secret | Value |
 |---|---|

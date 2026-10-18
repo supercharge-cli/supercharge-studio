@@ -17,7 +17,7 @@ export default function UpdateBanner({ u, onLater }: { u: AvailableUpdate; onLat
     const set = (s: St) => live && setSt(s);
     void listen<{ done: number; total: number }>("update://progress", (e) => set({ p: e.total ? e.done / e.total : undefined })).then((f) => (live ? (off = f) : f()));
     const { format } = u;
-    const pkg = (format === "rpm" || format === "deb") && u.asset && u.sums ? { url: u.asset, name: u.assetName, sums: u.sums, format } : null;
+    const pkg = (format === "rpm" || format === "deb") && u.asset ? { url: u.asset, name: u.assetName, format } : null;
     invoke<string>("update_download", { pkg }).then((ready) => set({ ready }), (e) => set({ err: String(e) }));
     return () => { live = false; off?.(); };
   }, [u.version, u.format]);

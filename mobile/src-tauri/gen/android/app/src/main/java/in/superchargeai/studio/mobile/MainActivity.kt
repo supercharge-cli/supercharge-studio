@@ -138,7 +138,7 @@ class MainActivity : TauriActivity() {
 
     /** Background APK download for the in-app update (see AppUpdate). */
     @JavascriptInterface
-    fun downloadUpdate(url: String, sums: String, name: String) { AppUpdate.download(applicationContext, url, sums, name) { emitUpdate(it) } }
+    fun downloadUpdate(url: String, manifest: String, name: String) { AppUpdate.download(applicationContext, url, manifest, name) { emitUpdate(it) } }
 
     @JavascriptInterface
     fun installUpdate() { runOnUiThread { AppUpdate.install(this@MainActivity) { emitUpdate(it) } } }
