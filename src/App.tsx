@@ -18,6 +18,7 @@ import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./l
 import { resolveTheme, themeList } from "./lib/themes";
 import { expandPrompt } from "./lib/prompts";
 import { acpServers } from "./lib/mcpServers";
+import { dueSchedules, nextRun } from "./lib/schedules";
 import { chatMentions, transcript } from "./lib/transcript";
 import type { ToolsTab } from "./components/Tools";
 import { extractMentions, fileItems, mentionBlocks } from "./lib/mentions";
@@ -1137,6 +1138,21 @@ export default function App() {
   }
   const allChats = data.groups.flatMap((g) => g.projects.flatMap((p) => p.chats.map((c) => ({ c, p }))));
   const runs = allChats.filter(({ c }) => busy[c.id] || pq[c.id]?.length).map(({ c, p }) => ({ chatId: c.id, title: c.title, project: p.name, busy: !!busy[c.id], queued: pq[c.id] ?? [] }));
+  // Scheduled runs: each due schedule sends its prompt in a new chat (checked every 30 s while connected).
+  const runDue = useRef<() => void>(() => {});
+  runDue.current = () => {
+    const now = Date.now(), d = dataRef.current;
+    const fix = (d.schedules ?? []).filter((s) => s.on && s.next == null);
+    const due = conn === "open" ? dueSchedules(d.schedules, now) : [];
+    if (!due.length && !fix.length) return;
+    update((x) => ({ ...x, schedules: x.schedules?.map((s) => (due.includes(s) ? { ...s, last: now, next: nextRun(s, now) } : fix.includes(s) ? { ...s, next: nextRun(s, now) } : s)) }));
+    for (const s of due) {
+      if (!findProject(d, s.projectId)) continue;
+      const id = newChat(s.projectId, false, { title: `Scheduled: ${s.prompt}`.slice(0, 40) });
+      setTimeout(() => void runPrompt(s.projectId, id, s.prompt, "schedule").catch(() => {}), 0);
+    }
+  };
+  useEffect(() => { const t = setInterval(() => runDue.current(), 30_000); return () => clearInterval(t); }, []);
   const toolsApp = {
     cwd: active ? normCwd(activeChat?.cwd ?? active.project.cwd) : undefined,
     runs,
@@ -1165,6 +1181,7 @@ export default function App() {
     { name: "usage", detail: "Token usage and costs", icon: "chart", run: () => setView("usage") },
     { name: "rules", detail: "Edit AGENTS.md and rules files", icon: "file", run: () => openTools("rules") },
     { name: "mcp", detail: "Manage MCP servers", icon: "server", run: () => openTools("mcp") },
+    { name: "schedule", detail: "Scheduled runs", icon: "refresh", run: () => openTools("schedules") },
     { name: "tasks", detail: "Running chats and queued messages", icon: "bolt", run: () => openTools("running") },
     { name: "prompts", detail: "Saved prompts and custom commands", icon: "edit", run: () => openTools("prompts") },
     { name: "undo", detail: "Undo the last turn: restore files and messages", icon: "refresh", run: () => (cps[0] ? void restoreCheckpoint(cps[0].id) : setNotice("No checkpoint in this chat yet")) },

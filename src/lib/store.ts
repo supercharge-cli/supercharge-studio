@@ -55,6 +55,8 @@ export type AppData = {
   prompts?: import("./prompts").Prompt[];
   /** MCP servers the user added; every session gets the enabled ones. */
   mcpServers?: import("./mcpServers").McpServer[];
+  /** Prompts sent on a timer while the app runs. */
+  schedules?: import("./schedules").Schedule[];
   /** CLI sessions the user removed from the sidebar (never re-added by sync). */
   hiddenSessions?: string[];
 };

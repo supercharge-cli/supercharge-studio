@@ -3,9 +3,11 @@ import { invoke, isDesktop } from "../lib/desktop";
 import type { AppData } from "../lib/store";
 import { promptName, type Prompt } from "../lib/prompts";
 import type { McpServer } from "../lib/mcpServers";
+import type { Schedule } from "../lib/schedules";
+import { uid } from "../lib/store";
 import { Icon } from "./Icon";
 
-export type ToolsTab = "prompts" | "running" | "rules" | "mcp";
+export type ToolsTab = "prompts" | "running" | "rules" | "mcp" | "schedules";
 /** A chat that is working or has queued messages. */
 export type Run = { chatId: string; title: string; project: string; busy: boolean; queued: { id: string; text: string }[] };
 /** What the tools screen needs from the app. */
@@ -16,6 +18,7 @@ const TABS: { id: ToolsTab; label: string; icon: string }[] = [
   { id: "running", label: "Running", icon: "bolt" },
   { id: "rules", label: "Rules & memory", icon: "file" },
   { id: "mcp", label: "MCP servers", icon: "server" },
+  { id: "schedules", label: "Scheduled runs", icon: "refresh" },
 ];
 
 /** Editable list of rows; `blank` is a new row, `fields` renders one row's inputs. */
@@ -116,7 +119,30 @@ function Mcp({ data, update }: Props) {
   );
 }
 
-const BODY: Record<ToolsTab, (p: Props) => any> = { prompts: Prompts, running: Running, rules: Rules, mcp: Mcp };
+function Schedules({ data, update }: Props) {
+  const projects = data.groups.flatMap((g) => g.projects);
+  // Edits clear `next` so the app recomputes it from the new timing.
+  const set = (schedules: Schedule[]) => update((d) => ({ ...d, schedules: schedules.map((s, i) => (JSON.stringify(s) === JSON.stringify(d.schedules?.[i]) ? s : { ...s, next: undefined })) }));
+  return (
+    <>
+      <p className="muted small">Each run starts a new chat in its project and sends the prompt. Runs happen while Studio is open (keep it running in the background from Settings → Agent).</p>
+      <Rows id="sched" rows={data.schedules ?? []} set={set} blank={{ id: uid(), projectId: data.activeProjectId ?? projects[0]?.id ?? "", prompt: "", on: true, every: 60 }} fields={(s, ch) => (
+        <>
+          <textarea rows={2} placeholder="Prompt, e.g. Check the CI status and summarize failures" data-testid="sched-prompt" value={s.prompt} onChange={(e) => ch({ prompt: e.target.value })} />
+          <div className="row">
+            <select value={s.projectId} onChange={(e) => ch({ projectId: e.target.value })}>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+            <select value={s.at != null ? "at" : "every"} data-testid="sched-kind" onChange={(e) => ch(e.target.value === "at" ? { at: "09:00", every: undefined } : { every: 60, at: undefined })}><option value="every">Every</option><option value="at">Daily at</option></select>
+            {s.at != null ? <input type="time" value={s.at} onChange={(e) => ch({ at: e.target.value })} /> : <><input type="number" min={1} style={{ width: 80 }} value={s.every ?? 60} onChange={(e) => ch({ every: Math.max(1, +e.target.value || 1) })} /> min</>}
+            <label className="check"><input type="checkbox" checked={s.on} onChange={(e) => ch({ on: e.target.checked })} /> On</label>
+          </div>
+          {s.on && s.next && <span className="muted small">Next run {new Date(s.next).toLocaleString()}{s.last ? ` · last ${new Date(s.last).toLocaleString()}` : ""}</span>}
+        </>
+      )} />
+    </>
+  );
+}
+
+const BODY: Record<ToolsTab, (p: Props) => any> = { schedules: Schedules, prompts: Prompts, running: Running, rules: Rules, mcp: Mcp };
 
 /** Full-screen Studio tools: prompts, rules, MCP servers, schedules, running tasks, checkpoints. */
 export function ToolsScreen(p: Props) {
