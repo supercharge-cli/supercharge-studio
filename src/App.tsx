@@ -835,6 +835,16 @@ export default function App() {
     turnText.current[chatId] = text;
     const attNames = (extra as any[]).filter((b) => b && b._att).map((b) => b._att as string);
     for (const b of extra as any[]) if (b && b._att) delete b._att;
+    if (!resend && isDesktop()) {
+      // Snapshot the folder first so this turn can be undone (/undo, /checkpoints).
+      const id = uid(), at = sessionsRef.current[chatId]?.items.length ?? 0;
+      const ok = await invoke("checkpoint_create", { cwd: normCwd(chat?.cwd ?? findProject(dataRef.current, projectId)!.project.cwd), id }).then(() => true, () => false);
+      if (ok) update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, checkpoints: [...(x.checkpoints ?? []), { id, at, text: text.slice(0, 80), ts: Date.now() }].slice(-30) } : x)) })));
+    }
+    if (chat?.summary) {
+      extra = [{ type: "text", text: `Summary of this conversation so far (restored from a checkpoint):\n\n${chat.summary}` }, ...extra];
+      update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, summary: undefined } : x)) })));
+    }
     if (!resend) pushItem(chatId, { kind: "user", text: from ? `${text}` : text, ...(from ? { from } : {}), ...(attNames.length ? { attachments: attNames } : {}) } as ChatItem);
     setBusy((b) => ({ ...b, [chatId]: true }));
     try {
@@ -1090,6 +1100,21 @@ export default function App() {
     update((d) => mapProject(d, active.project.id, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === activeChat.id ? { ...x, sessionId: undefined } : x)) })));
     setSessions((all) => ({ ...all, [activeChat.id]: emptySession() }));
   }
+  /** Put the folder back as it was before a prompt, drop the later messages and continue in a new session with a summary. */
+  async function restoreCheckpoint(cid: string) {
+    if (!active || !activeChat) return false;
+    const cp = activeChat.checkpoints?.find((x) => x.id === cid);
+    if (!cp) return false;
+    if (busyRef.current[activeChat.id]) stop();
+    try { await invoke("checkpoint_restore", { cwd: normCwd(activeChat.cwd ?? active.project.cwd), id: cp.id }); } catch (e) { setNotice(`Could not restore: ${e}`); return; }
+    const items = (sessionsRef.current[activeChat.id]?.items ?? []).slice(0, cp.at);
+    if (activeChat.sessionId) loaded.current.delete(activeChat.sessionId);
+    update((d) => mapProject(d, active.project.id, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === activeChat.id ? { ...x, sessionId: undefined, summary: transcript(items, 8000) || undefined, checkpoints: x.checkpoints?.filter((c) => c.at < cp.at) } : x)) })));
+    setSessions((all) => ({ ...all, [activeChat.id]: { ...emptySession(), items: [...items, { kind: "system", text: `Restored the folder to before “${cp.text}”. The next message starts a new session with a summary of this chat.` }] } }));
+    refreshChanges();
+    setDraftCaret(cp.text);
+  }
+  const cps = [...(activeChat?.checkpoints ?? [])].reverse();
   type Native = { name: string; detail: string; icon: string; run: (args: string) => boolean | void; sub?: () => MenuItem[] };
   const nativeCommands: Native[] = [
     { name: "new", detail: "Start a new chat in this project", icon: "plus", run: () => { if (active) newChat(active.project.id); } },
@@ -1110,6 +1135,8 @@ export default function App() {
     { name: "settings", detail: "Open settings", icon: "settings", run: () => openSettings() },
     { name: "usage", detail: "Token usage and costs", icon: "chart", run: () => setView("usage") },
     { name: "prompts", detail: "Saved prompts and custom commands", icon: "edit", run: () => openTools("prompts") },
+    { name: "undo", detail: "Undo the last turn: restore files and messages", icon: "refresh", run: () => (cps[0] ? void restoreCheckpoint(cps[0].id) : setNotice("No checkpoint in this chat yet")) },
+    { name: "checkpoints", detail: "Restore the folder to before an earlier message", icon: "refresh", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/checkpoints ")); return; } void restoreCheckpoint(a); }, sub: () => cps.map((c) => ({ id: `cp-${c.id}`, label: c.text || "(attachment)", detail: new Date(c.ts).toLocaleTimeString(), value: c.id, icon: "refresh" })) },
     { name: "pair", detail: "Pair a phone", icon: "phone", run: () => openSettings("devices") },
     { name: "reconnect", detail: "Reconnect to the agent", icon: "refresh", run: () => void connect() },
     ...(isBusy ? [{ name: "stop", detail: "Stop the running turn", icon: "stop", run: () => { stop(); } }] : []),
