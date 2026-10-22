@@ -212,6 +212,10 @@ wss.on("connection", (ws: WebSocket) => {
           known.add("cli-d1");
           send({ method: "_supercharge/sessions/changed", params: {} });
         }
+        if (/mdtable/.test(text)) {
+          say(sid, "Results:\n\n| File | Lines | Status | Notes |\n|:--|--:|:-:|---|\n| `src/acp/client.ts` | 512 | ok | Memory calls fall back to the pre-rename names on method-not-found, which keeps older CLIs working |\n| `src/App.tsx` | 2048 | **changed** | Adds the /memory command with flush and dream sub-options and shows the outcome in a notice |");
+          return reply({ stopReason: "end_turn" });
+        }
         if (/modelfail/.test(text))
           return send({ id: m.id, error: { code: -32603, message: "Internal error", data: "responses API error 400: no upstream owns model old-model" } });
         if (/flaky/.test(text) && !flaked.has(sid)) {

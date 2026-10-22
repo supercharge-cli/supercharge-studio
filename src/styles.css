@@ -469,6 +469,11 @@ button:active:not(:disabled){transform:scale(.97)}
 .att-meta{display:flex;flex-direction:column;min-width:0;font-size:12px}.att-meta b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .att-names{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}.att-name{font-size:12px;opacity:.85;padding:2px 6px;border-radius:6px;background:rgba(127,127,127,.15)}
 .md-codewrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:8px 0;background:var(--code)}
+.md-tablewrap{overflow-x:auto;margin:8px 0;border:1px solid var(--line);border-radius:8px;max-width:100%}
+.md-table{border-collapse:collapse;font-size:.95em;min-width:100%}
+.md-table th,.md-table td{padding:5px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;white-space:normal;overflow-wrap:anywhere;min-width:6ch;max-width:40ch}
+.md-table th{font-weight:600;background:var(--code)}
+.md-table tr:last-child td{border-bottom:0}
 .md-codewrap .md-code{margin:0;border:0;border-radius:0}
 .md-codehead{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 4px 12px;font-size:11.5px;color:var(--muted);border-bottom:1px solid var(--line)}
 .md-copy{background:none;color:var(--muted);padding:2px 8px;font-size:11.5px;border-radius:6px}.md-copy:hover{color:var(--fg);background:var(--hover)}

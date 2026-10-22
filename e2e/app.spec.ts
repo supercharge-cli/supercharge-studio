@@ -374,3 +374,19 @@ test("native side browser hides while an overlay covers it and comes back after"
     return i >= 0 && c.slice(i + 1).some((x: any) => x.cmd === "browser_set_bounds");
   })).toBe(true);
 });
+
+test("renders GFM tables with alignment, inline code and horizontal scroll on narrow screens", async ({ page }) => {
+  await boot(page);
+  await ask(page, "mdtable");
+  const wrap = page.locator(".md-tablewrap").last();
+  await expect(wrap.locator("th")).toHaveText(["File", "Lines", "Status", "Notes"]);
+  await expect(wrap.locator("th").nth(1)).toHaveCSS("text-align", "right");
+  await expect(wrap.locator("td code").first()).toHaveText("src/acp/client.ts");
+  await expect(wrap.locator("td strong")).toHaveText("changed");
+  await expect(page.locator(".md").last()).not.toContainText("|:--");
+  if (process.env.SHOTS) await wrap.screenshot({ path: `${process.env.SHOTS}/table-desktop.png` });
+  await page.setViewportSize({ width: 420, height: 800 });
+  expect(await wrap.evaluate((e) => e.scrollWidth > e.clientWidth && getComputedStyle(e).overflowX === "auto")).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  if (process.env.SHOTS) await wrap.screenshot({ path: `${process.env.SHOTS}/table-narrow.png` });
+});
