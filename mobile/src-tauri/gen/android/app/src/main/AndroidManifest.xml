@@ -49,6 +49,16 @@
             <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
         </activity>
 
+        <!-- Allow / Deny on approval notifications. -->
+        <receiver android:name=".AnswerReceiver" android:exported="false" />
+        <!-- Home-screen widget: agent status at a glance. -->
+        <receiver android:name=".StudioWidget" android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/studio_widget" />
+        </receiver>
+
         <service
             android:name=".KeepAliveService"
             android:exported="false"

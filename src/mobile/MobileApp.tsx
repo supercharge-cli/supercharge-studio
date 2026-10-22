@@ -1,5 +1,6 @@
 import { invoke, isDesktop } from "../lib/desktop";
 import { cleanPermission } from "../lib/labels";
+import { answerOption, permKey } from "../lib/quick";
 import { clip, Deduper, defaultNotifyPrefs, notifyTitle, shouldNotify, type NotifyKind, type NotifyPrefs } from "../lib/notify";
 import type { Hit, SearchIndex } from "../lib/searchIndex";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -38,12 +39,13 @@ export const keyboardOpen = (full: number, now: number) => full - now > 120;
 /** Android keep-alive bridge (absent on iOS and in the browser). */
 /** Local alert for agent events while the app is in the background or another chat is open. */
 const notifyDedupe = new Deduper();
-function phoneNotify(kind: NotifyKind, sid: string, chatTitle: string, body: string, prefs: NotifyPrefs, openSid: string | null) {
+function phoneNotify(kind: NotifyKind, sid: string, chatTitle: string, body: string, prefs: NotifyPrefs, openSid: string | null, key?: string) {
   const visible = document.visibilityState !== "hidden";
   if (!shouldNotify(kind, prefs, { focused: visible, visible, activeChatId: openSid ?? undefined, chatId: sid }) || !notifyDedupe.ok(`${sid}:${kind}`)) return;
   const title = notifyTitle(kind, chatTitle), text = clip(body);
   try {
     const a = (window as any).SuperchargeAndroid;
+    if (key && a?.notifyPermission) { a.notifyPermission(sid, key, title, text, prefs.sound); return; }
     if (a?.notify) { a.notify(sid, title, text, prefs.sound); return; }
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       const n = new Notification(title, { body: text, silent: !prefs.sound });
@@ -160,7 +162,9 @@ export default function MobileApp() {
   const openRef = useRef<string | null>(null);
   openRef.current = open;
   const titleOf = useRef<(sid: string) => string>(() => "chat");
-  const notifyRef = useRef((kind: NotifyKind, sid: string, body: string) => phoneNotify(kind, sid, titleOf.current(sid), body, notifyPrefs.current, openRef.current));
+  const notifyRef = useRef((kind: NotifyKind, sid: string, body: string, key?: string) => phoneNotify(kind, sid, titleOf.current(sid), body, notifyPrefs.current, openRef.current, key));
+  /** Allow / Deny tapped on a notification before the request reached this page (after a reconnect). */
+  const answers = useRef(new Map<string, boolean>());
   const searchIx = useRef<SearchIndex | null>(null);
   const [flashMsg, setFlashMsg] = useState(-1);
   const photoInput = useRef<HTMLInputElement>(null);
@@ -315,7 +319,9 @@ export default function MobileApp() {
         else if (method === "_supercharge/session/context_usage" && p?.sessionId && Number(p?.usedTokens) >= 0) setCtxBySession((all) => ({ ...all, [String(p.sessionId)]: { used: Number(p.usedTokens), max: Number(p.maxTokens) > 0 ? Number(p.maxTokens) : all[String(p.sessionId)]?.max } }));
       },
       onPermissionRequest: (req) => new Promise((resolve) => {
-        notifyRef.current("permission", req.sessionId, `Allow: ${(req as any).toolCall?.title ?? "a tool call"}?`);
+        const key = permKey(req), early = answers.current.get(key), opt = early != null && answerOption(req.options, early);
+        if (opt) { answers.current.delete(key); return resolve({ outcome: "selected", optionId: opt }); }
+        notifyRef.current("permission", req.sessionId, `Allow: ${(req as any).toolCall?.title ?? "a tool call"}?`, key);
         setPermQueue((pending) => [...pending, { req: cleanPermission(req), resolve }]);
       }),
       onReconnected: () => {
@@ -617,6 +623,25 @@ export default function MobileApp() {
     }
     return order.filter((name) => buckets.has(name)).map((name) => ({ name, rows: buckets.get(name)! }));
   })();
+  // Quick actions: notification answers, and the home-screen widget's status line.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const { key, allow } = (e as CustomEvent).detail ?? {};
+      setPermQueue((q) => {
+        const it = q.find((x) => permKey(x.req) === key), opt = it && answerOption(it.req.options, !!allow);
+        if (!opt) { answers.current.set(String(key), !!allow); return q; }
+        it!.resolve({ outcome: "selected", optionId: opt });
+        setToast(allow ? "Allowed" : "Denied");
+        return q.filter((x) => x !== it);
+      });
+    };
+    window.addEventListener("supercharge:answer", on);
+    return () => window.removeEventListener("supercharge:answer", on);
+  }, []);
+  const working = Object.values(busy).filter(Boolean).length;
+  useEffect(() => {
+    try { (window as any).SuperchargeAndroid?.widget?.(JSON.stringify({ working, waiting: permQueue.length, linked: !!creds, title: permQueue[0]?.req.toolCall.title ?? "" })); } catch { /* no widget */ }
+  }, [working, permQueue.length, !!creds]);
   const canSend = (!!draft.trim() || atts.length > 0) && uploading == null;
   const slashQ = /^\/[\w-]*$/.test(draft) ? draft.slice(1).toLowerCase() : null;
   const shownPrompts = slashQ == null ? [] : prompts.filter((p) => p.name.startsWith(slashQ));

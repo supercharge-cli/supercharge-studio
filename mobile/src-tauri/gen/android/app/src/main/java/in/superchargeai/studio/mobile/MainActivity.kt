@@ -40,11 +40,25 @@ class MainActivity : TauriActivity() {
     }
     window.decorView.post { setup(window.decorView) }
     pendingChat = intent?.getStringExtra(EXTRA_CHAT)
+    takeAnswer(intent)
+    live = this
+  }
+
+  /** An Allow / Deny tapped on a notification while the app was closed: answer once the page is up. */
+  private fun takeAnswer(i: Intent?) {
+    val key = i?.getStringExtra(QuickActions.EXTRA_KEY) ?: return
+    pendingAnswer = "{key:" + JSONObject.quote(key) + ",allow:" + i.getBooleanExtra(QuickActions.EXTRA_ALLOW, false) + "}"
+    i.removeExtra(QuickActions.EXTRA_KEY)
+  }
+
+  private fun sendAnswer(json: String) {
+    webView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('supercharge:answer',{detail:$json}))", null)
   }
 
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     intent.getStringExtra(EXTRA_CHAT)?.let { pendingChat = it }
+    takeAnswer(intent)
   }
 
   // Called before the first page load, so the bridge is there from the start.
@@ -64,9 +78,15 @@ class MainActivity : TauriActivity() {
       // Give a cold-started page a moment to mount its listener.
       webView?.postDelayed({ webView?.evaluateJavascript(js, null) }, 400)
     }
+    pendingAnswer?.let { a ->
+      pendingAnswer = null
+      // The page re-asks pending approvals after it reconnects; it keeps this answer until then.
+      webView?.postDelayed({ sendAnswer(a) }, 400)
+    }
   }
 
   override fun onDestroy() {
+    if (live === this) live = null
     setKeepAlive(false)
     super.onDestroy()
   }
@@ -94,8 +114,8 @@ class MainActivity : TauriActivity() {
     try { ContextCompat.startForegroundService(this, i) } catch (e: Exception) { keepingAlive = false }
   }
 
-  /** Agent alert ("Agent updates" channel); tapping it opens that chat. */
-  private fun showAlert(chat: String, title: String, body: String, sound: Boolean) {
+  /** Agent alert ("Agent updates" channel); tapping it opens that chat. `key` adds Allow / Deny buttons. */
+  private fun showAlert(chat: String, title: String, body: String, sound: Boolean, key: String? = null) {
     if (Build.VERSION.SDK_INT >= 33 &&
       ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
       ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42)
@@ -121,8 +141,13 @@ class MainActivity : TauriActivity() {
       .setStyle(Notification.BigTextStyle().bigText(body))
       .setAutoCancel(true)
       .setContentIntent(open)
-      .build()
-    try { nm.notify(chat.hashCode(), n) } catch (e: Exception) { /* blocked */ }
+    if (key != null) {
+      val id = chat.hashCode()
+      n.addAction(Notification.Action.Builder(android.graphics.drawable.Icon.createWithResource(this, R.mipmap.ic_launcher), "Allow", QuickActions.answerIntent(this, key, true, id)).build())
+      n.addAction(Notification.Action.Builder(android.graphics.drawable.Icon.createWithResource(this, R.mipmap.ic_launcher), "Deny", QuickActions.answerIntent(this, key, false, id)).build())
+    }
+    val built = n.build()
+    try { nm.notify(chat.hashCode(), built) } catch (e: Exception) { /* blocked */ }
   }
 
   private fun emitUpdate(json: String) {
@@ -136,6 +161,14 @@ class MainActivity : TauriActivity() {
     @JavascriptInterface
     fun notify(chat: String, title: String, body: String, sound: Boolean) { runOnUiThread { showAlert(chat, title, body, sound) } }
 
+    /** Approval alert with Allow / Deny buttons; `key` comes back in the supercharge:answer event. */
+    @JavascriptInterface
+    fun notifyPermission(chat: String, key: String, title: String, body: String, sound: Boolean) { runOnUiThread { showAlert(chat, title, body, sound, key) } }
+
+    /** Home-screen widget state (JSON: working, waiting, linked, title). */
+    @JavascriptInterface
+    fun widget(json: String) { QuickActions.saveWidget(applicationContext, json) }
+
     /** Background APK download for the in-app update (see AppUpdate). */
     @JavascriptInterface
     fun downloadUpdate(url: String, manifest: String, name: String) { AppUpdate.download(applicationContext, url, manifest, name) { emitUpdate(it) } }
@@ -144,7 +177,18 @@ class MainActivity : TauriActivity() {
     fun installUpdate() { runOnUiThread { AppUpdate.install(this@MainActivity) { emitUpdate(it) } } }
   }
 
+  private var pendingAnswer: String? = null
+
   companion object {
+    private var live: MainActivity? = null
+
+    /** Hand a notification answer to the running page; false when the app isn't open. */
+    fun answer(key: String, allow: Boolean): Boolean {
+      val a = live ?: return false
+      val w = a.webView ?: return false
+      w.post { a.sendAnswer("{key:" + JSONObject.quote(key) + ",allow:" + allow + "}") }
+      return true
+    }
     private const val EXTRA_CHAT = "supercharge_open_chat"
     private const val ALERTS = "supercharge-agent-updates"
     private const val ALERTS_QUIET = "supercharge-agent-updates-quiet"
