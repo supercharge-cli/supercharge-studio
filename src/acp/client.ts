@@ -6,7 +6,7 @@
  * backoff, session/update dispatch, agent→client requests (permissions, fs),
  * cancel, and extension method discovery.
  */
-import { LegacyNotificationDedup, canonicalName } from "./legacyNames";
+import { LegacyNotificationDedup, canonicalName, legacyName } from "./legacyNames";
 import type {
   InitializeResult,
   JsonRpcId,
@@ -482,6 +482,20 @@ export class AcpClient {
   hasExtension(method: string) {
     const m = method.startsWith("_") ? method : `_${method}`;
     return this.extensions.methods.includes(m);
+  }
+
+  /**
+   * Memory upkeep (`_supercharge/memory/flush|dream|rewrite|forget`, params use `sessionId`).
+   * CLIs before 1.3.47 only know the pre-rename name: retry it once on method-not-found.
+   */
+  async memory<T = any>(kind: "flush" | "dream" | "rewrite" | "forget", params: Record<string, unknown>): Promise<T> {
+    const m = `_supercharge/memory/${kind}`;
+    try {
+      return await this.request<T>(m, params);
+    } catch (e) {
+      if (!(e instanceof AcpRpcError) || e.code !== -32601) throw e;
+      return this.request<T>(legacyName(m), params);
+    }
   }
 
   /** Call an advertised extension method (name with or without leading "_"). */

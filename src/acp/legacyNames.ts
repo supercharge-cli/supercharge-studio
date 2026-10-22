@@ -56,7 +56,13 @@ export class LegacyNotificationDedup {
   }
 }
 
-/** Legacy form of a `_supercharge/` name (`bare` gives the capability-key form). Used by tests. */
+/** Session memory mode from a session/new or session/load `_meta` (1.3.47+ key first, then the pre-rename key). */
+export const memoryMode = (meta: Record<string, unknown> | undefined): string | undefined => {
+  const v = meta?.["_supercharge/memoryMode"] ?? meta?.[legacyName("memoryMode", true)];
+  return typeof v === "string" ? v : v && typeof v === "object" ? String((v as any).mode ?? "") || undefined : undefined;
+};
+
+/** Legacy form of a `_supercharge/` name (`bare` gives the capability-key form). Used by tests and fallbacks. */
 export function legacyName(name: string, bare = false): string {
   const n = name.startsWith(SUPERCHARGE_PREFIX) ? name.slice(SUPERCHARGE_PREFIX.length) : name;
   return (bare ? LEGACY_PREFIXES[1] : LEGACY_PREFIXES[0]) + n;

@@ -1190,6 +1190,13 @@ export default function App() {
     { name: "undo", detail: "Undo the last turn: restore files and messages", icon: "refresh", run: () => (cps[0] ? void restoreCheckpoint(cps[0].id) : setNotice("No checkpoint in this chat yet")) },
     { name: "checkpoints", detail: "Restore the folder to before an earlier message", icon: "refresh", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/checkpoints ")); return; } void restoreCheckpoint(a); }, sub: () => cps.map((c) => ({ id: `cp-${c.id}`, label: c.text || "(attachment)", detail: new Date(c.ts).toLocaleTimeString(), value: c.id, icon: "refresh" })) },
     { name: "export", detail: "Export this chat (markdown, json) or copy a share link", icon: "file", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/export ")); return; } if (!["markdown", "json", "link"].includes(a)) return false; void exportChat(a); }, sub: () => [["markdown", "Markdown file"], ["json", "JSON file"], ["link", "Copy a share link"]].map(([v, d]) => ({ id: `x-${v}`, label: v, detail: d, value: v })) },
+    { name: "memory", detail: "Save this chat to memory now (flush) or tidy saved notes (dream)", icon: "file", run: (a) => {
+      if (!a) { setTimeout(() => setDraftCaret("/memory ")); return; }
+      const sid = activeChat?.sessionId, c = clientRef.current;
+      if (!(a === "flush" || a === "dream")) return false;
+      if (!sid || !c) return void setNotice("Open a chat with the agent first");
+      void c.memory(a, { sessionId: sid, session_id: sid }).then((r: any) => setNotice(`Memory ${a}: ${String(r?.outcome ?? "done").replace(/_/g, " ")}`), (e) => setNotice(`Memory ${a} failed: ${e?.message ?? e}`));
+    }, sub: () => [["flush", "Save what this chat learned"], ["dream", "Consolidate saved notes"]].map(([v, d]) => ({ id: `mem-${v}`, label: v, detail: d, value: v })) },
     { name: "pair", detail: "Pair a phone", icon: "phone", run: () => openSettings("devices") },
     { name: "reconnect", detail: "Reconnect to the agent", icon: "refresh", run: () => void connect() },
     ...(isBusy ? [{ name: "stop", detail: "Stop the running turn", icon: "stop", run: () => { stop(); } }] : []),
