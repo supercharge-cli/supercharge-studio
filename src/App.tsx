@@ -1209,7 +1209,7 @@ export default function App() {
     const c = filesRef.current;
     if (c && c.cwd === cwd && !force && Date.now() - c.at < 20000) return c.loading ?? Promise.resolve(c.files);
     const loading = projectFiles(cwd)
-      .then((files) => { filesRef.current = { cwd, at: Date.now(), files }; setFilesErr(""); setMentionVersion((v) => v + 1); return files; })
+      .then((all) => { const files = all.filter((f) => !f.ignored); filesRef.current = { cwd, at: Date.now(), files }; setFilesErr(""); setMentionVersion((v) => v + 1); return files; })
       .catch((e) => { filesRef.current = { cwd, at: Date.now(), files: [] }; setFilesErr(String(e?.message ?? e)); setMentionVersion((v) => v + 1); return [] as FileEntry[]; });
     filesRef.current = { cwd, at: c?.cwd === cwd ? c.at : 0, files: c?.cwd === cwd ? c.files : [], loading };
     return loading;

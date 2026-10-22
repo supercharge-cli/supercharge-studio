@@ -96,8 +96,9 @@ export const agentFreePort = () => invoke<string>("agent_free_port");
 export const agentLogNote = (line: string) => (isDesktop() ? invoke("agent_log_note", { line }).catch(() => {}) : Promise.resolve());
 
 /** Files and folders in a project for `@` mentions (desktop only; the browser build has no file access). */
-export type FileEntry = { path: string; dir: boolean };
+export type FileEntry = { path: string; dir: boolean; partial?: boolean; ignored?: boolean };
 export const projectFiles = (root: string): Promise<FileEntry[]> => (isDesktop() ? invoke<FileEntry[]>("fs_list", { root }) : Promise.resolve([]));
+export const projectDir = (root: string, rel: string): Promise<FileEntry[]> => invoke<FileEntry[]>("fs_list_dir", { root, rel });
 export const projectReadText = (root: string, rel: string, max?: number): Promise<string> => invoke<string>("fs_read_text", { root, rel, max });
 
 /** Start at login + keep running in the tray when the window closes (desktop only). */

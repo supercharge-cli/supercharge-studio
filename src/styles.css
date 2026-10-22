@@ -151,6 +151,9 @@ input.inline{margin:4px 6px;width:calc(100% - 12px);padding:5px 8px;font-size:13
 .file-tree{overflow:auto;border-right:1px solid var(--line);padding-bottom:8px}
 .file-row{display:flex;align-items:center;gap:6px;width:100%;background:none;color:var(--fg);text-align:left;padding:4px 8px;border-radius:6px;font-size:13px}
 .file-row.on,.file-row:hover{background:var(--hover)}
+.file-row.ignored{opacity:.55}
+.file-meta{padding:2px 8px 6px;display:flex;flex-direction:column;gap:2px}.file-meta label{display:flex;gap:6px;align-items:center;cursor:pointer;white-space:nowrap}.file-meta input{width:auto;margin:0}
+.file-more{padding:3px 0;font-size:12px}
 .file-view{margin:0;overflow:auto;padding:12px;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 .tab-picker{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:28px 20px;text-align:center}
 .tab-picker h3{margin:0;font-size:22px}
