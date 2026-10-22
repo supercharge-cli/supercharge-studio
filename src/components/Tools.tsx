@@ -1,17 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { invoke, isDesktop } from "../lib/desktop";
 import type { AppData } from "../lib/store";
 import { promptName, type Prompt } from "../lib/prompts";
 import { Icon } from "./Icon";
 
-export type ToolsTab = "prompts" | "running";
+export type ToolsTab = "prompts" | "running" | "rules";
 /** A chat that is working or has queued messages. */
 export type Run = { chatId: string; title: string; project: string; busy: boolean; queued: { id: string; text: string }[] };
 /** What the tools screen needs from the app. */
-export type ToolsApp = { runs: Run[]; stop: (chatId: string) => void; open: (chatId: string) => void; unqueue: (chatId: string, id: string) => void };
+export type ToolsApp = { cwd?: string; runs: Run[]; stop: (chatId: string) => void; open: (chatId: string) => void; unqueue: (chatId: string, id: string) => void };
 type Props = { data: AppData; update: (f: (d: AppData) => AppData) => void; tab?: ToolsTab; onClose: () => void; app: ToolsApp };
 const TABS: { id: ToolsTab; label: string; icon: string }[] = [
   { id: "prompts", label: "Prompts", icon: "edit" },
   { id: "running", label: "Running", icon: "bolt" },
+  { id: "rules", label: "Rules & memory", icon: "file" },
 ];
 
 /** Editable list of rows; `blank` is a new row, `fields` renders one row's inputs. */
@@ -57,7 +59,45 @@ function Running({ app }: Props) {
   ));
 }
 
-const BODY: Record<ToolsTab, (p: Props) => any> = { prompts: Prompts, running: Running };
+type RuleFile = { scope: string; name: string; path: string; exists: boolean };
+function Rules({ app }: Props) {
+  const cwd = app.cwd ?? "";
+  const [files, setFiles] = useState<RuleFile[]>([]);
+  const [sel, setSel] = useState<RuleFile | null>(null);
+  const [text, setText] = useState(""), [saved, setSaved] = useState(""), [err, setErr] = useState(""), [nn, setNn] = useState("");
+  const refresh = () => invoke<RuleFile[]>("rules_list", { cwd }).then(setFiles, (e) => setErr(String(e)));
+  useEffect(() => { if (isDesktop()) void refresh(); }, [cwd]);
+  const open = (f: RuleFile) => { setSel(f); setErr(""); void invoke<string>("rules_read", { cwd, scope: f.scope, name: f.name }).then((t) => { setText(t); setSaved(t); }, (e) => setErr(String(e))); };
+  const save = (f = sel!, t = text) => invoke("rules_write", { cwd, scope: f.scope, name: f.name, text: t }).then(() => { setSaved(t); void refresh(); }, (e) => setErr(String(e)));
+  if (!isDesktop()) return <p className="muted">Rules files are edited in the desktop app.</p>;
+  return (
+    <>
+      <p className="muted small">The agent reads these at the start of every session: project files from {cwd || "the open project"}, global ones from ~/.supercharge.</p>
+      {files.map((f) => (
+        <button key={f.path} className={`secondary rule-file ${sel?.path === f.path ? "on" : ""}`} data-testid="rule-file" title={f.path} onClick={() => open(f)}>
+          <Icon name="file" /> <span className="grow">{f.scope === "global" ? "~/.supercharge/" : ""}{f.name}</span><span className="muted small">{f.scope}{f.exists ? "" : " · new"}</span>
+        </button>
+      ))}
+      <div className="row">
+        <input placeholder="new-rule" value={nn} data-testid="rule-new" onChange={(e) => setNn(e.target.value.replace(/[^\w.-]/g, "-"))} />
+        {(["project", "global"] as const).map((scope) => <button key={scope} className="secondary" disabled={!nn} onClick={() => { const f = { scope, name: `rules/${nn.replace(/\.md$/, "")}.md`, path: "", exists: false }; setNn(""); setSel(f); setText(""); setSaved(""); }}><Icon name="plus" /> {scope} rule</button>)}
+      </div>
+      {sel && (
+        <div className="card">
+          <strong>{sel.scope === "global" ? "~/.supercharge/" : ""}{sel.name}</strong>
+          <textarea rows={14} className="mono" data-testid="rule-text" value={text} onChange={(e) => setText(e.target.value)} />
+          <div className="row end">
+            {sel.name.startsWith("rules/") && sel.exists && <button className="ghost" onClick={() => void save(sel, "").then(() => setSel(null))}><Icon name="trash" /> Delete</button>}
+            <button data-testid="rule-save" disabled={text === saved && sel.exists} onClick={() => void save()}>Save</button>
+          </div>
+        </div>
+      )}
+      {err && <p className="error-text">{err}</p>}
+    </>
+  );
+}
+
+const BODY: Record<ToolsTab, (p: Props) => any> = { prompts: Prompts, running: Running, rules: Rules };
 
 /** Full-screen Studio tools: prompts, rules, MCP servers, schedules, running tasks, checkpoints. */
 export function ToolsScreen(p: Props) {

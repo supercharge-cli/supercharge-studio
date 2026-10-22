@@ -1118,6 +1118,7 @@ export default function App() {
   const allChats = data.groups.flatMap((g) => g.projects.flatMap((p) => p.chats.map((c) => ({ c, p }))));
   const runs = allChats.filter(({ c }) => busy[c.id] || pq[c.id]?.length).map(({ c, p }) => ({ chatId: c.id, title: c.title, project: p.name, busy: !!busy[c.id], queued: pq[c.id] ?? [] }));
   const toolsApp = {
+    cwd: active ? normCwd(activeChat?.cwd ?? active.project.cwd) : undefined,
     runs,
     stop: (id: string) => { const s = allChats.find((x) => x.c.id === id)?.c.sessionId; if (s) clientRef.current?.cancel(s); },
     open: (id: string) => { const f = allChats.find((x) => x.c.id === id); if (f) { setView("chat"); void selectChat(f.p.id, id); } },
@@ -1142,6 +1143,7 @@ export default function App() {
     } },
     { name: "settings", detail: "Open settings", icon: "settings", run: () => openSettings() },
     { name: "usage", detail: "Token usage and costs", icon: "chart", run: () => setView("usage") },
+    { name: "rules", detail: "Edit AGENTS.md and rules files", icon: "file", run: () => openTools("rules") },
     { name: "tasks", detail: "Running chats and queued messages", icon: "bolt", run: () => openTools("running") },
     { name: "prompts", detail: "Saved prompts and custom commands", icon: "edit", run: () => openTools("prompts") },
     { name: "undo", detail: "Undo the last turn: restore files and messages", icon: "refresh", run: () => (cps[0] ? void restoreCheckpoint(cps[0].id) : setNotice("No checkpoint in this chat yet")) },

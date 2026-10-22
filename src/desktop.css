@@ -18,3 +18,4 @@
 .thread .md p,.thread .md li{line-height:1.6}.thread .md p{margin:.45em 0}
 .ctx-anchor{position:relative;display:inline-flex}.ctx-btn{background:none;border:0;cursor:pointer;min-height:0;border-radius:8px}.ctx-btn:hover{background:var(--hover);color:var(--fg)}
 .tool-row{flex-direction:row;align-items:flex-start}.tool-row>.grow{display:flex;flex-direction:column;gap:8px;white-space:normal;overflow:visible}
+.rule-file{justify-content:flex-start;gap:8px;text-align:left}.rule-file.on{border-color:var(--acc)}
