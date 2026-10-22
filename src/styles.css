@@ -506,3 +506,5 @@ button:active:not(:disabled){transform:scale(.97)}
 .palette-hit{align-items:flex-start}.ph-main{display:flex;flex-direction:column;min-width:0;flex:1;gap:2px}.ph-top{display:flex;gap:8px;align-items:baseline;min-width:0}.ph-top .pi-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ph-date{margin-left:auto;color:var(--muted);font-size:11px;flex:none}.ph-snip{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}.ph-snip mark,.m-snip mark{background:color-mix(in srgb,var(--acc) 30%,transparent);color:inherit;border-radius:3px;padding:0 1px}
 .search-flash{animation:sflash 2s ease}@keyframes sflash{0%,40%{background:color-mix(in srgb,var(--acc) 18%,transparent)}100%{background:transparent}}
 .composer{min-width:0}.composer textarea{min-width:0;flex:1 1 auto}.composer>button,.composer>.round{flex:none}
+
+[data-theme="light"],[data-theme="paper"],[data-theme="sky"],[data-theme="rose"]{--h1:#008000;--h2:#a31515;--h3:#098658;--h4:#af00db;--h5:#0000ff;--h6:#795e26;--h7:#267f99;--h8:#001080;--h11:#0070c1;--h14:#ee0000}

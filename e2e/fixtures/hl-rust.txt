@@ -1,0 +1,15 @@
+use std::collections::HashMap;
+
+#[derive(Debug, Clone)]
+pub struct Cache<'a> {
+    hits: HashMap<&'a str, u64>,
+}
+
+impl<'a> Cache<'a> {
+    pub fn bump(&mut self, key: &'a str) -> u64 {
+        let n = self.hits.entry(key).or_insert(0);
+        *n += 1;
+        println!("{key}: {n}");
+        *n
+    }
+}

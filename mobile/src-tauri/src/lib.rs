@@ -1,6 +1,10 @@
 //! Supercharge Studio mobile companion. All logic lives in the shared web UI
-//! (src/mobile); the native side only adds QR scanning, the pairing deep link and
+//! (src/mobile); the native side only adds QR scanning, syntax highlighting, the pairing deep link and
 //! the phone's own address (to explain "different network" connection failures).
+
+/// Syntax highlighting for chat code blocks, shared with the desktop app.
+#[path = "../../../src-tauri/src/highlight.rs"]
+mod highlight;
 
 /// This phone's IPv4 address on its default network (no packets are sent).
 #[tauri::command]
@@ -15,7 +19,7 @@ fn local_ipv4() -> Option<String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default().invoke_handler(tauri::generate_handler![local_ipv4]);
+    let builder = tauri::Builder::default().invoke_handler(tauri::generate_handler![local_ipv4, highlight::highlight_code]);
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_barcode_scanner::init()).plugin(tauri_plugin_deep_link::init());
     builder.run(tauri::generate_context!()).expect("error while running Supercharge Studio mobile");

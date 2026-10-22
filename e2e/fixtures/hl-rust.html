@@ -1,0 +1,15 @@
+<span class="t5" style="color:var(--h5,#569cd6)">use </span>std::collections::HashMap;
+
+#[<span class="t6" style="color:var(--h6,#dcdcaa)">derive</span>(Debug, Clone)]
+<span class="t5" style="color:var(--h5,#569cd6)">pub struct </span><span class="t7" style="color:var(--h7,#4ec9b0)">Cache</span>&lt;<span class="t5" style="color:var(--h5,#569cd6)">'a</span>&gt; {
+    <span class="t8" style="color:var(--h8,#9cdcfe)">hits</span>: HashMap&lt;&amp;<span class="t5" style="color:var(--h5,#569cd6)">'a str</span>, <span class="t5" style="color:var(--h5,#569cd6)">u64</span>&gt;,
+}
+
+<span class="t5" style="color:var(--h5,#569cd6)">impl</span>&lt;<span class="t5" style="color:var(--h5,#569cd6)">'a</span>&gt; <span class="t7" style="color:var(--h7,#4ec9b0)">Cache</span>&lt;<span class="t5" style="color:var(--h5,#569cd6)">'a</span>&gt; {
+    <span class="t5" style="color:var(--h5,#569cd6)">pub fn </span><span class="t6" style="color:var(--h6,#dcdcaa)">bump</span>(&amp;<span class="t5" style="color:var(--h5,#569cd6)">mut </span><span class="t8" style="color:var(--h8,#9cdcfe)">self</span>, <span class="t8" style="color:var(--h8,#9cdcfe)">key</span>: &amp;<span class="t5" style="color:var(--h5,#569cd6)">'a str</span>) -&gt; <span class="t5" style="color:var(--h5,#569cd6)">u64 </span>{
+        <span class="t5" style="color:var(--h5,#569cd6)">let</span> n = <span class="t11" style="color:var(--h11,#4fc1ff)">self</span>.hits.<span class="t6" style="color:var(--h6,#dcdcaa)">entry</span>(key).<span class="t6" style="color:var(--h6,#dcdcaa)">or_insert</span>(<span class="t3" style="color:var(--h3,#b5cea8)">0</span>);
+        *n += <span class="t3" style="color:var(--h3,#b5cea8)">1</span>;
+        <span class="t6" style="color:var(--h6,#dcdcaa)">println!</span>(<span class="t2" style="color:var(--h2,#ce9178)">&quot;</span><span class="t14" style="color:var(--h14,#d7ba7d)">{key}</span><span class="t2" style="color:var(--h2,#ce9178)">: </span><span class="t14" style="color:var(--h14,#d7ba7d)">{n}</span><span class="t2" style="color:var(--h2,#ce9178)">&quot;</span>);
+        *n
+    }
+}

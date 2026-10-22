@@ -1,0 +1,7 @@
+import json
+
+@cache
+def load(path: str, strict=True) -> dict:
+    """Read a JSON file."""
+    with open(path) as f:  # utf-8
+        return json.load(f) if strict else {}

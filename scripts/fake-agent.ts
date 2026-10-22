@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 /**
  * Scripted fake ACP agent for e2e tests and manual QA.
  *   vite-node scripts/fake-agent.ts -- --port 2420 --secret test
@@ -19,6 +20,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
 import { writeFileSync } from "fs";
 import { fakeSetup } from "./fakeSetup";
+const HL_SAMPLE = ["ts", "rust", "python"].map((l) => "```" + l + "\n" + readFileSync(new URL(`../e2e/fixtures/hl-${l}.txt`, import.meta.url), "utf8") + "```").join("\n\n");
 
 // Session state is per connection, unless FAKE_AGENT_SHARED=1 (one agent serving several
 // clients, as the headless server e2e needs).
@@ -212,6 +214,7 @@ wss.on("connection", (ws: WebSocket) => {
           known.add("cli-d1");
           send({ method: "_supercharge/sessions/changed", params: {} });
         }
+        if (/mdcode/.test(text)) { say(sid, "Highlighted:\n\n" + HL_SAMPLE); return reply({ stopReason: "end_turn" }); }
         if (/mdtable/.test(text)) {
           say(sid, "Results:\n\n| File | Lines | Status | Notes |\n|:--|--:|:-:|---|\n| `src/acp/client.ts` | 512 | ok | Memory calls fall back to the pre-rename names on method-not-found, which keeps older CLIs working |\n| `src/App.tsx` | 2048 | **changed** | Adds the /memory command with flush and dream sub-options and shows the outcome in a notice |");
           return reply({ stopReason: "end_turn" });

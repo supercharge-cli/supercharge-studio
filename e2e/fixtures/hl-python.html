@@ -1,0 +1,7 @@
+<span class="t4" style="color:var(--h4,#c586c0)">import </span>json
+
+@<span class="t6" style="color:var(--h6,#dcdcaa)">cache
+</span><span class="t5" style="color:var(--h5,#569cd6)">def </span><span class="t6" style="color:var(--h6,#dcdcaa)">load</span>(<span class="t8" style="color:var(--h8,#9cdcfe)">path</span>: <span class="t7" style="color:var(--h7,#4ec9b0)">str</span>, <span class="t8" style="color:var(--h8,#9cdcfe)">strict</span>=<span class="t11" style="color:var(--h11,#4fc1ff)">True</span>) -&gt; <span class="t7" style="color:var(--h7,#4ec9b0)">dict</span>:
+    <span class="t1" style="color:var(--h1,#6a9955);font-style:italic">&quot;&quot;&quot;Read a JSON file.&quot;&quot;&quot;
+    </span><span class="t4" style="color:var(--h4,#c586c0)">with </span><span class="t6" style="color:var(--h6,#dcdcaa)">open</span>(path) <span class="t4" style="color:var(--h4,#c586c0)">as </span>f:  <span class="t1" style="color:var(--h1,#6a9955);font-style:italic"># utf-8
+        </span><span class="t4" style="color:var(--h4,#c586c0)">return </span>json.<span class="t6" style="color:var(--h6,#dcdcaa)">load</span>(f) <span class="t4" style="color:var(--h4,#c586c0)">if </span>strict <span class="t4" style="color:var(--h4,#c586c0)">else </span>{}

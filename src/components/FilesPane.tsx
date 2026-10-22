@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FileEntry, projectDir, projectFiles, projectReadText } from "../lib/desktop";
 import { Icon } from "./Icon";
 import { fileIcon } from "../lib/fileIcons";
+import { useHighlight } from "../lib/highlight";
 
 type Node = { name: string; path: string; dir: boolean; ignored?: boolean; partial?: boolean; children: Node[] };
 
@@ -51,6 +52,11 @@ function Row({ node, depth, open, toggle, selected, onOpen }: { node: Node; dept
   );
 }
 
+function FileView({ text, path }: { text: string; path?: string }) {
+  const html = useHighlight(text, path);
+  return html ? <pre className="file-view hl" data-testid="file-view" dangerouslySetInnerHTML={{ __html: html }} /> : <pre className="file-view" data-testid="file-view">{text}</pre>;
+}
+
 /** Project files in the right panel. Click a file to read it. */
 export function FilesPane({ cwd }: { cwd?: string }) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
@@ -59,6 +65,7 @@ export function FilesPane({ cwd }: { cwd?: string }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState("");
   const [body, setBody] = useState("");
+  const [bodyErr, setBodyErr] = useState(false);
   const [reading, setReading] = useState("");
   const [showIgnored, setShowIgnored] = useState(false);
 
@@ -99,8 +106,8 @@ export function FilesPane({ cwd }: { cwd?: string }) {
     setReading(node.path);
     setBody("");
     void projectReadText(cwd, node.path).then(
-      (text) => { setBody(text); setReading(""); },
-      (e) => { setBody(String(e?.message ?? e)); setReading(""); },
+      (text) => { setBody(text); setBodyErr(false); setReading(""); },
+      (e) => { setBody(String(e?.message ?? e)); setBodyErr(true); setReading(""); },
     );
   };
 
@@ -126,7 +133,7 @@ export function FilesPane({ cwd }: { cwd?: string }) {
           {!error && nodes.length === 0 && <p className="muted small">No files.</p>}
           {nodes.map((n) => <Row key={n.path} node={n} depth={0} open={open} toggle={toggle} selected={selected} onOpen={read} />)}
         </div>
-        <pre className="file-view" data-testid="file-view">{reading ? "Reading…" : body || "Select a file to read it."}</pre>
+        <FileView text={reading ? "Reading…" : body || "Select a file to read it."} path={reading || !body || bodyErr ? undefined : selected} />
       </div>
     </div>
   );

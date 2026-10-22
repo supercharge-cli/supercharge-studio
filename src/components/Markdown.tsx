@@ -1,4 +1,5 @@
 import { memo, ReactNode } from "react";
+import { useHighlight } from "../lib/highlight";
 
 /** Minimal, safe Markdown: fences, headings, lists, quotes, inline code/bold/italic/links. No HTML. */
 function inline(s: string, key = 0): ReactNode[] {
@@ -19,10 +20,11 @@ function inline(s: string, key = 0): ReactNode[] {
 }
 
 function CodeBlock({ lang, code }: { lang?: string; code: string }) {
+  const html = useHighlight(code, lang);
   return (
     <div className="md-codewrap">
       <div className="md-codehead"><span>{lang || "code"}</span><button className="md-copy" aria-label="Copy code" onClick={(e) => { void navigator.clipboard?.writeText(code); const b = e.currentTarget; b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1200); }}>Copy</button></div>
-      <pre className="md-code" data-lang={lang || undefined}><code>{code}</code></pre>
+      <pre className="md-code" data-lang={lang || undefined}>{html ? <code className="hl" dangerouslySetInnerHTML={{ __html: html }} /> : <code>{code}</code>}</pre>
     </div>
   );
 }
