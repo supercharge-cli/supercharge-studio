@@ -53,6 +53,8 @@ export type AppData = {
   sidebarView?: "projects" | "groups" | "recents";
   /** Saved prompts, offered as custom slash commands (also on the phone). */
   prompts?: import("./prompts").Prompt[];
+  /** MCP servers the user added; every session gets the enabled ones. */
+  mcpServers?: import("./mcpServers").McpServer[];
   /** CLI sessions the user removed from the sidebar (never re-added by sync). */
   hiddenSessions?: string[];
 };

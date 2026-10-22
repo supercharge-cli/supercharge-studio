@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { invoke, isDesktop } from "../lib/desktop";
 import type { AppData } from "../lib/store";
 import { promptName, type Prompt } from "../lib/prompts";
+import type { McpServer } from "../lib/mcpServers";
 import { Icon } from "./Icon";
 
-export type ToolsTab = "prompts" | "running" | "rules";
+export type ToolsTab = "prompts" | "running" | "rules" | "mcp";
 /** A chat that is working or has queued messages. */
 export type Run = { chatId: string; title: string; project: string; busy: boolean; queued: { id: string; text: string }[] };
 /** What the tools screen needs from the app. */
@@ -14,6 +15,7 @@ const TABS: { id: ToolsTab; label: string; icon: string }[] = [
   { id: "prompts", label: "Prompts", icon: "edit" },
   { id: "running", label: "Running", icon: "bolt" },
   { id: "rules", label: "Rules & memory", icon: "file" },
+  { id: "mcp", label: "MCP servers", icon: "server" },
 ];
 
 /** Editable list of rows; `blank` is a new row, `fields` renders one row's inputs. */
@@ -97,7 +99,24 @@ function Rules({ app }: Props) {
   );
 }
 
-const BODY: Record<ToolsTab, (p: Props) => any> = { prompts: Prompts, running: Running, rules: Rules };
+function Mcp({ data, update }: Props) {
+  const set = (mcpServers: McpServer[]) => update((d) => ({ ...d, mcpServers }));
+  return (
+    <>
+      <p className="muted small">Tool servers the agent can use. Enabled servers attach to new chats and to chats you reopen. Leave Command empty and set a URL for an HTTP server.</p>
+      <Rows id="mcp" rows={data.mcpServers ?? []} set={set} blank={{ name: "", on: true, command: "" }} fields={(s, ch) => (
+        <>
+          <div className="row"><input placeholder="Name" data-testid="mcp-name" value={s.name} onChange={(e) => ch({ name: e.target.value })} /><label className="check"><input type="checkbox" checked={s.on} onChange={(e) => ch({ on: e.target.checked })} /> Enabled</label></div>
+          <div className="row"><input placeholder="Command (npx, uvx, /path/to/server)" data-testid="mcp-command" value={s.command ?? ""} onChange={(e) => ch({ command: e.target.value })} /><input placeholder="Arguments" value={s.args ?? ""} onChange={(e) => ch({ args: e.target.value })} /></div>
+          <input placeholder="or URL (https://…/mcp)" data-testid="mcp-url" value={s.url ?? ""} onChange={(e) => ch({ url: e.target.value })} />
+          <textarea rows={2} placeholder={s.url ? "Headers, one per line (Name: value)" : "Environment, one per line (NAME=value)"} value={s.env ?? ""} onChange={(e) => ch({ env: e.target.value })} />
+        </>
+      )} />
+    </>
+  );
+}
+
+const BODY: Record<ToolsTab, (p: Props) => any> = { prompts: Prompts, running: Running, rules: Rules, mcp: Mcp };
 
 /** Full-screen Studio tools: prompts, rules, MCP servers, schedules, running tasks, checkpoints. */
 export function ToolsScreen(p: Props) {

@@ -17,6 +17,7 @@ import { providerCatalogKey } from "./lib/catalog";
 import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./lib/composer";
 import { resolveTheme, themeList } from "./lib/themes";
 import { expandPrompt } from "./lib/prompts";
+import { acpServers } from "./lib/mcpServers";
 import { chatMentions, transcript } from "./lib/transcript";
 import type { ToolsTab } from "./components/Tools";
 import { extractMentions, fileItems, mentionBlocks } from "./lib/mentions";
@@ -633,7 +634,7 @@ export default function App() {
   async function browserMcp(c: AcpClient): Promise<unknown[]> {
     if (mcpRef.current === undefined) mcpRef.current = await mcpUrl();
     const httpMcp = !!(c.initResult?.agentCapabilities?.mcpCapabilities as any)?.http;
-    return mcpRef.current && httpMcp ? [{ type: "http", name: "supercharge-studio-browser", url: mcpRef.current, headers: [] }] : [];
+    return [...(mcpRef.current && httpMcp ? [{ type: "http", name: "supercharge-studio-browser", url: mcpRef.current, headers: [] }] : []), ...acpServers(dataRef.current.mcpServers, httpMcp)];
   }
 
   /** On model_not_configured, switch the session to a configured model and tell the user. */
@@ -1144,6 +1145,7 @@ export default function App() {
     { name: "settings", detail: "Open settings", icon: "settings", run: () => openSettings() },
     { name: "usage", detail: "Token usage and costs", icon: "chart", run: () => setView("usage") },
     { name: "rules", detail: "Edit AGENTS.md and rules files", icon: "file", run: () => openTools("rules") },
+    { name: "mcp", detail: "Manage MCP servers", icon: "server", run: () => openTools("mcp") },
     { name: "tasks", detail: "Running chats and queued messages", icon: "bolt", run: () => openTools("running") },
     { name: "prompts", detail: "Saved prompts and custom commands", icon: "edit", run: () => openTools("prompts") },
     { name: "undo", detail: "Undo the last turn: restore files and messages", icon: "refresh", run: () => (cps[0] ? void restoreCheckpoint(cps[0].id) : setNotice("No checkpoint in this chat yet")) },
