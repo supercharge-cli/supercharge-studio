@@ -1,16 +1,17 @@
 /** Thin wrappers over the desktop shell. All no-ops / rejects in plain web mode. */
 export const isDesktop = (): boolean => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+const T = () => (window as any).__TAURI_INTERNALS__;
 export async function invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!isDesktop()) throw new Error(`Desktop shell required for ${cmd}`);
-  const core = await import("@tauri-apps/api/core");
-  return core.invoke<T>(cmd, args);
+  // The shell's IPC directly (what @tauri-apps/api/core does), so the API package stays out of the bundle.
+  return T().invoke(cmd, args ?? {});
 }
 
 export async function listen<T>(event: string, cb: (payload: T) => void): Promise<() => void> {
   if (!isDesktop()) return () => {};
-  const ev = await import("@tauri-apps/api/event");
-  return ev.listen<T>(event, (e) => cb(e.payload));
+  const eventId = await invoke<number>("plugin:event|listen", { event, target: { kind: "Any" }, handler: T().transformCallback((e: { payload: T }) => cb(e.payload)) });
+  return () => { (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__?.unregisterListener(event, eventId); void invoke("plugin:event|unlisten", { event, eventId }).catch(() => {}); };
 }
 
 /** Attach to a running `supercharge agent serve` or start one. */

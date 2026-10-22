@@ -1,3 +1,4 @@
+import { invoke, isDesktop } from "../lib/desktop";
 import { cleanPermission } from "../lib/labels";
 import { clip, Deduper, defaultNotifyPrefs, notifyTitle, shouldNotify, type NotifyKind, type NotifyPrefs } from "../lib/notify";
 import type { Hit, SearchIndex } from "../lib/searchIndex";
@@ -950,8 +951,7 @@ export function connLabel(c: ConnectionState): string {
 /** The phone's Wi-Fi IPv4 address from the native side, if available (used only for error messages). */
 async function phoneIp(): Promise<string | undefined> {
   try {
-    const core = await import("@tauri-apps/api/core");
-    if (!(core as any).isTauri?.() && !(window as any).__TAURI_INTERNALS__) return undefined;
-    return (await core.invoke<string | null>("local_ipv4")) ?? undefined;
+    if (!isDesktop()) return undefined;
+    return (await invoke<string | null>("local_ipv4")) ?? undefined;
   } catch { return undefined; }
 }
