@@ -512,6 +512,8 @@ export default function App() {
     mq?.addEventListener?.("change", apply);
     return () => mq?.removeEventListener?.("change", apply);
   }, [theme]);
+  const fontSize = data.settings.fontSize;
+  useEffect(() => { document.documentElement.style.setProperty("--fs", `${fontSize ?? 14}px`); }, [fontSize]);
 
   // First desktop run: optional test provider from the environment (key goes straight to secure storage).
   useEffect(() => {
@@ -1171,6 +1173,7 @@ export default function App() {
       sub: modelOption?.options?.length ? () => modelOption!.options!.map((o) => ({ id: `m-${o.value}`, label: o.name ?? o.value, detail: o.value === modelOption!.currentValue ? "current" : o.name && o.name !== o.value ? o.value : undefined, value: o.value, icon: o.value === modelOption!.currentValue ? "check" : undefined })) : undefined,
     },
     { name: "theme", detail: "Change the color theme", icon: theme === "light" ? "sun" : "moon", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/theme ")); return; } const t = themeList.find((x) => x.id === a.toLowerCase() || x.name.toLowerCase() === a.toLowerCase()); if (!t) return false; setTheme(t.id); }, sub: () => themeList.map((t) => ({ id: `t-${t.id}`, label: t.name, detail: t.id === theme ? "current" : t.dark ? "dark" : "light", value: t.id, icon: t.id === theme ? "check" : undefined })) },
+    { name: "font", detail: "Chat text size", icon: "sliders", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/font ")); return; } const n = parseInt(a); if (!(n >= 12 && n <= 20)) return false; update((d) => ({ ...d, settings: { ...d.settings, fontSize: n } })); }, sub: () => [12, 13, 14, 15, 16, 18, 20].map((n) => ({ id: `f-${n}`, label: `${n}px`, detail: n === (fontSize ?? 14) ? "current" : undefined, value: String(n), icon: n === (fontSize ?? 14) ? "check" : undefined })) },
     { name: "help", detail: "Show commands and shortcuts", icon: "command", run: () => {
       const lines = [...nativeCommands.map((c) => `- \`/${c.name}\` ${c.detail}`), ...commands.map((c) => `- \`/${c.name}\` ${c.description ?? ""} (agent)`)];
       const cid = activeChat?.id ?? (active ? newChat(active.project.id) : undefined);

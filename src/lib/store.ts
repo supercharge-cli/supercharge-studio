@@ -34,6 +34,8 @@ export type Settings = {
   providers?: Provider[];
   activeProviderId?: string;
   theme?: Theme;
+  /** Chat text size in px (default 14). */
+  fontSize?: number;
   onboarded?: boolean;
   /** When the agent at `bind` rejects our key: "own" = run our own managed agent on `ownBind` (default), "key" = use the key the user entered. */
   agentChoice?: "own" | "key";

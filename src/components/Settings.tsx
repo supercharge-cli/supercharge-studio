@@ -220,6 +220,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
 
         {tab === "appearance" && (
           <div className="stack">
+            <label>Chat text size · {s.fontSize ?? 14}px<input type="range" min={12} max={20} step={1} data-testid="font-size" value={s.fontSize ?? 14} onChange={(e) => set({ ...s, fontSize: +e.target.value })} /></label>
             <div className="theme-grid" role="radiogroup" aria-label="Theme">
               {themeList.map((t) => (
                 <button key={t.id} role="radio" aria-checked={(s.theme ?? "dark") === t.id} className={`theme-card ${(s.theme ?? "dark") === t.id ? "on" : ""}`} data-testid={`theme-${t.id}`} onClick={() => set({ ...s, theme: t.id })}>
