@@ -5,7 +5,7 @@ import { parseAgentUrl, uid } from "../lib/store";
 import type { ConfigOption } from "../acp/types";
 import { Icon } from "./Icon";
 import { themeList } from "../lib/themes";
-const ProviderSetup = lazy(() => import("./ProviderSetup"));
+import ProviderSetup from "./ProviderSetup";
 import { agentInfo, agentLog, providerDiscoverModels, type AgentInfo, type DiscoveredModel } from "../lib/desktop";
 
 type Props = {

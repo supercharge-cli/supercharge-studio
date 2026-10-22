@@ -14,7 +14,7 @@ import type { Size } from "../browser/viewport";
 // The terminal pulls in xterm; load it only when the tab is opened.
 const TerminalPane = lazy(() => import("./TerminalPane").then((m) => ({ default: m.TerminalPane })));
 
-const ChangesPane = lazy(() => import("./ChangesPane").then((m) => ({ default: m.ChangesPane })));
+import { ChangesPane } from "./ChangesPane";
 import { git, gitAvailable } from "../lib/git";
 
 type PanelTab = "browser" | "plan" | "terminal" | "files" | "changes";

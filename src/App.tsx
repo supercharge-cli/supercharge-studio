@@ -7,7 +7,7 @@ import { ModeControl } from "./components/ModeControl";
 import { StdioTransport } from "./acp/tauriStdio";
 import { browser, browserClientMeta } from "./browser/bridge";
 const BrowserPanel = lazy(() => import("./components/BrowserPanel").then((m) => ({ default: m.BrowserPanel })));
-const CliSetup = lazy(() => import("./components/CliSetup"));
+const CliSetup = lazy(() => import("./screens").then((m) => ({ default: m.CliSetup })));
 import type { Command } from "./components/CommandPalette";
 const CommandPalette = lazy(() => import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })));
 import { ComposerMenu } from "./components/ComposerMenu";
@@ -22,17 +22,17 @@ import { chatMentions, transcript } from "./lib/transcript";
 import type { ToolsTab } from "./components/Tools";
 import { extractMentions, fileItems, mentionBlocks } from "./lib/mentions";
 import { defaultGatewayPrefs, DevicesSection, gatewayBind, urlPort } from "./components/Devices";
-const SettingsScreen = lazy(() => import("./components/Settings").then((m) => ({ default: m.SettingsScreen })));
+const SettingsScreen = lazy(() => import("./screens").then((m) => ({ default: m.SettingsScreen })));
 // Warm the lazy screens once the app is idle so the first open is instant.
 const idle = (globalThis as any).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 1200));
-if (typeof window !== "undefined") idle(() => { void import("./components/Settings"); void import("./components/Usage"); });
-const UsageScreen = lazy(() => import("./components/Usage").then((m) => ({ default: m.UsageScreen })));
+if (typeof window !== "undefined") idle(() => { void import("./screens"); });
+const UsageScreen = lazy(() => import("./screens").then((m) => ({ default: m.UsageScreen })));
 import { transition } from "./lib/motion";
 import { Icon } from "./components/Icon";
 import { Markdown } from "./components/Markdown";
 import { PermissionModal } from "./components/Permission";
 import { LogoMark } from "./components/LogoMark";
-const PlanApprovalModal = lazy(() => import("./components/PlanApproval").then((m) => ({ default: m.PlanApprovalModal })));
+const PlanApprovalModal = lazy(() => import("./screens").then((m) => ({ default: m.PlanApprovalModal })));
 import { Sidebar } from "./components/Sidebar";
 import { ToolCard } from "./components/ToolCard";
 import { VirtualList } from "./components/VirtualList";
@@ -51,10 +51,10 @@ import { isTerminalTarget } from "./lib/terminalInput";
 import { useBrowserOverlay } from "./browser/visibility";
 import { agentModel, saveSetupModel, sessionModel, setupModel, type ModelOpt } from "./lib/modelFallback";
 import { APP_VERSION, checkUpdate, pickAsset, UPDATE_EVERY, type AvailableUpdate } from "./lib/updates";
-const UpdateBanner = lazy(() => import("./components/UpdateBanner"));
+const UpdateBanner = lazy(() => import("./screens").then((m) => ({ default: m.UpdateBanner })));
 
 type View = "chat" | "settings" | "usage" | "tools";
-const ToolsScreen = lazy(() => import("./components/Tools").then((m) => ({ default: m.ToolsScreen })));
+const ToolsScreen = lazy(() => import("./screens").then((m) => ({ default: m.ToolsScreen })));
 type PermState = { req: PermissionRequest; resolve: (o: PermissionOutcome) => void; token?: number };
 type PlanAsk = { req: PlanApprovalRequest; resolve: (r: PlanApprovalResult) => void };
 
@@ -949,7 +949,7 @@ export default function App() {
       if (!agentHas) { setNotice(`/${sl.name}: unknown option “${sl.args}”`); return; }
     }
     if (text.startsWith("supercharge-studio://import#") && active) {
-      const s = await import("./lib/exportChat").then((m) => m.readShareLink(text));
+      const s = await import("./screens").then((m) => m.exportChat.readShareLink(text));
       if (!s) return setNotice("That share link is damaged");
       setDraftCaret("");
       const id = newChat(active.project.id, true, { title: `Shared: ${s.title}`.slice(0, 60), summary: transcript(s.items, 8000) });
@@ -1126,7 +1126,7 @@ export default function App() {
   const cps = [...(activeChat?.checkpoints ?? [])].reverse();
   async function exportChat(how: string) {
     if (!active || !activeChat) return setNotice("Open a chat to export it");
-    const m = await import("./lib/exportChat"), items = sess.items, title = activeChat.title;
+    const m = (await import("./screens")).exportChat, items = sess.items, title = activeChat.title;
     if (how === "link") { await navigator.clipboard.writeText(await m.shareLink(title, items, active.project.name)).catch(() => {}); return setNotice("Share link copied. Paste it into Supercharge Studio's message box to open the chat."); }
     const md = how !== "json", text = md ? m.toMarkdown(title, items) : m.toJson({ title, project: active.project.name, items }), name = `${title}.${md ? "md" : "json"}`;
     if (isDesktop()) return invoke<string>("export_save", { name, text }).then((p) => setNotice(`Saved to ${p}`), (e) => setNotice(`Export failed: ${e}`));
