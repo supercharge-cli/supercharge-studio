@@ -35,6 +35,7 @@
     <color type="primary" scheme_preference="dark">#1a1a1a</color>
   </branding>
   <releases>
+    <release version="1.0.19" date="2026-10-22"><description><p>Prompt library, @-mentions of chats, checkpoints with undo, running tasks, rules and MCP editors, chat export and share links, scheduled runs, text size, phone quick actions and memory upkeep.</p></description></release>
     <release version="1.0.18" date="2026-10-18"><description><p>In-app updates: downloads and installs in the background, then restarts on one click.</p></description></release>
     <release version="1.0.17" date="2026-10-18"><description><p>Model picker stays after provider setup; Studio no longer locks the CLI to one model.</p></description></release>
     <release version="1.0.16" date="2026-10-17"><description><p>Provider setup in the app, matching the CLI setup on desktop and phone.</p></description></release>
