@@ -125,7 +125,7 @@ function Schedules({ data, update }: Props) {
   const set = (schedules: Schedule[]) => update((d) => ({ ...d, schedules: schedules.map((s, i) => (JSON.stringify(s) === JSON.stringify(d.schedules?.[i]) ? s : { ...s, next: undefined })) }));
   return (
     <>
-      <p className="muted small">Each run starts a new chat in its project and sends the prompt. Runs happen while Studio is open (keep it running in the background from Settings → Agent).</p>
+      <p className="muted small">Each run starts a new chat in its project and sends the prompt. Runs happen while Studio is open (keep it running in the background from Settings → Devices).</p>
       <Rows id="sched" rows={data.schedules ?? []} set={set} blank={{ id: uid(), projectId: data.activeProjectId ?? projects[0]?.id ?? "", prompt: "", on: true, every: 60 }} fields={(s, ch) => (
         <>
           <textarea rows={2} placeholder="Prompt, e.g. Check the CI status and summarize failures" data-testid="sched-prompt" value={s.prompt} onChange={(e) => ch({ prompt: e.target.value })} />

@@ -1328,6 +1328,7 @@ export default function App() {
       { id: "new-wt", title: "New chat in new worktree", icon: "plus", run: () => { if (active) void newWorktreeChat(active.project.id); } },
       { id: "changes", title: "Review changes", icon: "code", run: () => openPanel("changes") },
       { id: "settings", title: "Open settings", hint: "Ctrl ,", icon: "settings", run: () => openSettings() },
+      { id: "tools", title: "Open tools: prompts, rules, MCP servers, schedules", icon: "sliders", run: () => openTools("prompts") },
       { id: "usage", title: "Open usage & costs", hint: "Ctrl Shift U", icon: "chart", run: () => setView("usage") },
       { id: "theme", title: `Switch to ${theme === "light" ? "dark" : "light"} theme`, icon: theme === "light" ? "moon" : "sun", run: () => setTheme(theme === "light" ? "dark" : "light") },
       ...themeList.map((t) => ({ id: `theme-${t.id}`, title: `Theme: ${t.name}`, group: "Themes", icon: t.dark ? "moon" : "sun", run: () => setTheme(t.id) })),
