@@ -17,6 +17,7 @@ import { providerCatalogKey } from "./lib/catalog";
 import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./lib/composer";
 import { resolveTheme, themeList } from "./lib/themes";
 import { expandPrompt } from "./lib/prompts";
+import { chatMentions, transcript } from "./lib/transcript";
 import type { ToolsTab } from "./components/Tools";
 import { extractMentions, fileItems, mentionBlocks } from "./lib/mentions";
 import { defaultGatewayPrefs, DevicesSection, gatewayBind, urlPort } from "./components/Devices";
@@ -823,6 +824,10 @@ export default function App() {
     const c = clientRef.current;
     if (!c) throw new Error("Agent not connected");
     text = expandPrompt(dataRef.current.prompts, text) ?? text;
+    for (const id of chatMentions(text)) {
+      const o = dataRef.current.groups.flatMap((g) => g.projects.flatMap((p) => p.chats)).find((x) => x.id === id);
+      if (o) extra = [...extra, { type: "text", text: `Earlier chat “${o.title}”:\n\n${transcript(sessionsRef.current[id]?.items ?? [], 12000) || "(not loaded on this computer)"}`, _att: o.title }];
+    }
     const chat = findProject(dataRef.current, projectId)?.project.chats.find((x) => x.id === chatId);
     if (chat?.title === "New chat")
       update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, title: text.slice(0, 40) } : x)) })));
@@ -1122,13 +1127,14 @@ export default function App() {
     filesRef.current = { cwd, at: c?.cwd === cwd ? c.at : 0, files: c?.cwd === cwd ? c.files : [], loading };
     return loading;
   }
-  const mentionTitle = active ? `Files in ${active.project.name}` : "Files";
+  const mentionTitle = active ? `Files and chats in ${active.project.name}` : "Files";
   const mentionEmpty = !isDesktop() ? "File mentions need the desktop app" : filesErr ? `Can't list files: ${filesErr}` : filesRef.current?.loading && !filesRef.current.files.length ? "Loading files…" : "No matching files or folders";
   const mentionItems = (q: string): MenuItem[] => {
     if (!active) return [];
     void loadFiles(active.project.cwd);
     const c = filesRef.current;
-    return c && c.cwd === active.project.cwd ? fileItems(c.files, q) : [];
+    const chats = filterItems(active.project.chats.filter((x) => x.id !== activeChat?.id).map((x) => ({ id: `c-${x.id}`, label: x.title, detail: "chat", icon: "chat", group: "Chats", value: `chat:${x.id}` })), q, 8);
+    return [...(c && c.cwd === active.project.cwd ? fileItems(c.files, q) : []), ...chats];
   };
   function pickMention(it: MenuItem, m: { start: number; end: number }, drill = false) {
     if (drill && it.value.endsWith("/")) {
