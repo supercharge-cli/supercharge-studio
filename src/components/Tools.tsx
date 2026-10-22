@@ -3,10 +3,15 @@ import type { AppData } from "../lib/store";
 import { promptName, type Prompt } from "../lib/prompts";
 import { Icon } from "./Icon";
 
-export type ToolsTab = "prompts";
-type Props = { data: AppData; update: (f: (d: AppData) => AppData) => void; tab?: ToolsTab; onClose: () => void };
+export type ToolsTab = "prompts" | "running";
+/** A chat that is working or has queued messages. */
+export type Run = { chatId: string; title: string; project: string; busy: boolean; queued: { id: string; text: string }[] };
+/** What the tools screen needs from the app. */
+export type ToolsApp = { runs: Run[]; stop: (chatId: string) => void; open: (chatId: string) => void; unqueue: (chatId: string, id: string) => void };
+type Props = { data: AppData; update: (f: (d: AppData) => AppData) => void; tab?: ToolsTab; onClose: () => void; app: ToolsApp };
 const TABS: { id: ToolsTab; label: string; icon: string }[] = [
   { id: "prompts", label: "Prompts", icon: "edit" },
+  { id: "running", label: "Running", icon: "bolt" },
 ];
 
 /** Editable list of rows; `blank` is a new row, `fields` renders one row's inputs. */
@@ -39,7 +44,20 @@ function Prompts({ data, update }: Props) {
   );
 }
 
-const BODY: Record<ToolsTab, (p: Props) => any> = { prompts: Prompts };
+function Running({ app }: Props) {
+  if (!app.runs.length) return <p className="muted">Nothing is running. Chats that are working, queued messages and scheduled runs show up here.</p>;
+  return app.runs.map((r) => (
+    <div className="card" key={r.chatId} data-testid="run-row">
+      <div className="row"><i className={`dot ${r.busy ? "ok" : ""}`} /><strong className="grow">{r.title}</strong><span className="muted small">{r.project} · {r.busy ? "working" : "waiting"}</span>
+        <button className="secondary compact" onClick={() => app.open(r.chatId)}>Open</button>
+        {r.busy && <button className="secondary compact" data-testid="run-stop" onClick={() => app.stop(r.chatId)}><Icon name="stop" /> Stop</button>}
+      </div>
+      {r.queued.map((q) => <div className="row small" key={q.id}><span className="grow muted">Queued: {q.text}</span><button className="ghost icon" aria-label="Remove from queue" onClick={() => app.unqueue(r.chatId, q.id)}><Icon name="x" /></button></div>)}
+    </div>
+  ));
+}
+
+const BODY: Record<ToolsTab, (p: Props) => any> = { prompts: Prompts, running: Running };
 
 /** Full-screen Studio tools: prompts, rules, MCP servers, schedules, running tasks, checkpoints. */
 export function ToolsScreen(p: Props) {

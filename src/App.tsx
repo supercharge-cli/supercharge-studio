@@ -1115,6 +1115,14 @@ export default function App() {
     setDraftCaret(cp.text);
   }
   const cps = [...(activeChat?.checkpoints ?? [])].reverse();
+  const allChats = data.groups.flatMap((g) => g.projects.flatMap((p) => p.chats.map((c) => ({ c, p }))));
+  const runs = allChats.filter(({ c }) => busy[c.id] || pq[c.id]?.length).map(({ c, p }) => ({ chatId: c.id, title: c.title, project: p.name, busy: !!busy[c.id], queued: pq[c.id] ?? [] }));
+  const toolsApp = {
+    runs,
+    stop: (id: string) => { const s = allChats.find((x) => x.c.id === id)?.c.sessionId; if (s) clientRef.current?.cancel(s); },
+    open: (id: string) => { const f = allChats.find((x) => x.c.id === id); if (f) { setView("chat"); void selectChat(f.p.id, id); } },
+    unqueue: (id: string, q: string) => setPq((all) => ({ ...all, [id]: (all[id] ?? []).filter((x) => x.id !== q) })),
+  };
   type Native = { name: string; detail: string; icon: string; run: (args: string) => boolean | void; sub?: () => MenuItem[] };
   const nativeCommands: Native[] = [
     { name: "new", detail: "Start a new chat in this project", icon: "plus", run: () => { if (active) newChat(active.project.id); } },
@@ -1134,6 +1142,7 @@ export default function App() {
     } },
     { name: "settings", detail: "Open settings", icon: "settings", run: () => openSettings() },
     { name: "usage", detail: "Token usage and costs", icon: "chart", run: () => setView("usage") },
+    { name: "tasks", detail: "Running chats and queued messages", icon: "bolt", run: () => openTools("running") },
     { name: "prompts", detail: "Saved prompts and custom commands", icon: "edit", run: () => openTools("prompts") },
     { name: "undo", detail: "Undo the last turn: restore files and messages", icon: "refresh", run: () => (cps[0] ? void restoreCheckpoint(cps[0].id) : setNotice("No checkpoint in this chat yet")) },
     { name: "checkpoints", detail: "Restore the folder to before an earlier message", icon: "refresh", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/checkpoints ")); return; } void restoreCheckpoint(a); }, sub: () => cps.map((c) => ({ id: `cp-${c.id}`, label: c.text || "(attachment)", detail: new Date(c.ts).toLocaleTimeString(), value: c.id, icon: "refresh" })) },
@@ -1416,7 +1425,7 @@ export default function App() {
         />
         </Suspense>
       )}
-      {view === "tools" && <Suspense fallback={<ScreenSkeleton />}><ToolsScreen data={data} update={update} tab={toolsTab} onClose={() => setView("chat")} /></Suspense>}
+      {view === "tools" && <Suspense fallback={<ScreenSkeleton />}><ToolsScreen data={data} update={update} tab={toolsTab} onClose={() => setView("chat")} app={toolsApp} /></Suspense>}
       {view === "usage" && (
         <Suspense fallback={<ScreenSkeleton />}>
           <UsageScreen records={usage} pricing={pricing} onPricing={(p) => { setPricing(p); savePricing(p); }} onClear={() => setUsage([])} onClose={() => setView("chat")} />
@@ -1439,6 +1448,7 @@ export default function App() {
               )}
             </div>
             <div className="spacer" />
+            {runs.length > 0 && <button className="pill" data-testid="runs-pill" title="Running and queued" onClick={() => openTools("running")}><Icon name="bolt" size={12} /> {runs.length}</button>}
             {devicesOnline > 0 && <span className="pill" title="Paired devices online"><Icon name="phone" size={12} /> {devicesOnline}</span>}
             <span className={`status ${conn === "open" ? "ok" : "bad"}`} title={status}><i className="dot" />{conn}</span>
             {conn !== "open" && <button className="secondary" onClick={() => void connect()}><Icon name="refresh" /> Connect</button>}
