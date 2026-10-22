@@ -118,6 +118,8 @@ test("new branch uses the in-app dialog with inline validation, Esc cancels and 
   await page.getByTestId("git-branch").selectOption("__new");
   const dlg = page.getByTestId("name-dialog");
   await expect(dlg).toBeVisible();
+  // The dialog's key handler attaches once the input has focus; pressing earlier can race it.
+  await expect(page.getByTestId("name-input")).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(dlg).toHaveCount(0);
   await page.getByTestId("git-branch").selectOption("__new");
