@@ -459,7 +459,8 @@ pub fn run() {
             checkpoint::checkpoint_restore,
             rules::rules_list,
             rules::rules_read,
-            rules::rules_write, files::fs_read_text, background::background_get, background::background_set, upload_chunk, upload_rewrite,
+            rules::rules_write,
+            files::export_save, files::fs_read_text, background::background_get, background::background_set, upload_chunk, upload_rewrite,
             terminal::term_open, terminal::term_write, terminal::term_resize, terminal::term_close,
             pick::pick_folder,
             git::git_status, git::git_diff_file, git::git_diff_all, git::git_revert_hunk, git::git_restore_file, git::git_stage, git::git_commit, git::git_branches, git::git_checkout, git::git_push, git::git_open_pr, git::git_worktree_add, git::git_worktree_merge, git::git_worktree_remove

@@ -948,6 +948,14 @@ export default function App() {
       if (!(agentHas && sl.args && !nativeByName.get(sl.name)!.sub) && runNative(sl.name, sl.args)) { setDraftCaret(""); return; }
       if (!agentHas) { setNotice(`/${sl.name}: unknown option “${sl.args}”`); return; }
     }
+    if (text.startsWith("supercharge-studio://import#") && active) {
+      const s = await import("./lib/exportChat").then((m) => m.readShareLink(text));
+      if (!s) return setNotice("That share link is damaged");
+      setDraftCaret("");
+      const id = newChat(active.project.id, true, { title: `Shared: ${s.title}`.slice(0, 60), summary: transcript(s.items, 8000) });
+      setSessions((all) => ({ ...all, [id]: { ...emptySession(), items: [...s.items, { kind: "system", text: "Imported from a share link. Messages you send here continue from this conversation." }] } }));
+      return;
+    }
     if ((!text && !atts.length) || !clientRef.current || !active) return;
     if (activeChat && busyRef.current[activeChat.id] && !atts.length) {
       setDraft("");
@@ -1116,6 +1124,17 @@ export default function App() {
     setDraftCaret(cp.text);
   }
   const cps = [...(activeChat?.checkpoints ?? [])].reverse();
+  async function exportChat(how: string) {
+    if (!active || !activeChat) return setNotice("Open a chat to export it");
+    const m = await import("./lib/exportChat"), items = sess.items, title = activeChat.title;
+    if (how === "link") { await navigator.clipboard.writeText(await m.shareLink(title, items, active.project.name)).catch(() => {}); return setNotice("Share link copied. Paste it into Supercharge Studio's message box to open the chat."); }
+    const md = how !== "json", text = md ? m.toMarkdown(title, items) : m.toJson({ title, project: active.project.name, items }), name = `${title}.${md ? "md" : "json"}`;
+    if (isDesktop()) return invoke<string>("export_save", { name, text }).then((p) => setNotice(`Saved to ${p}`), (e) => setNotice(`Export failed: ${e}`));
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: md ? "text/markdown" : "application/json" }));
+    a.download = name;
+    a.click();
+  }
   const allChats = data.groups.flatMap((g) => g.projects.flatMap((p) => p.chats.map((c) => ({ c, p }))));
   const runs = allChats.filter(({ c }) => busy[c.id] || pq[c.id]?.length).map(({ c, p }) => ({ chatId: c.id, title: c.title, project: p.name, busy: !!busy[c.id], queued: pq[c.id] ?? [] }));
   const toolsApp = {
@@ -1150,6 +1169,7 @@ export default function App() {
     { name: "prompts", detail: "Saved prompts and custom commands", icon: "edit", run: () => openTools("prompts") },
     { name: "undo", detail: "Undo the last turn: restore files and messages", icon: "refresh", run: () => (cps[0] ? void restoreCheckpoint(cps[0].id) : setNotice("No checkpoint in this chat yet")) },
     { name: "checkpoints", detail: "Restore the folder to before an earlier message", icon: "refresh", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/checkpoints ")); return; } void restoreCheckpoint(a); }, sub: () => cps.map((c) => ({ id: `cp-${c.id}`, label: c.text || "(attachment)", detail: new Date(c.ts).toLocaleTimeString(), value: c.id, icon: "refresh" })) },
+    { name: "export", detail: "Export this chat (markdown, json) or copy a share link", icon: "file", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/export ")); return; } if (!["markdown", "json", "link"].includes(a)) return false; void exportChat(a); }, sub: () => [["markdown", "Markdown file"], ["json", "JSON file"], ["link", "Copy a share link"]].map(([v, d]) => ({ id: `x-${v}`, label: v, detail: d, value: v })) },
     { name: "pair", detail: "Pair a phone", icon: "phone", run: () => openSettings("devices") },
     { name: "reconnect", detail: "Reconnect to the agent", icon: "refresh", run: () => void connect() },
     ...(isBusy ? [{ name: "stop", detail: "Stop the running turn", icon: "stop", run: () => { stop(); } }] : []),

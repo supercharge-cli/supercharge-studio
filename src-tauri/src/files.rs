@@ -106,3 +106,40 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 }
+
+/// Save an exported chat into the Downloads folder (or home) without overwriting; returns the path.
+#[tauri::command]
+pub fn export_save(name: String, text: String) -> Result<String, String> {
+    let dir = dirs::download_dir().or_else(dirs::home_dir).ok_or("No Downloads folder")?;
+    export_into(&dir, &name, &text)
+}
+
+fn export_into(dir: &Path, name: &str, text: &str) -> Result<String, String> {
+    let clean: String = name.chars().map(|c| if c.is_alphanumeric() || " -_.".contains(c) { c } else { '-' }).collect();
+    let clean = clean.trim().trim_start_matches('.');
+    let (stem, ext) = clean.rsplit_once('.').unwrap_or((clean, "txt"));
+    let stem = if stem.is_empty() { "chat" } else { stem };
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    for i in 0..1000 {
+        let p = dir.join(if i == 0 { format!("{stem}.{ext}") } else { format!("{stem} ({i}).{ext}") });
+        if let Ok(mut f) = std::fs::OpenOptions::new().write(true).create_new(true).open(&p) {
+            use std::io::Write;
+            f.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+            return Ok(p.to_string_lossy().into_owned());
+        }
+    }
+    Err("Could not pick a file name".into())
+}
+
+#[cfg(test)]
+mod export_tests {
+    #[test]
+    fn export_never_overwrites_and_cleans_names() {
+        let d = std::env::temp_dir().join(format!("sc-export-{}", std::process::id()));
+        let a = super::export_into(&d, "../My chat?.md", "one").unwrap();
+        let b = super::export_into(&d, "../My chat?.md", "two").unwrap();
+        assert!(a.ends_with("My chat-.md") && b.ends_with("My chat- (1).md"), "{a} {b}");
+        assert_eq!(std::fs::read_to_string(&a).unwrap(), "one");
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
