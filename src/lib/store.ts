@@ -47,6 +47,8 @@ export type AppData = {
   schema?: number;
   /** Sidebar layout: "projects" (one entry per folder, like the CLI) or "groups" (app-only groups). */
   sidebarView?: "projects" | "groups" | "recents";
+  /** Saved prompts, offered as custom slash commands (also on the phone). */
+  prompts?: import("./prompts").Prompt[];
   /** CLI sessions the user removed from the sidebar (never re-added by sync). */
   hiddenSessions?: string[];
 };

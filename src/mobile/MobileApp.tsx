@@ -152,6 +152,8 @@ export default function MobileApp() {
   const [err, setErr] = useState("");
   const [list, setList] = useState<Sess[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  /** The computer's saved prompts (custom slash commands); the computer expands them. */
+  const [prompts, setPrompts] = useState<{ name: string; text: string }[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   // Notifications + message search (local index of chats opened on this phone).
   const notifyPrefs = useRef(loadNotifyPrefs());
@@ -241,6 +243,7 @@ export default function MobileApp() {
     setList((r.sessions ?? []).filter((x: Sess) => !seen.has(x.sessionId) && !!seen.add(x.sessionId)));
     setListed(true);
     setProjects(r._meta?.projects ?? []);
+    setPrompts(r._meta?.prompts ?? []);
   }, []);
 
   // Keyboard: the native side shrinks the web view (adjustResize + IME insets), so the app
@@ -615,6 +618,8 @@ export default function MobileApp() {
     return order.filter((name) => buckets.has(name)).map((name) => ({ name, rows: buckets.get(name)! }));
   })();
   const canSend = (!!draft.trim() || atts.length > 0) && uploading == null;
+  const slashQ = /^\/[\w-]*$/.test(draft) ? draft.slice(1).toLowerCase() : null;
+  const shownPrompts = slashQ == null ? [] : prompts.filter((p) => p.name.startsWith(slashQ));
 
   return (
     <div className="m-app">
@@ -758,8 +763,8 @@ export default function MobileApp() {
           </div>
           {!atBottom && sess.items.length > 0 && <button className="m-jump" aria-label="Jump to latest" data-testid="m-jump" onClick={jumpToEnd}><Icon name="chevronDown" size={18} /></button>}
           <div className="m-composer">
-            {loadingSess !== open && sess.items.length === 0 && !isBusy && (
-              <div className="m-pills">{SUGGESTIONS.map((t) => <button key={t} className="m-pill" onClick={() => { setDraft(t); inputRef.current?.focus(); }}>{t}</button>)}</div>
+            {(slashQ != null ? shownPrompts.length > 0 : loadingSess !== open && sess.items.length === 0 && !isBusy) && (
+              <div className="m-pills" data-testid="m-pills">{slashQ != null ? shownPrompts.map((p) => <button key={p.name} className="m-pill" data-testid="m-prompt" onClick={() => { setDraft(`/${p.name} `); inputRef.current?.focus(); }}>/{p.name}</button>) : SUGGESTIONS.map((t) => <button key={t} className="m-pill" onClick={() => { setDraft(t); inputRef.current?.focus(); }}>{t}</button>)}</div>
             )}
             <div className="m-compose-box">
               {(atts.length > 0 || attErr) && (

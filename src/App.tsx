@@ -16,6 +16,8 @@ import { optionFor, updateSessionOptions } from "./lib/sessionOptions";
 import { providerCatalogKey } from "./lib/catalog";
 import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./lib/composer";
 import { resolveTheme, themeList } from "./lib/themes";
+import { expandPrompt } from "./lib/prompts";
+import type { ToolsTab } from "./components/Tools";
 import { extractMentions, fileItems, mentionBlocks } from "./lib/mentions";
 import { defaultGatewayPrefs, DevicesSection, gatewayBind, urlPort } from "./components/Devices";
 const SettingsScreen = lazy(() => import("./components/Settings").then((m) => ({ default: m.SettingsScreen })));
@@ -49,7 +51,8 @@ import { agentModel, saveSetupModel, sessionModel, setupModel, type ModelOpt } f
 import { APP_VERSION, checkUpdate, pickAsset, UPDATE_EVERY, type AvailableUpdate } from "./lib/updates";
 const UpdateBanner = lazy(() => import("./components/UpdateBanner"));
 
-type View = "chat" | "settings" | "usage";
+type View = "chat" | "settings" | "usage" | "tools";
+const ToolsScreen = lazy(() => import("./components/Tools").then((m) => ({ default: m.ToolsScreen })));
 type PermState = { req: PermissionRequest; resolve: (o: PermissionOutcome) => void; token?: number };
 type PlanAsk = { req: PlanApprovalRequest; resolve: (r: PlanApprovalResult) => void };
 
@@ -91,6 +94,8 @@ export default function App() {
   const [loadingChats, setLoadingChats] = useState<Set<string>>(() => new Set());
   const [settingsSection, setSettingsSection] = useState<"connection" | "devices" | "providers" | "agent" | "appearance" | undefined>();
   const [palette, setPalette] = useState(false);
+  const [toolsTab, setToolsTab] = useState<ToolsTab>();
+  const openTools = (t: ToolsTab) => { setToolsTab(t); setView("tools"); };
   const [permQueue, setPermQueue] = useState<PermState[]>([]);
   const perm = permQueue[0] ?? null;
   const [planQueue, setPlanQueue] = useState<PlanAsk[]>([]);
@@ -249,6 +254,7 @@ export default function App() {
           dataRef.current.groups.flatMap((g) =>
             g.projects.flatMap((p) => p.chats.filter((c) => c.sessionId).map((c) => ({ sessionId: c.sessionId!, title: c.title, cwd: p.cwd, project: p.name, projectId: p.id, group: g.name, updatedAt: c.createdAt, busy: !!busyRef.current[c.id] }))),
           ),
+        prompts: () => dataRef.current.prompts ?? [],
         projects: () => dataRef.current.groups.flatMap((g) => g.projects.map((p) => ({ projectId: p.id, name: p.name, cwd: p.cwd, group: g.name }))),
         prompt: (sid, text, from, extra) => {
           const f = chatForSession(sid);
@@ -816,6 +822,7 @@ export default function App() {
   async function runPrompt(projectId: string, chatId: string, text: string, from?: string, extra: unknown[] = [], resend = false): Promise<{ stopReason: string; usage?: unknown }> {
     const c = clientRef.current;
     if (!c) throw new Error("Agent not connected");
+    text = expandPrompt(dataRef.current.prompts, text) ?? text;
     const chat = findProject(dataRef.current, projectId)?.project.chats.find((x) => x.id === chatId);
     if (chat?.title === "New chat")
       update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, title: text.slice(0, 40) } : x)) })));
@@ -1097,6 +1104,7 @@ export default function App() {
     } },
     { name: "settings", detail: "Open settings", icon: "settings", run: () => openSettings() },
     { name: "usage", detail: "Token usage and costs", icon: "chart", run: () => setView("usage") },
+    { name: "prompts", detail: "Saved prompts and custom commands", icon: "edit", run: () => openTools("prompts") },
     { name: "pair", detail: "Pair a phone", icon: "phone", run: () => openSettings("devices") },
     { name: "reconnect", detail: "Reconnect to the agent", icon: "refresh", run: () => void connect() },
     ...(isBusy ? [{ name: "stop", detail: "Stop the running turn", icon: "stop", run: () => { stop(); } }] : []),
@@ -1140,6 +1148,7 @@ export default function App() {
     if (mstate.kind === "slash") {
       const all: MenuItem[] = [
         ...nativeCommands.map((c) => ({ id: `n-${c.name}`, label: `/${c.name}`, detail: c.detail, icon: c.icon, group: "App", value: `n:${c.name}` })),
+        ...(data.prompts ?? []).map((p) => ({ id: `p-${p.name}`, label: `/${p.name}`, detail: p.text.slice(0, 60), icon: "edit", group: "Prompts", value: `p:${p.name}` })),
         ...commands.map((c) => ({ id: `a-${c.name}`, label: `/${c.name}`, detail: c.description, icon: "tool", group: "Agent", value: `a:${c.name}` })),
       ];
       const q = mstate.q.toLowerCase();
@@ -1147,7 +1156,7 @@ export default function App() {
     }
     if (mstate.kind === "sub") return filterItems(nativeByName.get(mstate.cmd)?.sub?.() ?? [], mstate.q);
     return mentionItems(mstate.q);
-  }, [mstate?.kind, (mstate as any)?.q, (mstate as any)?.cmd, commands, configOptions, theme, isBusy, activeChat?.id, mentionVersion]);
+  }, [mstate?.kind, (mstate as any)?.q, (mstate as any)?.cmd, commands, data.prompts, configOptions, theme, isBusy, activeChat?.id, mentionVersion]);
   // Selection resets synchronously whenever the query changes (no effect lag before Enter).
   const menuKey = mstate ? `${mstate.kind}|${(mstate as any).cmd ?? ""}|${mstate.q}` : "";
   const menuSel = menuSelState.key === menuKey ? menuSelState.i : 0;
@@ -1173,7 +1182,8 @@ export default function App() {
         if (c.sub) return setDraftCaret(`/${name} `);
         setDraftCaret("");
         runNative(name);
-      } else setDraftCaret(`/${name} `);
+      } else if (kind === "p") { const t = data.prompts!.find((p) => p.name === name)!.text; setDraftCaret(t.includes("$ARGUMENTS") ? `/${name} ` : t); }
+      else setDraftCaret(`/${name} `);
       return;
     }
     if (mstate.kind === "sub") {
@@ -1373,6 +1383,7 @@ export default function App() {
         />
         </Suspense>
       )}
+      {view === "tools" && <Suspense fallback={<ScreenSkeleton />}><ToolsScreen data={data} update={update} tab={toolsTab} onClose={() => setView("chat")} /></Suspense>}
       {view === "usage" && (
         <Suspense fallback={<ScreenSkeleton />}>
           <UsageScreen records={usage} pricing={pricing} onPricing={(p) => { setPricing(p); savePricing(p); }} onClear={() => setUsage([])} onClose={() => setView("chat")} />

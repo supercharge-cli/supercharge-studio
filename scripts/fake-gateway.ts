@@ -33,6 +33,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const hub: GatewayHub = new GatewayHub((d, m) => conns.get(d)?.(m), {
   sessions: () => sessions,
+  prompts: () => [{ name: "review", text: "Review the uncommitted changes." }, { name: "fix-issue", text: "Fix issue $ARGUMENTS and add a test." }],
   projects: () => [{ projectId: "p1", name: "api", cwd: "/work/api", group: "Work" }, { projectId: "p2", name: "docs", cwd: "/work/docs", group: "Work" }],
   async upload(p: any) {
     const u = (uploads[p.uploadId] ??= { name: p.name, mimeType: p.mimeType, parts: [] });

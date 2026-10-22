@@ -17,6 +17,8 @@ export type HubProject = { projectId: string; name: string; cwd: string; group: 
 export interface HubHost {
   sessions(): HubSession[];
   projects(): HubProject[];
+  /** Saved prompts (custom slash commands) for the phone. */
+  prompts?(): { name: string; text: string }[];
   prompt(sessionId: string, text: string, from: string, extra?: unknown[]): Promise<{ stopReason: string; usage?: unknown }>;
   /** Save one chunk of a device upload; the last chunk resolves with {uploadId, uri, path, name, mimeType, size}. */
   upload?(params: any): Promise<any>;
@@ -164,7 +166,7 @@ export class GatewayHub {
         case "session/list":
           return this.reply(deviceId, id, {
             sessions: this.host.sessions().map((s) => ({ sessionId: s.sessionId, cwd: s.cwd, title: s.title, updatedAt: s.updatedAt ? new Date(s.updatedAt).toISOString() : undefined, _meta: { project: s.project, projectId: s.projectId, group: s.group, busy: !!s.busy } })),
-            _meta: { projects: this.host.projects() },
+            _meta: { projects: this.host.projects(), prompts: this.host.prompts?.() ?? [] },
           });
         case "session/load": {
           const sid = String(params.sessionId ?? "");
