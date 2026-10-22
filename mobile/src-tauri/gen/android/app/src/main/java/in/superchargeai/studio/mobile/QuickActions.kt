@@ -61,7 +61,8 @@ class StudioWidget : AppWidgetProvider() {
   companion object {
     fun render(ctx: Context, m: AppWidgetManager, ids: IntArray) {
       val s = QuickActions.widgetState(ctx)
-      val working = s.optInt("working"), waiting = s.optInt("waiting")
+      val working = s.optInt("working")
+      val waiting = s.optInt("waiting")
       val line = when {
         waiting > 0 -> "$waiting approval${if (waiting == 1) "" else "s"} waiting"
         working > 0 -> "$working chat${if (working == 1) "" else "s"} working"
