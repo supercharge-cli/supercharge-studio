@@ -35,6 +35,7 @@
     <color type="primary" scheme_preference="dark">#1a1a1a</color>
   </branding>
   <releases>
+    <release version="1.0.21" date="2026-10-23"><description><p>Type a custom model id in the picker when the list is empty or the model you want is missing; customs persist and send over ACP.</p></description></release>
     <release version="1.0.20" date="2026-10-22"><description><p>Tables in chat, a file tree that shows every file, and editor-style syntax highlighting for code blocks and the file viewer.</p></description></release>
     <release version="1.0.19" date="2026-10-22"><description><p>Prompt library, @-mentions of chats, checkpoints with undo, running tasks, rules and MCP editors, chat export and share links, scheduled runs, text size, phone quick actions and memory upkeep.</p></description></release>
     <release version="1.0.18" date="2026-10-18"><description><p>In-app updates: downloads and installs in the background, then restarts on one click.</p></description></release>
