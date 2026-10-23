@@ -89,3 +89,56 @@ test("per-chat model and reasoning pickers follow load, changes, and live update
   await page.getByTestId("m-perm").getByRole("button", { name: "Allow once" }).click();
   await expect.poll(() => page.evaluate(() => (window as any).permissionAnswers.length)).toBe(2);
 });
+
+test("mobile: type a custom model id when the list is empty or missing the wanted model", async ({ page }) => {
+  await page.route(/\/src\/mobile\/creds\.ts(?:\?.*)?$/, (route) => route.fulfill({ contentType: "text/javascript", body: `
+    export const loadCreds = () => ({ deviceId: "d1", key: new Uint8Array(32), url: "ws://localhost", name: "Phone" });
+    export const saveCreds = () => {};
+    export const defaultDeviceName = () => "Phone";
+    export const pendingCredsFromCode = async () => ({});
+  ` }));
+  await page.route(/\/src\/acp\/client\.ts(?:\?.*)?$/, (route) => route.fulfill({ contentType: "text/javascript", body: `
+    const options = {
+      s1: [{ id: "model", currentValue: "fast", options: [{ value: "fast", name: "Fast" }] }],
+    };
+    export class AcpClient {
+      constructor(opts) { this.opts = opts; window.mockClient = this; window.setupSaves = []; }
+      async connect() { this.opts.onStateChange("open"); }
+      async initialize() { return {}; }
+      async listSessions() { return { sessions: [{ sessionId: "s1", title: "First", cwd: "/w" }], _meta: { projects: [] } }; }
+      async loadSession(sid) { return { configOptions: options[sid], modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Agent" }] } }; }
+      async setConfigOption(sid, id, value) {
+        window.lastConfig = { sid, id, value };
+        options[sid] = options[sid].map(o => o.id === id ? { ...o, currentValue: value } : o);
+        return { configOptions: options[sid] };
+      }
+      async ext(method, params) {
+        if (method === "_supercharge/setup" || method === "supercharge/setup") {
+          window.setupSaves.push({ op: params.op, ...params });
+          if (params.op === "status") return { providerId: "groq", baseUrl: "https://api.example/v1", format: "chat_completions", model: "fast", hasKey: true };
+          if (params.op === "save") return { providerId: params.providerId, baseUrl: params.baseUrl, format: params.format, model: params.modelId, hasKey: true };
+          return {};
+        }
+        return {};
+      }
+      close() {}
+    }
+  ` }));
+  await page.goto("/mobile.html");
+  await page.getByTestId("m-chat").first().click();
+  await page.getByTestId("m-chat-settings").click();
+  await page.getByTestId("m-model").click();
+  await expect(page.getByTestId("m-config-picker")).toBeVisible();
+  await page.getByTestId("m-model-custom-toggle").click();
+  await page.getByTestId("m-model-custom-id").fill("phone/custom-1");
+  await page.getByTestId("m-model-custom-name").fill("Phone Custom");
+  await page.screenshot({ path: "/workspace/out/custom-model-mobile.png" });
+  await page.getByTestId("m-model-custom-save").click();
+  await expect(page.getByTestId("m-model")).toContainText("Phone Custom");
+  const saves = await page.evaluate(() => (window as any).setupSaves.filter((s: any) => s.op === "save"));
+  expect(saves).toEqual([expect.objectContaining({ modelId: "phone/custom-1", modelName: "Phone Custom", sessionId: "s1" })]);
+  const customs = await page.evaluate(() => JSON.parse(localStorage.getItem("supercharge-mobile/custom-models")!));
+  expect(customs).toEqual([{ id: "phone/custom-1", name: "Phone Custom" }]);
+  await page.getByTestId("m-model").click();
+  await expect(page.getByTestId("m-model-choice").filter({ hasText: "Phone Custom" })).toBeVisible();
+});

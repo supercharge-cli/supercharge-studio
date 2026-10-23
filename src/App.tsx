@@ -11,7 +11,6 @@ const CliSetup = lazy(() => import("./screens").then((m) => ({ default: m.CliSet
 import type { Command } from "./components/CommandPalette";
 const CommandPalette = lazy(() => import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })));
 import { ComposerMenu } from "./components/ComposerMenu";
-import { ModelControls } from "./components/ModelControls";
 import { optionFor, updateSessionOptions } from "./lib/sessionOptions";
 import { providerCatalogKey } from "./lib/catalog";
 import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./lib/composer";
@@ -50,12 +49,13 @@ import type { WindowCtl } from "./components/ContextMeter";
 import { contextFromUsageNotification, isResponseCompleted, usedFromResponseCompleted } from "./lib/contextUsage";
 import { isTerminalTarget } from "./lib/terminalInput";
 import { useBrowserOverlay } from "./browser/visibility";
-import { agentModel, saveSetupModel, sessionModel, setupModel, type ModelOpt } from "./lib/modelFallback";
+import { agentModel, mergeCustom, rememberCustom, sessionModel, type ModelOpt } from "./lib/modelFallback";
 import { APP_VERSION, checkUpdate, pickAsset, UPDATE_EVERY, type AvailableUpdate } from "./lib/updates";
 const UpdateBanner = lazy(() => import("./screens").then((m) => ({ default: m.UpdateBanner })));
 
 type View = "chat" | "settings" | "usage" | "tools";
 const ToolsScreen = lazy(() => import("./screens").then((m) => ({ default: m.ToolsScreen })));
+const ModelControls = lazy(() => import("./components/ModelControls").then((m) => ({ default: m.ModelControls })));
 type PermState = { req: PermissionRequest; resolve: (o: PermissionOutcome) => void; token?: number };
 type PlanAsk = { req: PlanApprovalRequest; resolve: (r: PlanApprovalResult) => void };
 
@@ -286,7 +286,10 @@ export default function App() {
         setConfigOption: async (sid, id, value) => {
           const c = clientRef.current;
           if (!c) throw new Error("Agent not connected");
-          if (id === "model" && !agentModel(optionsRef.current[sid]) && fallbackRef.current.pick) { await fallbackRef.current.pick(sid, value); return withModel(sid); }
+          if (id === "model" && fallbackRef.current.pick) {
+            const agent = agentModel(optionsRef.current[sid]);
+            if (!agent?.options?.some((o) => o.value === value)) { await fallbackRef.current.pick(sid, value); return withModel(sid); }
+          }
           const result = await c.setConfigOption(sid, id, value);
           if (Array.isArray(result?.configOptions)) rememberOptions(sid, result.configOptions);
     rememberWindows(result?.models ?? (c.initResult?._meta as any)?.modelState);
@@ -584,7 +587,7 @@ export default function App() {
   };
   const setupFor = async (op: string, params: any) => {
     const api = (await import("./lib/setup")).pickSetup(clientRef.current);
-    if (!api) throw new Error("Provider setup needs the desktop app");
+    if (!api) throw new Error("Need desktop for setup");
     const str = (k: string) => (typeof params?.[k] === "string" ? params[k] : "");
     const fmt = (["chat_completions", "messages", "responses"].includes(params?.format) ? params.format : "chat_completions") as "chat_completions" | "messages" | "responses";
     const key = typeof params?.apiKey === "string" ? params.apiKey : undefined;
@@ -1043,23 +1046,36 @@ export default function App() {
     if (!activeSid || realModel) return;
     let live = true;
     void (async () => {
-      const m = sessionModel(sessModels.current[activeSid]) ?? await (async () => { const api = (await import("./lib/setup")).pickSetup(clientRef.current); return api ? setupModel(api) : undefined; })();
+      const m = sessionModel(sessModels.current[activeSid]) ?? await (async () => { const [{ pickSetup }, { setupModel }] = await Promise.all([import("./lib/setup"), import("./lib/modelSave")]); const api = pickSetup(clientRef.current); return api ? setupModel(api) : undefined; })();
       if (live) setFallbackModel((all) => ({ ...all, [activeSid]: m }));
     })();
     return () => { live = false; };
   }, [activeSid, !!realModel, modelTick, status]);
-  const modelOption: ModelOpt | undefined = realModel ?? (activeSid ? fallbackModel[activeSid] : undefined);
+  const customs = data.settings.customModels ?? [];
+  const baseModel: ModelOpt | undefined = realModel ?? (activeSid ? fallbackModel[activeSid] : undefined);
+  const cur = data.settings.lastModel ?? baseModel?.currentValue;
+  const modelOption: ModelOpt | undefined = !activeSid ? undefined : { ...(baseModel ?? { id: "model", name: "Model", source: "custom" }), currentValue: cur, options: mergeCustom(baseModel?.options ?? [], customs, cur) };
   fallbackRef.current.opt = activeSid && fallbackModel[activeSid] ? fallbackModel[activeSid] : fallbackRef.current.opt;
   const pickerOptions = modelOption ? [modelOption, ...configOptions.filter((o) => o.id !== "model")] : configOptions;
   const pickFallback = async (sid: string, value: string) => {
     const m = fallbackModel[sid] ?? fallbackRef.current.opt; const c = clientRef.current;
-    if (!m || !c) return;
-    update((d) => ({ ...d, settings: { ...d.settings, lastModel: value } }));
-    setFallbackModel((all) => ({ ...all, [sid]: { ...m, currentValue: value } }));
+    if (!c) return;
+    const listed = !!m?.options?.some((o) => o.value === value);
+    const name = dataRef.current.settings.customModels?.find((x) => x.id === value)?.name;
+    update((d) => ({ ...d, settings: { ...d.settings, lastModel: value, ...(!listed && { customModels: rememberCustom(d.settings.customModels, value, name) }) } }));
+    if (m) setFallbackModel((all) => ({ ...all, [sid]: { ...m, currentValue: value, options: mergeCustom(m.options ?? [], listed ? [] : [{ id: value, name }], value) } }));
     try {
-      if (m.source === "session") await c.request("session/set_model", { sessionId: sid, modelId: value });
-      else { const api = (await import("./lib/setup")).pickSetup(c); if (!api) throw new Error("Provider setup needs the desktop app"); await saveSetupModel(api, m, value); await setupSaved(); }
-    } catch (e: any) { setFallbackModel((all) => ({ ...all, [sid]: m })); setNotice(`Could not change model: ${e?.message ?? e}`); throw e; }
+      if (m?.source === "session" && listed) await c.request("session/set_model", { sessionId: sid, modelId: value });
+      else {
+        const [{ pickSetup }, { saveSetupModel, saveCustomModel }] = await Promise.all([import("./lib/setup"), import("./lib/modelSave")]);
+        const api = pickSetup(c);
+        if (!api) throw new Error("Need desktop for setup");
+        const r = m?.source === "setup" && listed
+          ? await saveSetupModel(api, m, value, sid)
+          : await saveCustomModel(api, value, { modelName: name, sessionId: sid });
+        await setupSaved(r);
+      }
+    } catch (e: any) { if (m) setFallbackModel((all) => ({ ...all, [sid]: m })); setNotice(`Model: ${e?.message ?? e}`); throw e; }
   };
   fallbackRef.current.pick = pickFallback;
   // Context window override (config option, else the extension; hidden when the agent offers neither).
@@ -1091,7 +1107,10 @@ export default function App() {
     } catch (e: any) { setNotice(`Could not change tool permissions: ${e?.message ?? e}`); throw e; }
   };
   const changeOption = (sid: string, id: string, value: string) => {
-    if (id === "model" && !agentModel(optionsRef.current[sid])) return void pickFallback(sid, value).catch(() => {});
+    if (id === "model") {
+      const agent = agentModel(optionsRef.current[sid]);
+      if (!agent?.options?.some((v) => v.value === value)) return void pickFallback(sid, value).catch(() => {});
+    }
     const option = optionsRef.current[sid]?.find((o) => o.id === id);
     if (!option?.options?.some((v) => v.value === value)) return;
     if (optionFor([option], "model")) update((d) => ({ ...d, settings: { ...d.settings, lastModel: value } }));
@@ -1628,7 +1647,7 @@ export default function App() {
                 <span className="muted small">{isBusy ? "Sent when the agent finishes" : "Sending…"}</span>
               </div>
             )}
-            {activeChat?.sessionId && <ModelControls key={activeChat.sessionId} options={pickerOptions} window={windowCtl} context={ctxBySession[activeChat.sessionId] ? { used: ctxBySession[activeChat.sessionId].used, max: ctxBySession[activeChat.sessionId].max ?? ctxMax.current[modelOption?.currentValue ?? ""] } : windowCtl ? { used: 0, max: ctxMax.current[modelOption?.currentValue ?? ""] } : undefined} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)}><ModeControl modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} /></ModelControls>}
+            {activeChat?.sessionId && <Suspense fallback={null}><ModelControls key={activeChat.sessionId} options={pickerOptions} window={windowCtl} context={ctxBySession[activeChat.sessionId] ? { used: ctxBySession[activeChat.sessionId].used, max: ctxBySession[activeChat.sessionId].max ?? ctxMax.current[modelOption?.currentValue ?? ""] } : windowCtl ? { used: 0, max: ctxMax.current[modelOption?.currentValue ?? ""] } : undefined} onCustom={(id, name) => update((d) => ({ ...d, settings: { ...d.settings, lastModel: id, customModels: rememberCustom(d.settings.customModels, id, name) } }))} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)}><ModeControl modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} /></ModelControls></Suspense>}
             {(atts.length > 0 || attErr) && (
               <div className="att-row" data-testid="attachments">
                 {atts.map((a) => (

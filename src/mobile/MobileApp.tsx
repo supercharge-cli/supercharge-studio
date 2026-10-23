@@ -4,6 +4,7 @@ import { answerOption, permKey } from "../lib/quick";
 import { clip, Deduper, defaultNotifyPrefs, notifyTitle, shouldNotify, type NotifyKind, type NotifyPrefs } from "../lib/notify";
 import type { Hit, SearchIndex } from "../lib/searchIndex";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+const ModelCustomForm = lazy(() => import("../components/ModelCustomForm").then((m) => ({ default: m.ModelCustomForm })));
 import { AcpClient, ConnectionState } from "../acp/client";
 import { applyUpdate, ChatItem, emptySession, SessionState } from "../acp/session";
 import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionModes } from "../acp/types";
@@ -22,6 +23,10 @@ import { APP_VERSION, checkUpdate, pickApk, UPDATE_EVERY } from "../lib/updates"
 import { effortLabel, reasoningOption } from "../lib/sessionOptions";
 import { ContextMeter, type WindowCtl } from "../components/ContextMeter";
 import { applyWindow, windowOption } from "../lib/contextWindow";
+import { mergeCustom, rememberCustom, type CustomModel } from "../lib/modelFallback";
+const CK = "supercharge-mobile/custom-models";
+const loadCustoms = (): CustomModel[] => { try { const j = JSON.parse(localStorage.getItem(CK) ?? "[]"); return Array.isArray(j) ? j.filter((x: any) => x?.id) : []; } catch { return []; } };
+const storeCustoms = (list: CustomModel[]) => { try { localStorage.setItem(CK, JSON.stringify(list)); } catch {} };
 /** Provider setup on the paired computer (same steps as the CLI's /setup), loaded on first open. */
 const PhoneSetup = lazy(() => Promise.all([import("../components/ProviderSetup"), import("../lib/setup")]).then(([m, s]) => ({
   default: function PhoneSetup({ client, onClose, sessionId }: { client: AcpClient; onClose: () => void; sessionId: () => string | undefined }) {
@@ -205,6 +210,10 @@ export default function MobileApp() {
   };
   const [picker, setPicker] = useState<string | null>(null);
   const [modelSearch, setModelSearch] = useState("");
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customId, setCustomId] = useState("");
+  const [customName, setCustomName] = useState("");
+  const [customs, setCustoms] = useState<CustomModel[]>(loadCustoms);
   const [settingOption, setSettingOption] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const [route, setRoute] = useState<"direct" | "relay">("direct");
@@ -527,21 +536,50 @@ export default function MobileApp() {
   const sendRef = useRef(sendText);
   sendRef.current = sendText;
 
-  async function chooseOption(configId: string, value: string) {
+  async function chooseOption(configId: string, value: string, typedName?: string) {
     const sid = open;
     const c = client.current;
     if (!sid || !c || settingOption) return;
     setSettingOption(true);
     try {
+      if (configId === "model") {
+        const known = (configBySession[sid] ?? []).find((o) => o.id === "model")?.options?.some((o) => o.value === value);
+        if (!known) {
+          const saved = loadCustoms();
+          const name = typedName ?? saved.find((x) => x.id === value)?.name;
+          const [{ rpcSetup }, { customSave }] = await Promise.all([import("../lib/setup"), import("../lib/customSave")]);
+          await customSave(rpcSetup((op, p) => c.ext("_supercharge/setup", { ...p, op })), value, name, sid);
+          setConfigBySession((all) => {
+            const cur = all[sid] ?? [];
+            const mo = cur.find((o) => o.id === "model");
+            const opts = mergeCustom(mo?.options ?? [], saved, value);
+            const next = mo
+              ? cur.map((o) => o.id === "model" ? { ...o, currentValue: value, options: opts } : o)
+              : [{ id: "model", name: "Model", currentValue: value, options: opts }, ...cur];
+            return { ...all, [sid]: next };
+          });
+          setPicker(null); setModelSearch(""); setCustomOpen(false);
+          return;
+        }
+      }
       const r: any = await c.setConfigOption(sid, configId, value);
       if (Array.isArray(r?.configOptions)) setConfigBySession((all) => ({ ...all, [sid]: r.configOptions }));
       setPicker(null);
       setModelSearch("");
+      setCustomOpen(false);
     } catch (e: any) {
       setToast(`Could not change ${configId === "model" ? "model" : configId === "permission_mode" ? "tool permissions" : "reasoning"}: ${e?.message ?? e}`);
     } finally {
       setSettingOption(false);
     }
+  }
+  async function applyCustomModel() {
+    const id = customId.trim();
+    if (!id || settingOption) return;
+    const name = customName.trim() || undefined;
+    const next = rememberCustom(customs, id, name);
+    setCustoms(next); storeCustoms(next);
+    await chooseOption("model", id, name);
   }
 
   const sess = (open && state[open]) || emptySession();
@@ -580,11 +618,17 @@ export default function MobileApp() {
   const title = list.find((s) => s.sessionId === open)?.title ?? "New chat";
   const isBusy = !!(open && busy[open]);
   const sessionOptions = (open && configBySession[open]) || [];
-  const modelOption = sessionOptions.find((o) => o.id === "model" && o.options?.length);
+  const rawModel = sessionOptions.find((o) => o.id === "model");
+  const modelOption = open ? {
+    id: "model",
+    name: "Model",
+    currentValue: rawModel?.currentValue,
+    options: mergeCustom(rawModel?.options ?? [], customs, rawModel?.currentValue),
+  } : undefined;
   const thinkingOption = reasoningOption(sessionOptions);
   const permissionOption = sessionOptions.find((o) => o.id === "permission_mode" && o.options?.length);
   const sessionModes = open ? modesBySession[open] : undefined;
-  const activeOption = sessionOptions.find((o) => o.id === picker);
+  const activeOption = picker === "model" ? modelOption : sessionOptions.find((o) => o.id === picker);
   const windowSup = open ? windowBySession[open] : null;
   const windowCtl: WindowCtl | undefined = open && windowSup ? {
     option: windowSup.via === "option" ? windowOption(sessionOptions) : undefined, ext: windowSup.via === "ext", current: windowSup.current,
@@ -841,7 +885,7 @@ export default function MobileApp() {
                 )}
                 <div className="spacer" />
                 {open && (ctxBySession[open] || windowBySession[open]) && <ContextMeter used={ctxBySession[open]?.used ?? 0} max={ctxBySession[open]?.max} window={windowCtl} />}
-                {modelOption && <button className="m-chip" data-testid="m-model-chip" onClick={() => { haptic(); setModelSearch(""); setPicker("model"); }}>{optionLabel(modelOption)}</button>}
+                {modelOption && <button className="m-chip" data-testid="m-model-chip" onClick={() => { haptic(); setModelSearch(""); setCustomOpen(false); setPicker("model"); }}>{optionLabel(modelOption)}</button>}
                 {thinkingOption && (
                   <span className="m-think-anchor">
                     <button type="button" className="m-chip" data-testid="m-think-chip" onClick={() => { haptic(); setThinkPop((v) => !v); setPermPop(false); setModePop(false); }}>{optionLabel(thinkingOption)}</button>
@@ -867,7 +911,7 @@ export default function MobileApp() {
           <div className="m-sheet m-settings-sheet" role="dialog" aria-label="Chat settings" data-testid="m-settings-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="m-grabber" aria-hidden />
             <div className="m-picker-head"><h3>Chat settings</h3><button className="icon" aria-label="Close" data-testid="m-sheet-close" onClick={() => setSheet(false)}><Icon name="x" size={16} /></button></div>
-            {modelOption && <button className="m-row" data-testid="m-model" aria-label={`Model: ${optionLabel(modelOption)}`} onClick={() => { setModelSearch(""); setPicker("model"); }}><span>Model</span><b>{optionLabel(modelOption)}</b><Icon name="chevronRight" size={14} /></button>}
+            {modelOption && <button className="m-row" data-testid="m-model" aria-label={`Model: ${optionLabel(modelOption)}`} onClick={() => { setModelSearch(""); setCustomOpen(false); setPicker("model"); }}><span>Model</span><b>{optionLabel(modelOption)}</b><Icon name="chevronRight" size={14} /></button>}
             {thinkingOption && (
               <label className="m-row m-thinking">
                 <span>Thinking</span>
@@ -936,17 +980,25 @@ export default function MobileApp() {
         </div>
       )}
       {open && activeOption && (
-        <div className="m-sheet-bg top" onClick={() => setPicker(null)}>
+        <div className="m-sheet-bg top" onClick={() => { setPicker(null); setCustomOpen(false); }}>
           <div className="m-sheet m-config-sheet" role="dialog" aria-label={picker === "model" ? "Choose model" : "Choose reasoning"} data-testid="m-config-picker" onClick={(e) => e.stopPropagation()}>
             <div className="m-grabber" aria-hidden />
-            <div className="m-picker-head"><h3>{picker === "model" ? "Model" : "Reasoning"}</h3><button className="icon" aria-label="Close picker" onClick={() => setPicker(null)}><Icon name="x" size={16} /></button></div>
-            {picker === "model" && <input type="search" aria-label="Search models" placeholder="Search models" value={modelSearch} onChange={(e) => setModelSearch(e.target.value)} />}
+            <div className="m-picker-head"><h3>{picker === "model" ? "Model" : "Reasoning"}</h3><button className="icon" aria-label="Close picker" onClick={() => { setPicker(null); setCustomOpen(false); }}><Icon name="x" size={16} /></button></div>
+            {picker === "model" && !customOpen && <input type="search" aria-label="Search models" placeholder="Search models" value={modelSearch} onChange={(e) => setModelSearch(e.target.value)} />}
             <div className="m-picker-options">
-              {(activeOption.options ?? []).filter((v) => picker !== "model" || `${v.name ?? ""} ${v.value}`.toLowerCase().includes(modelSearch.trim().toLowerCase())).map((v) => (
-                <button key={v.value} className="m-picker-option" aria-pressed={v.value === activeOption.currentValue} disabled={settingOption} onClick={() => { haptic(); void chooseOption(activeOption.id, v.value); }}>
-                  <span>{v.name || v.value}</span>{v.value === activeOption.currentValue && <span aria-hidden="true">✓</span>}
-                </button>
-              ))}
+              {picker === "model" && customOpen ? (
+                <Suspense fallback={null}><ModelCustomForm tid="m-model" id={customId} name={customName} busy={settingOption} onId={setCustomId} onName={setCustomName} onBack={() => setCustomOpen(false)} onSave={() => void applyCustomModel()} /></Suspense>
+              ) : (
+                <>
+                  {(activeOption.options ?? []).filter((v) => picker !== "model" || `${v.name ?? ""} ${v.value}`.toLowerCase().includes(modelSearch.trim().toLowerCase())).map((v) => (
+                    <button key={v.value} className="m-picker-option" data-testid={picker === "model" ? "m-model-choice" : undefined} aria-pressed={v.value === activeOption.currentValue} disabled={settingOption} onClick={() => { haptic(); void chooseOption(activeOption.id, v.value); }}>
+                      <span>{v.name || v.value}</span>{v.value === activeOption.currentValue && <span aria-hidden="true">✓</span>}
+                    </button>
+                  ))}
+                  {picker === "model" && !(activeOption.options ?? []).filter((v) => `${v.name ?? ""} ${v.value}`.toLowerCase().includes(modelSearch.trim().toLowerCase())).length && <p className="muted m-none">No matching models</p>}
+                  {picker === "model" && <button type="button" className="m-picker-option" data-testid="m-model-custom-toggle" disabled={settingOption} onClick={() => { setCustomOpen(true); setCustomId(modelSearch.trim()); setCustomName(""); }}><span>Type model id…</span></button>}
+                </>
+              )}
             </div>
           </div>
         </div>

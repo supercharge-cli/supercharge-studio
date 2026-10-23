@@ -131,7 +131,7 @@ input.inline{margin:4px 6px;width:calc(100% - 12px);padding:5px 8px;font-size:13
 .model-choice{width:100%;background:transparent;color:var(--fg);text-align:left;justify-content:space-between;padding:9px 10px;font-size:13px}
 .model-choice:hover,.model-choice.selected{background:var(--hover)}.model-choice span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .model-choice strong,.model-choice small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.model-choice small{font-weight:400;color:var(--muted)}
-.model-picker p{margin:0}.model-reasoning{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:12px;background:var(--hover);border:1px solid var(--line);border-radius:8px;padding:0 0 0 8px}.model-reasoning select{border:0;background-color:transparent}
+.model-picker p{margin:0}.model-custom-form{display:flex;flex-direction:column;gap:8px;padding:4px 2px 8px}.model-custom-form label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}.model-custom-form input{font-size:13px}.model-custom-form .row{display:flex;gap:8px;justify-content:flex-end}.model-reasoning{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:12px;background:var(--hover);border:1px solid var(--line);border-radius:8px;padding:0 0 0 8px}.model-reasoning select{border:0;background-color:transparent}
 .model-reasoning select{width:auto;max-width:160px;padding:5px 27px 5px 9px;font-size:12px}
 @media(max-width:600px){.composer-wrap{padding:8px 12px 12px}.model-picker{max-height:55vh}}
 .slash{display:flex;flex-direction:column;gap:2px;background:var(--raise);border:1px solid var(--line);border-radius:12px;padding:6px;margin-bottom:6px;box-shadow:var(--shadow);max-height:240px;overflow:auto}
