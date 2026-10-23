@@ -22,6 +22,8 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
   const [reveal, setReveal] = useState(false);
   const [models, setModels] = useState<SetupModel[]>([]);
   const [custom, setCustom] = useState("");
+  const [customName, setCustomName] = useState("");
+  const [customBack, setCustomBack] = useState<Step>("model");
   const [busyText, setBusyText] = useState("");
   const [err, setErr] = useState<{ msg: string; back: Step }>({ msg: "", back: "provider" });
   const [device, setDevice] = useState<DeviceStart | null>(null);
@@ -44,14 +46,14 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
       setModels(m); go("model");
     } catch (e) { if (g === gen.current) fail(e, back); }
   }
-  async function save(modelId: string, modelName: string) {
+  async function save(modelId: string, modelName?: string, back: Step = "model") {
     const g = ++gen.current;
     setBusyText("Saving provider configuration…"); setStep("busy");
     try {
-      const s = await api.save({ providerId: prov.id, baseUrl: url, apiKey: apiKey(prov), format: fmt, modelId, modelName, sessionId: sessionId?.() || undefined });
+      const s = await api.save({ providerId: prov.id, baseUrl: url, apiKey: apiKey(prov), format: fmt, modelId, modelName: modelName && modelName !== modelId ? modelName : undefined, sessionId: sessionId?.() || undefined });
       if (g !== gen.current) return;
       setStatus(s); setStep("done"); onSaved?.(s);
-    } catch (e) { if (g === gen.current) fail(e, "model"); }
+    } catch (e) { if (g === gen.current) fail(e, back); }
   }
   async function deviceLogin(p: SetupProvider) {
     const g = ++gen.current;
@@ -67,7 +69,7 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
     } catch (e: any) { if (g === gen.current && e?.message !== "cancelled") fail(e, "provider"); }
   }
   function choose(p: SetupProvider) {
-    setProv(p); setFmt(p.format); setUrl(p.baseUrl); setKey(""); setReveal(false); setCustom("");
+    setProv(p); setFmt(p.format); setUrl(p.baseUrl); setKey(""); setReveal(false); setCustom(""); setCustomName("");
     if (p.id === CUSTOM.id) { setUrl(status?.providerId === "custom" ? status.baseUrl ?? "" : ""); return go("url"); }
     if (p.device) return void (status?.nousSignedIn ? fetchModels("provider", p, p.baseUrl, p.format) : deviceLogin(p));
     go("format"); setSel(FORMATS.findIndex(([f]) => f === p.format));
@@ -75,13 +77,13 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
 
   const providers = filterProviders(filter);
   const shownModels = filterModels(models, filter);
-  const pickModel = (m: SetupModel) => (m.id === CUSTOM_MODEL ? (setCustom(custom || prov.defaultModel), setStep("custom")) : void save(m.id, m.name));
+  const pickModel = (m: SetupModel) => (m.id === CUSTOM_MODEL ? (setCustom(custom || prov.defaultModel), setCustomName(""), setCustomBack("model"), setStep("custom")) : void save(m.id, m.name));
   const listKeys = (n: number, enter: () => void) => (e: KeyboardEvent) => {
     if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(s + 1, n - 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
     else if (e.key === "Enter") { e.preventDefault(); enter(); }
   };
-  const back: Partial<Record<Step, Step>> = { url: "provider", format: prov.id === CUSTOM.id ? "url" : "provider", key: "format", model: prov.device ? "provider" : "key", custom: "model", error: err.back, device: "provider", done: "provider" };
+  const back: Partial<Record<Step, Step>> = { url: "provider", format: prov.id === CUSTOM.id ? "url" : "provider", key: "format", model: prov.device ? "provider" : "key", custom: customBack, error: err.back, device: "provider", done: "provider" };
   const copy = (t: string, what: string) => { void navigator.clipboard?.writeText(t).then(() => { setCopied(what); setTimeout(() => setCopied(""), 1500); }); };
   const fmtName = FORMATS.find(([f]) => f === fmt)?.[1];
   const current = status?.model ? `${[...filterProviders(""), CUSTOM].find((p) => p.id === status.providerId)?.name ?? status.providerId ?? "Custom"} · ${status.model}` : "";
@@ -128,7 +130,10 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
           </span>
         </label>
         <p className="muted small">{prov.name} · {fmtName} API · {url}</p>
-        <button data-testid="setup-fetch">Fetch models</button>
+        <div className="row">
+          <button data-testid="setup-fetch">Fetch models</button>
+          <button type="button" className="secondary" data-testid="setup-enter-model" onClick={() => { setCustom(custom || prov.defaultModel); setCustomName(""); setCustomBack("key"); go("custom"); }}>Enter model id…</button>
+        </div>
       </form>}
 
       {step === "device" && <div className="psetup-device" data-testid="setup-device">
@@ -151,7 +156,10 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
 
       {step === "error" && <div className="psetup-form">
         <p className="danger-text" role="alert" data-testid="setup-error">{err.msg}</p>
-        <div className="row"><button data-testid="setup-retry" onClick={() => (prov.device && err.back === "provider" ? void deviceLogin(prov) : err.back === "key" ? void fetchModels("key") : go(err.back))}>Retry</button></div>
+        <div className="row">
+          <button data-testid="setup-retry" onClick={() => (prov.device && err.back === "provider" ? void deviceLogin(prov) : err.back === "key" ? void fetchModels("key") : go(err.back))}>Retry</button>
+          <button type="button" className="secondary" data-testid="setup-enter-model" onClick={() => { setCustom(custom || prov.defaultModel); setCustomName(""); setCustomBack(err.back === "key" ? "key" : "model"); go("custom"); }}>Enter model id…</button>
+        </div>
       </div>}
 
       {step === "model" && <>
@@ -166,9 +174,22 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
         <p className="muted small">{models.length} models from {prov.name}</p>
       </>}
 
-      {step === "custom" && <form className="psetup-form" onSubmit={(e) => { e.preventDefault(); if (custom.trim()) void save(custom.trim(), custom.trim()); }}>
-        <label>Model id sent to the API<input autoFocus data-testid="setup-custom-model" value={custom} onChange={(e) => setCustom(e.target.value)} /></label>
-        <p className="muted small">Example: model-name or vendor/model-name</p>
+      {step === "custom" && <form className="psetup-form" onSubmit={(e) => { e.preventDefault(); const id = custom.trim(); if (id) void save(id, customName.trim() || undefined, "custom"); }}>
+        <label>Model id<input autoFocus data-testid="setup-custom-model" value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="vendor/model" required /></label>
+        <label>Name <span className="muted">(optional)</span><input data-testid="setup-custom-name" value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="Picker label" /></label>
+        <label>Base URL <span className="muted">(optional)</span><input data-testid="setup-custom-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://api.example.com/v1" /></label>
+        <label>API key <span className="muted">(optional)</span>
+          <span className="psetup-key">
+            <input data-testid="setup-custom-key" type={reveal ? "text" : "password"} autoComplete="off" spellCheck={false} value={key} onChange={(e) => setKey(e.target.value)} placeholder={keepKey ? "Saved key, leave blank to keep it" : "Optional"} />
+            <button type="button" className="ghost" data-testid="setup-custom-reveal" aria-pressed={reveal} onClick={() => setReveal(!reveal)}>{reveal ? "Hide" : "Show"}</button>
+          </span>
+        </label>
+        <label>Format
+          <select data-testid="setup-custom-format" value={fmt} onChange={(e) => setFmt(e.target.value as Fmt)}>
+            {FORMATS.map(([f, n]) => <option key={f} value={f}>{n}</option>)}
+          </select>
+        </label>
+        <p className="muted small">Saves via setup/save · {prov.name}</p>
         <button disabled={!custom.trim()} data-testid="setup-save">Save</button>
       </form>}
 

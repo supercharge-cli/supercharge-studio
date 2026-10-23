@@ -54,7 +54,13 @@ test("desktop: every /setup provider, filter, API key flow with masked key and c
   await page.getByTestId("setup-model-filter").fill("type");
   await page.getByTestId("setup-model").click();
   await expect(page.getByTestId("setup-custom-model")).toHaveValue("llama-3.3-70b-versatile");
+  await expect(page.getByTestId("setup-custom-name")).toBeVisible();
+  await expect(page.getByTestId("setup-custom-url")).toBeVisible();
+  await expect(page.getByTestId("setup-custom-key")).toBeVisible();
+  await expect(page.getByTestId("setup-custom-format")).toHaveValue("chat_completions");
   await page.getByTestId("setup-custom-model").fill("my-model");
+  await page.getByTestId("setup-custom-name").fill("My Model");
+  await page.screenshot({ path: "/workspace/out/setup-custom-model.png" });
   await page.getByTestId("setup-save").click();
   await expect(page.getByTestId("setup-done")).toContainText("my-model");
 });
@@ -90,6 +96,23 @@ test("desktop: Nous Research signs in with a device code, then picks a model", a
   await page.getByTestId("setup-model").nth(1).click();
   await expect(page.getByTestId("setup-done")).toContainText("model-b");
   await shot(page, "saved");
+});
+
+
+test("desktop: enter custom model id + optional fields from provider setup without fetching", async ({ page }) => {
+  await openSetup(page);
+  await page.getByTestId("setup-filter").fill("groq");
+  await page.getByTestId("setup-filter").press("Enter");
+  await page.getByTestId("setup-f-chat_completions").click();
+  await page.getByTestId("setup-key").fill("gsk-good");
+  await page.getByTestId("setup-enter-model").click();
+  await expect(page.getByTestId("setup-custom-model")).toBeVisible();
+  await page.getByTestId("setup-custom-model").fill("vendor/from-settings");
+  await page.getByTestId("setup-custom-name").fill("From Settings");
+  await page.getByTestId("setup-custom-format").selectOption("responses");
+  await page.screenshot({ path: "/workspace/out/setup-custom-model-fields.png" });
+  await page.getByTestId("setup-save").click();
+  await expect(page.getByTestId("setup-done")).toContainText("vendor/from-settings");
 });
 
 test.describe("phone", () => {
