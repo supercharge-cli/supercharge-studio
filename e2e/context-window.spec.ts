@@ -59,8 +59,13 @@ test.describe("phone", () => {
     await page.getByTestId("m-pair-btn").click();
     await expect(page.getByTestId("m-status")).toHaveText("open");
     await page.getByTestId("m-chat").first().click();
+    // The ring only shows once the session load reports window support; under a busy
+    // parallel run that can take longer than the default 5 s, so wait for the load to finish.
+    await expect(page.getByTestId("m-thread")).toBeVisible();
+    await expect(page.locator(".skel-chat")).toHaveCount(0, { timeout: 15000 });
+    await expect(page.getByTestId("m-err")).toHaveCount(0);
     const ring = page.getByTestId("context-meter");
-    await expect(ring).toBeVisible();
+    await expect(ring).toBeVisible({ timeout: 15000 });
     await ring.click();
     await page.getByTestId("ctx-window-select").selectOption("1000000");
     await expect(ring).toHaveAttribute("title", /52,300 \/ 1,000,000 tokens/);
