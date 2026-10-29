@@ -228,7 +228,8 @@ impl Telemetry {
 
     pub fn status(&self) -> Status {
         let p = self.prefs.lock().unwrap();
-        Status { crash_available: self.cfg.crash.is_some(), usage_available: self.cfg.usage.is_some(), crash: self.cfg.crash.is_some() && p.crash, usage: self.cfg.usage.is_some() && p.usage }
+        // A DO_NOT_TRACK-style kill switch shows as off (nothing is sent this run).
+        Status { crash_available: self.cfg.crash.is_some(), usage_available: self.cfg.usage.is_some(), crash: self.cfg.crash.is_some() && p.crash && !self.killed, usage: self.cfg.usage.is_some() && p.usage && !self.killed }
     }
 
     /// Save the user's choice. Turning crash reports off also drops unsent reports.
@@ -542,7 +543,8 @@ pub fn scrub(s: &str, home: Option<&str>, max: usize) -> String {
         s = s.replace(h, "~");
         s = s.replace(&h.replace('\\', "/"), "~");
     }
-    // Long quoted text (prompts, chat, file contents) is dropped entirely.
+    // Quoted text that is long or has spaces (prompts, chat, file contents) is dropped entirely;
+    // only short single-word quotes such as `'map'` stay.
     let mut q = String::with_capacity(s.len());
     let chars: Vec<char> = s.chars().collect();
     let mut i = 0;
@@ -552,7 +554,7 @@ pub fn scrub(s: &str, home: Option<&str>, max: usize) -> String {
             if let Some(end) = chars[i + 1..].iter().position(|&d| d == c) {
                 let inner: String = chars[i + 1..i + 1 + end].iter().collect();
                 q.push(c);
-                if inner.chars().count() > 24 || inner.contains('\n') {
+                if inner.chars().count() > 24 || inner.contains(char::is_whitespace) {
                     q.push_str("<redacted>");
                 } else {
                     q.push_str(&inner);
@@ -625,7 +627,8 @@ pub fn scrub_frame(line: &str, _home: Option<&str>) -> Option<Value> {
             Some((f, loc)) => (f.trim(), loc.trim_end_matches(')')),
             None => ("", rest),
         }
-    } else if let Some((f, loc)) = l.rsplit_once('@') {
+    } else if let Some((f, loc)) = l.rsplit_once('@').filter(|(f, loc)| !f.contains(char::is_whitespace) && !loc.contains(char::is_whitespace)) {
+        // (A message line such as "Error: mail bob@x.io:1" has spaces and is not a frame.)
         (f, loc)
     } else {
         return None;
@@ -650,7 +653,7 @@ pub fn scrub_frame(line: &str, _home: Option<&str>) -> Option<Value> {
 
 /// Injected into the app UI webview (not the side browser): forwards uncaught errors and
 /// unhandled promise rejections to `telemetry_js_error`. Kept out of the JS bundle on purpose.
-pub const JS_HOOK: &str = r#"(()=>{let n=0;const s=(m,k)=>{if(n++>9)return;try{window.__TAURI_INTERNALS__.invoke("telemetry_js_error",{message:String(m||"Error").slice(0,1000),stack:String(k||"").slice(0,6000)}).catch(()=>{})}catch(_){}};addEventListener("error",e=>s(e.message,e.error&&e.error.stack));addEventListener("unhandledrejection",e=>{const r=e.reason;s(r&&r.message||r,r&&r.stack)})})()"#;
+pub const JS_HOOK: &str = r#"(()=>{let n=0;const s=(m,k)=>{if(n++>9)return;try{window.__TAURI_INTERNALS__.invoke("telemetry_js_error",{message:String(m||"Error").slice(0,1000),stack:String(k||"").slice(0,6000)}).catch(()=>{})}catch(_){}};addEventListener("error",e=>s(e.message,e.error&&e.error.stack));addEventListener("unhandledrejection",e=>{const r=e.reason;if(r&&typeof r.code=="number"&&r.name=="AcpRpcError")return s("AcpRpcError "+r.code,"");s(r&&r.message||r,r&&r.stack)})})()"#;
 
 #[cfg(test)]
 mod tests {
@@ -762,6 +765,11 @@ mod tests {
         assert_eq!(scrub("index out of bounds: the len is 3 but the index is 7", home, 300), "index out of bounds: the len is 3 but the index is 7");
         assert_eq!(scrub("TypeError: Cannot read properties of undefined (reading 'map')", home, 300), "TypeError: Cannot read properties of undefined (reading 'map')");
         assert_eq!(scrub(&"a".repeat(500), None, 10).chars().count(), 11);
+        // Short quotes with spaces can still be chat text.
+        assert_eq!(scrub("Unexpected token 'h', \"hi there\" is not valid JSON", home, 300), "Unexpected token 'h', \"<redacted>\" is not valid JSON");
+        // A stack's message line is not a frame, even with an '@' in it.
+        assert!(scrub_frame("Error: write to bob@example.com:12", None).is_none());
+        assert!(scrub_frame("Error: mail bob@x.io", None).is_none());
         assert_eq!(scrub_location("/home/runner/work/scs/src-tauri/src/gateway.rs:88"), "src-tauri/src/gateway.rs:88");
         assert_eq!(scrub_location("src/gateway.rs:88"), "src/gateway.rs:88");
         assert_eq!(scrub_location("/Users/x/.cargo/registry/src/index/tokio-1.4/src/rt.rs:9"), "tokio-1.4/src/rt.rs:9");
@@ -796,6 +804,7 @@ mod tests {
         // DO_NOT_TRACK-style kill switch beats the prefs.
         let k = Telemetry::new(cfg(&base), "desktop", "1.0.0", &d, true);
         assert!(!k.crash_enabled() && !k.usage_enabled());
+        assert!(!k.status().usage, "Settings shows the kill switch as off");
         assert!(rx.recv_timeout(Duration::from_millis(300)).is_err(), "nothing sent while opted out");
         // Usage stats compiled out (ENABLED != true): no usage even with prefs on.
         let mut c = cfg(&base);
@@ -947,5 +956,7 @@ mod tests {
     #[test]
     fn js_hook_targets_the_command() {
         assert!(JS_HOOK.contains("telemetry_js_error") && JS_HOOK.contains("unhandledrejection"));
+        // Agent errors carry agent text (it can echo a prompt or config): code only.
+        assert!(JS_HOOK.contains(r#"s("AcpRpcError "+r.code,"")"#));
     }
 }

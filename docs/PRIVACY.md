@@ -29,9 +29,10 @@ Each report contains only:
 - a random report id and the time.
 
 Before sending, messages and stack traces are scrubbed: file paths and your home folder,
-URLs, e-mail addresses, anything that looks like a key, token or secret, and long quoted text
-(where prompts or chat content would appear) are replaced with placeholders, and the result is
-truncated. No prompts, chat, code, file names, settings, keys, host names or IP-derived location
+URLs, e-mail addresses, anything that looks like a key, token or secret, and quoted text that
+is long or has spaces (where prompts or chat content would appear) are replaced with placeholders,
+and the result is truncated. Errors returned by the agent over ACP are reported by their error
+code only, since their text can echo a prompt or config. No prompts, chat, code, file names, settings, keys, host names or IP-derived location
 are included.
 
 ## Usage stats
