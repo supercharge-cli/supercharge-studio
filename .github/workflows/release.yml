@@ -33,6 +33,11 @@ env:
 jobs:
   desktop:
     name: Desktop (${{ matrix.os }})
+    # Telemetry is compiled in only when these secrets exist (forks/PRs build with it off).
+    env:
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      SUPERCHARGE_TELEMETRY_POSTHOG_API_KEY: ${{ secrets.SUPERCHARGE_TELEMETRY_POSTHOG_API_KEY }}
+      SUPERCHARGE_TELEMETRY_POSTHOG_ENABLED: ${{ secrets.SUPERCHARGE_TELEMETRY_POSTHOG_ENABLED }}
     strategy:
       fail-fast: false
       matrix:
@@ -103,6 +108,11 @@ jobs:
 
   server:
     name: Server (${{ matrix.target }})
+    # Telemetry is compiled in only when these secrets exist (forks/PRs build with it off).
+    env:
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      SUPERCHARGE_TELEMETRY_POSTHOG_API_KEY: ${{ secrets.SUPERCHARGE_TELEMETRY_POSTHOG_API_KEY }}
+      SUPERCHARGE_TELEMETRY_POSTHOG_ENABLED: ${{ secrets.SUPERCHARGE_TELEMETRY_POSTHOG_ENABLED }}
     strategy:
       fail-fast: false
       matrix:
@@ -129,6 +139,11 @@ jobs:
 
   android:
     name: Android
+    # Telemetry is compiled in only when these secrets exist (forks/PRs build with it off).
+    env:
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      SUPERCHARGE_TELEMETRY_POSTHOG_API_KEY: ${{ secrets.SUPERCHARGE_TELEMETRY_POSTHOG_API_KEY }}
+      SUPERCHARGE_TELEMETRY_POSTHOG_ENABLED: ${{ secrets.SUPERCHARGE_TELEMETRY_POSTHOG_ENABLED }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -188,6 +203,11 @@ jobs:
 
   ios:
     name: iOS simulator
+    # Telemetry is compiled in only when these secrets exist (forks/PRs build with it off).
+    env:
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      SUPERCHARGE_TELEMETRY_POSTHOG_API_KEY: ${{ secrets.SUPERCHARGE_TELEMETRY_POSTHOG_API_KEY }}
+      SUPERCHARGE_TELEMETRY_POSTHOG_ENABLED: ${{ secrets.SUPERCHARGE_TELEMETRY_POSTHOG_ENABLED }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

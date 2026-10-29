@@ -431,11 +431,14 @@ export class AcpClient {
   }
 
   newSession(cwd: string, meta?: Record<string, unknown>, mcpServers: unknown[] = []) {
-    return this.request<NewSessionResult>("session/new", {
+    const r = this.request<NewSessionResult>("session/new", {
       cwd,
       mcpServers,
       ...(meta ? { _meta: meta } : {}),
     });
+    // Anonymous "session_start" usage event (the app decides whether it is sent at all).
+    r.then(() => (globalThis as any).__TAURI_INTERNALS__?.invoke("telemetry_event", { name: "session_start" }), () => {});
+    return r;
   }
 
   /** Requires agentCapabilities.sessionCapabilities.list */

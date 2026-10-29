@@ -433,6 +433,7 @@ pub fn gateway_stop() {
 /// New one-time pairing code. `public_url` overrides the advertised URL (tunnel).
 #[tauri::command]
 pub fn gateway_pair_begin(public_url: Option<String>, desktop_name: Option<String>, relay_url: Option<String>) -> Result<Value, String> {
+    crate::telemetry::feature("phone_pairing");
     let mut s = st();
     let public = public_url.filter(|u| !u.trim().is_empty());
     let url = public.clone().or_else(|| s.url.clone()).ok_or("gateway is not running")?;
@@ -567,6 +568,9 @@ mod tests {
 /// The host token is generated once and kept in the OS keychain.
 #[tauri::command]
 pub async fn gateway_relay_set(app: AppHandle, relay_url: Option<String>, host_id: Option<String>) -> Result<(), String> {
+    if relay_url.is_some() {
+        crate::telemetry::feature("public_relay");
+    }
     if let Some(stop) = st().relay_stop.take() {
         let _ = stop.send(());
     }

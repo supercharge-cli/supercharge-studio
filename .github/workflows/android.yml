@@ -7,6 +7,11 @@ permissions:
 jobs:
   android:
     name: Android
+    # Telemetry is compiled in only when these secrets exist (forks/PRs build with it off).
+    env:
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      SUPERCHARGE_TELEMETRY_POSTHOG_API_KEY: ${{ secrets.SUPERCHARGE_TELEMETRY_POSTHOG_API_KEY }}
+      SUPERCHARGE_TELEMETRY_POSTHOG_ENABLED: ${{ secrets.SUPERCHARGE_TELEMETRY_POSTHOG_ENABLED }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4

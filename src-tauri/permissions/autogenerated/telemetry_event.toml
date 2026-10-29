@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-telemetry-event"
+description = "Enables the telemetry_event command without any pre-configured scope."
+commands.allow = ["telemetry_event"]
+
+[[permission]]
+identifier = "deny-telemetry-event"
+description = "Denies the telemetry_event command without any pre-configured scope."
+commands.deny = ["telemetry_event"]

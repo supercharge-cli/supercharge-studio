@@ -176,6 +176,7 @@ pub fn restore(cwd: &Path, id: &str) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn checkpoint_create(cwd: String, id: String) -> Result<Checkpoint, String> {
+    crate::telemetry::feature("checkpoint");
     tokio::task::spawn_blocking(move || create(Path::new(&cwd), &id)).await.map_err(|e| e.to_string())?
 }
 

@@ -168,6 +168,7 @@ mod tests {
 /// Save an exported chat into the Downloads folder (or home) without overwriting; returns the path.
 #[tauri::command]
 pub fn export_save(name: String, text: String) -> Result<String, String> {
+    crate::telemetry::feature("export_chat");
     let dir = dirs::download_dir().or_else(dirs::home_dir).ok_or("No Downloads folder")?;
     export_into(&dir, &name, &text)
 }

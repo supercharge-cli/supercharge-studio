@@ -44,6 +44,7 @@ struct TermGone {
 
 #[tauri::command]
 pub fn term_open(app: AppHandle, state: State<Terms>, id: String, cwd: Option<String>, cols: u16, rows: u16) -> Result<(), String> {
+    crate::telemetry::feature("terminal");
     check_id(&id)?;
     close_one(&state, &id);
     let pair = NativePtySystem::default().openpty(size(cols, rows)).map_err(|e| e.to_string())?;

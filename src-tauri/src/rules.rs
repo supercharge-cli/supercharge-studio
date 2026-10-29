@@ -83,6 +83,7 @@ pub fn rules_read(cwd: String, scope: String, name: String) -> Result<String, St
 /// Write a rules file (creating folders); empty text deletes a rules/ file.
 #[tauri::command]
 pub fn rules_write(cwd: String, scope: String, name: String, text: String) -> Result<(), String> {
+    crate::telemetry::feature("project_rules");
     let p = path_of(&scope, &name, Path::new(&cwd), &home())?;
     if text.is_empty() && name.starts_with("rules/") {
         return match std::fs::remove_file(&p) {

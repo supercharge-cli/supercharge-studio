@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-telemetry-js-error"
+description = "Enables the telemetry_js_error command without any pre-configured scope."
+commands.allow = ["telemetry_js_error"]
+
+[[permission]]
+identifier = "deny-telemetry-js-error"
+description = "Denies the telemetry_js_error command without any pre-configured scope."
+commands.deny = ["telemetry_js_error"]

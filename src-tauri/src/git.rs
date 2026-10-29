@@ -194,6 +194,7 @@ pub async fn git_stage(root: String, paths: Vec<String>, stage: bool) -> Result<
 
 #[tauri::command]
 pub async fn git_commit(root: String, message: String, all: bool) -> Result<String, String> {
+    crate::telemetry::feature("git_commit");
     blocking(move || {
         let r = Path::new(&root);
         if message.trim().is_empty() { return Err("Commit message is empty".into()) }
@@ -221,6 +222,7 @@ pub async fn git_checkout(root: String, branch: String, create: bool) -> Result<
 
 #[tauri::command]
 pub async fn git_push(root: String) -> Result<String, String> {
+    crate::telemetry::feature("git_push");
     blocking(move || {
         let r = Path::new(&root);
         let has_up = git_in(r, &["rev-parse", "--abbrev-ref", "@{u}"], None).is_ok();
@@ -253,6 +255,7 @@ pub fn compare_url(remote: &str, branch: &str) -> Option<String> {
 /// Open a pull request: `gh pr create --web` when available, else the remote's compare page.
 #[tauri::command]
 pub async fn git_open_pr(root: String) -> Result<String, String> {
+    crate::telemetry::feature("pull_request");
     blocking(move || {
         let r = Path::new(&root);
         let gh = hidden::std_cmd("gh").arg("pr").arg("create").arg("--web").current_dir(r).stdin(Stdio::null()).output();
@@ -319,6 +322,7 @@ pub fn worktree_add_sync(root: &Path, name: &str) -> Result<Worktree, String> {
 
 #[tauri::command]
 pub async fn git_worktree_add(root: String, name: String) -> Result<Worktree, String> {
+    crate::telemetry::feature("worktree");
     blocking(move || worktree_add_sync(Path::new(&root), &name)).await
 }
 

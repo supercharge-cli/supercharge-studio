@@ -40,6 +40,8 @@ mod screenshot;
 mod secrets;
 mod agent;
 mod updater;
+mod telemetry;
+mod telemetry_cmds;
 
 const BROWSER: &str = "browser";
 
@@ -133,6 +135,7 @@ async fn agent_stop() -> Result<(), String> {
 /// Start ACP over stdio. Each stdout line is emitted as `acp-stdio://line`.
 #[tauri::command]
 async fn stdio_start(app: AppHandle, state: State<'_, AppState>, always_approve: bool) -> Result<(), String> {
+    crate::telemetry::feature("stdio_transport");
     let mut cmd = crate::hidden::cmd(agent_bin());
     cmd.arg("agent");
     if always_approve {
@@ -192,6 +195,7 @@ fn browser_hidden() -> bool { BROWSER_HIDDEN.load(std::sync::atomic::Ordering::S
 /// Create (or move) the side browser as a child webview of the main window.
 #[tauri::command]
 async fn browser_open(app: AppHandle, url: String, bounds: Bounds) -> Result<(), String> {
+    crate::telemetry::feature("side_browser");
     let parsed: Url = url.parse().map_err(|e: url_err::E| e.to_string())?;
     if let Some(wv) = app.get_webview(BROWSER) {
         wv.navigate(parsed).map_err(|e| e.to_string())?;
@@ -399,6 +403,7 @@ fn uploads_base() -> std::path::PathBuf {
 /// One chunk of a file attached on the desktop or uploaded by a paired phone (see uploads.rs).
 #[tauri::command]
 fn upload_chunk(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    crate::telemetry::feature("attachment");
     let mut u = UPLOADS.get_or_init(Default::default).lock().unwrap();
     Ok(match u.chunk(&uploads_base(), &params)? {
         Some((id, saved)) => saved.to_json(&id),
@@ -424,6 +429,8 @@ pub fn run() {
         .manage(AppState::default())
         .manage(terminal::Terms::new())
         .setup(|app| {
+            // Crash reports / usage stats (no-op unless compiled in and allowed; see telemetry.rs).
+            telemetry::init("desktop", env!("CARGO_PKG_VERSION"), &dirs::config_dir().unwrap_or_else(std::env::temp_dir).join("supercharge-studio"), true, false);
             // Undo model lock-ins older builds wrote to the agent config (backed up first).
             providers::clean_config_file(&providers::config_path());
             mcp::start(app.handle().clone());
@@ -439,7 +446,11 @@ pub fn run() {
             let size = window.inner_size()?.to_logical::<f64>(window.scale_factor()?);
             let _main = window.add_child(
                 // HTML5 drag and drop in the UI (file attachments) instead of the native handler.
-                WebviewBuilder::new("main-ui", WebviewUrl::App("index.html".into())).auto_resize().disable_drag_drop_handler(),
+                // The UI's uncaught errors go to crash reports (main UI only, never the side browser).
+                WebviewBuilder::new("main-ui", WebviewUrl::App("index.html".into()))
+                    .auto_resize()
+                    .disable_drag_drop_handler()
+                    .initialization_script(telemetry::JS_HOOK),
                 LogicalPosition::new(0.0, 0.0),
                 LogicalSize::new(size.width, size.height),
             )?;
@@ -464,7 +475,8 @@ pub fn run() {
             files::export_save, files::fs_read_text, background::background_get, background::background_set, upload_chunk, upload_rewrite,
             terminal::term_open, terminal::term_write, terminal::term_resize, terminal::term_close,
             pick::pick_folder,
-            git::git_status, git::git_diff_file, git::git_diff_all, git::git_revert_hunk, git::git_restore_file, git::git_stage, git::git_commit, git::git_branches, git::git_checkout, git::git_push, git::git_open_pr, git::git_worktree_add, git::git_worktree_merge, git::git_worktree_remove
+            git::git_status, git::git_diff_file, git::git_diff_all, git::git_revert_hunk, git::git_restore_file, git::git_stage, git::git_commit, git::git_branches, git::git_checkout, git::git_push, git::git_open_pr, git::git_worktree_add, git::git_worktree_merge, git::git_worktree_remove,
+            telemetry_cmds::telemetry_get, telemetry_cmds::telemetry_set, telemetry_cmds::telemetry_js_error, telemetry_cmds::telemetry_event
         ])
         .build(tauri::generate_context!())
         .expect("error while running Supercharge Studio")

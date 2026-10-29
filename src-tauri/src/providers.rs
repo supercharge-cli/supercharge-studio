@@ -313,6 +313,7 @@ pub async fn provider_seed_from_env(id: String) -> Option<Provider> {
 /// Write the active provider into the agent config. Returns the catalog keys written.
 #[tauri::command]
 pub async fn provider_apply(provider: Provider) -> Result<Vec<String>, String> {
+    crate::telemetry::feature("provider_setup");
     if provider.models.is_empty() {
         return Err("provider has no models".into());
     }

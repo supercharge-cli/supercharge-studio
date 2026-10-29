@@ -416,6 +416,7 @@ fn api_key_or(base_url: &str, key: Option<String>) -> String {
 
 #[tauri::command]
 pub async fn setup_save(req: SaveReq) -> Result<Status, String> {
+    crate::telemetry::feature("provider_setup");
     blocking(move || {
         let key = if req.provider_id == "nous" && req.api_key.is_none() { nous_token()? } else { api_key_or(&req.base_url, req.api_key.clone()) };
         edit_config(&config_path(), |doc| { apply(doc, &req, &key)?; Ok(status_of(doc)) })

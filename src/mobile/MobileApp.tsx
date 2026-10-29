@@ -1,4 +1,5 @@
 import { invoke, isDesktop } from "../lib/desktop";
+import { Privacy } from "../components/Privacy";
 import { cleanPermission } from "../lib/labels";
 import { answerOption, permKey } from "../lib/quick";
 import { clip, Deduper, defaultNotifyPrefs, notifyTitle, shouldNotify, type NotifyKind, type NotifyPrefs } from "../lib/notify";
@@ -742,6 +743,7 @@ export default function MobileApp() {
               </section>
             )}
             {q && shown.length === 0 && msgHits.length === 0 && <p className="muted m-none">No chats match “{search}”.</p>}
+            {listed && !q && <section className="m-proj"><Privacy /></section>}
             </div>
           <div className="m-fab-row">
             <button className="m-fab m-disconnect" data-testid="m-disconnect" onClick={() => { haptic(); setConfirmDisconnect(true); }}>Disconnect</button>

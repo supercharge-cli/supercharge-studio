@@ -16,6 +16,9 @@ mod portbind;
 mod uploads;
 #[path = "../../src-tauri/src/gwrelay.rs"]
 mod gwrelay;
+#[path = "../../src-tauri/src/telemetry.rs"]
+#[allow(dead_code)]
+mod telemetry;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -53,6 +56,7 @@ pub struct Config {
     data: PathBuf,
     name: String,
     control: String,
+    crash_reports: bool,
 }
 
 fn usage() -> ! {
@@ -78,7 +82,9 @@ OPTIONS (env in brackets):
   --relay URL          custom relay for Public mode, e.g. wss://relay.example.com [SCS_RELAY]
   --data-dir DIR       keys + devices [SCS_DATA] (~/.config/supercharge-studio-server)
   --name NAME          name shown on the phone [SCS_NAME] (hostname)
-  --control ADDR       local control socket [SCS_CONTROL] (127.0.0.1:2422)",
+  --control ADDR       local control socket [SCS_CONTROL] (127.0.0.1:2422)
+  --no-crash-reports   don't send crash reports (official builds only) [SCS_CRASH_REPORTS=0]
+                       DO_NOT_TRACK=1 also turns them off",
         env!("CARGO_PKG_VERSION")
     );
     std::process::exit(2)
@@ -97,6 +103,7 @@ fn parse(args: &[String]) -> (String, Config, Vec<String>) {
         data: env("SCS_DATA").map(PathBuf::from).unwrap_or_else(|| dirs::config_dir().unwrap_or_else(std::env::temp_dir).join("supercharge-studio-server")),
         name: env("SCS_NAME").unwrap_or_else(hostname),
         control: env("SCS_CONTROL").unwrap_or_else(|| "127.0.0.1:2422".into()),
+        crash_reports: !matches!(env("SCS_CRASH_REPORTS").as_deref(), Some("0" | "false" | "off")),
     };
     let mut cmd = "run".to_string();
     let mut rest = vec![];
@@ -120,6 +127,7 @@ fn parse(args: &[String]) -> (String, Config, Vec<String>) {
             "--data-dir" => c.data = PathBuf::from(val(&mut i)),
             "--name" => c.name = val(&mut i),
             "--control" => c.control = val(&mut i),
+            "--no-crash-reports" => c.crash_reports = false,
             "-h" | "--help" => usage(),
             "-V" | "--version" => {
                 println!("supercharge-studio-server {}", env!("CARGO_PKG_VERSION"));
@@ -596,6 +604,8 @@ async fn main() {
     gwrelay::install_tls();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (cmd, c, rest) = parse(&args);
+    // Crash reports only (no usage stats from the server); no-op in builds without a DSN.
+    telemetry::init("server", env!("CARGO_PKG_VERSION"), &c.data, false, !c.crash_reports);
     let r = match cmd.as_str() {
         "pair" => cli_pair(&c, rest.iter().any(|a| a == "--yes")).await,
         "devices" => {
@@ -665,6 +675,9 @@ mod tests {
         assert_eq!(c.relay.as_deref(), Some("wss://mine.example"));
         let (_, c, _) = parse(&["--relay".into(), "wss://mine.example".into(), "--local".into()]);
         assert_eq!(c.relay, None);
+        assert!(c.crash_reports);
+        let (_, c, _) = parse(&["--no-crash-reports".into()]);
+        assert!(!c.crash_reports);
     }
 
     #[test]

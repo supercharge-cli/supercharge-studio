@@ -114,6 +114,7 @@ fn progress(app: &AppHandle, step: &str, pct: Option<f64>, msg: &str) {
 /// Download, verify and install the latest (or `version`) CLI. Returns the installed path.
 #[tauri::command]
 pub async fn cli_install(app: AppHandle, version: Option<String>) -> Result<String, String> {
+    crate::telemetry::feature("cli_install");
     tauri::async_runtime::spawn_blocking(move || install(&app, version)).await.map_err(|e| e.to_string())?
 }
 

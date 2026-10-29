@@ -5,6 +5,7 @@ const COMMANDS: &[&str] = &[
     "gateway_status", "gateway_start", "gateway_stop", "gateway_pair_begin", "gateway_pair_answer", "gateway_revoke", "gateway_send", "gateway_relay_set",
     "fs_list", "fs_read_text",
     "background_get", "background_set", "upload_chunk", "upload_rewrite", "gateway_firewall_allow",
+    "telemetry_get", "telemetry_set", "telemetry_js_error", "telemetry_event",
 ];
 
 fn main() {

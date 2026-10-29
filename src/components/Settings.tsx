@@ -1,4 +1,5 @@
 import { lazy, ReactNode, Suspense, useState } from "react";
+import { Privacy } from "./Privacy";
 import { mergeCli, pickSetup, type SetupStatus } from "../lib/setup";
 import type { ApiFormat, Provider, Settings as S } from "../lib/store";
 import { parseAgentUrl, uid } from "../lib/store";
@@ -163,6 +164,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
             {([["done", "When a reply finishes"], ["error", "When a turn fails"], ["permission", "When the agent needs approval (permissions, plans)"], ["sound", "Play a sound"]] as const).map(([k, label]) => (
               <label key={k} className="check"><input type="checkbox" data-testid={`notify-${k}`} checked={s.notify?.[k] ?? true} onChange={(e) => set({ ...s, notify: { done: true, error: true, permission: true, sound: true, ...s.notify, [k]: e.target.checked } })} /> {label}</label>
             ))}
+            <Privacy />
             <p className="muted">{desktop ? "The server key is stored in the OS keychain." : "Web mode: settings are stored in this browser."}</p>
             {desktop && <AgentLog />}
           </div>

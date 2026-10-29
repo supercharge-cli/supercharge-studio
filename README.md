@@ -12,7 +12,7 @@ and the side browser all go over ACP to a local `supercharge agent serve`
 - Settings: transport, agent address & key, auto-start, model / effort (`session/set_config_option`)
 - Windows, macOS and Linux via a Tauri 2 shell (~2 MB installer on Linux)
 
-Docs: [docs/ACP-BRIEF.md](docs/ACP-BRIEF.md) · [docs/RUNNING.md](docs/RUNNING.md)
+Docs: [docs/ACP-BRIEF.md](docs/ACP-BRIEF.md) · [docs/RUNNING.md](docs/RUNNING.md) · [docs/PRIVACY.md](docs/PRIVACY.md)
 
 ## Quick start
 

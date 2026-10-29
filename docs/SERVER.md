@@ -39,8 +39,12 @@ supercharge-studio-server run --spawn-agent --relay wss://relay.example.com
 | `--data-dir` | `SCS_DATA` | `~/.config/supercharge-studio-server` |
 | `--name` | `SCS_NAME` | hostname |
 | `--control` (local admin socket) | `SCS_CONTROL` | `127.0.0.1:2422` |
+| `--no-crash-reports` | `SCS_CRASH_REPORTS=0` | crash reports on (official builds only) |
 
 State (paired device keys, relay host token) lives in `state.json` in the data dir, with mode 0600.
+
+Official builds send scrubbed crash reports (no usage stats); `DO_NOT_TRACK=1` also turns them off.
+See [PRIVACY.md](PRIVACY.md) for exactly what is sent.
 
 ## Pairing
 
