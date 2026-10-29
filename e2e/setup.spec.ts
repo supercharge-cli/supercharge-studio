@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { shotPath } from "./shot";
 
 // Keep runs hermetic: the live release check would open a blocking update banner whenever a newer release is published.
 test.beforeEach(async ({ page }) => {
@@ -60,7 +61,7 @@ test("desktop: every /setup provider, filter, API key flow with masked key and c
   await expect(page.getByTestId("setup-custom-format")).toHaveValue("chat_completions");
   await page.getByTestId("setup-custom-model").fill("my-model");
   await page.getByTestId("setup-custom-name").fill("My Model");
-  await page.screenshot({ path: "/workspace/out/setup-custom-model.png" });
+  await page.screenshot({ path: shotPath("setup-custom-model.png") });
   await page.getByTestId("setup-save").click();
   await expect(page.getByTestId("setup-done")).toContainText("my-model");
 });
@@ -110,7 +111,7 @@ test("desktop: enter custom model id + optional fields from provider setup witho
   await page.getByTestId("setup-custom-model").fill("vendor/from-settings");
   await page.getByTestId("setup-custom-name").fill("From Settings");
   await page.getByTestId("setup-custom-format").selectOption("responses");
-  await page.screenshot({ path: "/workspace/out/setup-custom-model-fields.png" });
+  await page.screenshot({ path: shotPath("setup-custom-model-fields.png") });
   await page.getByTestId("setup-save").click();
   await expect(page.getByTestId("setup-done")).toContainText("vendor/from-settings");
 });

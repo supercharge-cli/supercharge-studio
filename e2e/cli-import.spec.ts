@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { shotPath } from "./shot";
 
 // Keep runs hermetic: the live release check would open a blocking update banner whenever a newer release is published.
 test.beforeEach(async ({ page }) => {
@@ -27,7 +28,7 @@ test("desktop: imports the CLI's provider on connect, keeps removals, re-imports
   await page.getByTestId("model-trigger").click();
   await expect(page.getByTestId("model-picker")).toContainText("Model A");
   await expect(page.getByTestId("model-picker")).toContainText("Model B");
-  await page.screenshot({ path: "/workspace/out/cli-import-picker.png" });
+  await page.screenshot({ path: shotPath("cli-import-picker.png") });
   await page.keyboard.press("Escape");
 
   await page.getByTestId("open-settings").click();
@@ -39,7 +40,7 @@ test("desktop: imports the CLI's provider on connect, keeps removals, re-imports
   await row.getByTestId("prov-edit").click();
   await expect(page.getByTestId("provider-editor")).toContainText("The key stays in the Supercharge CLI.");
   await expect(page.getByTestId("prov-key")).toHaveCount(0);
-  await page.screenshot({ path: "/workspace/out/cli-import-settings.png" });
+  await page.screenshot({ path: shotPath("cli-import-settings.png") });
 
   // Removing it sticks across reconnects; only "Re-import from CLI" brings it back.
   await page.getByTestId("provider-editor").getByRole("button", { name: "Remove" }).click();
@@ -93,7 +94,7 @@ test.describe("phone", () => {
     await expect(box.getByTestId("m-cli-provider")).toContainText("Imported from CLI");
     await expect(box.getByTestId("m-cli-import")).toBeChecked();
     await page.waitForTimeout(450);
-    await page.screenshot({ path: "/workspace/out/cli-import-mobile.png" });
+    await page.screenshot({ path: shotPath("cli-import-mobile.png") });
     await box.getByRole("button", { name: "Use" }).click();
     await expect.poll(() => page.evaluate(() => (window as any).saves.length)).toBe(1);
     const save = await page.evaluate(() => (window as any).saves[0]);

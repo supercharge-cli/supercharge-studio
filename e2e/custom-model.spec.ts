@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { shotPath } from "./shot";
 
 // Keep runs hermetic: the live release check would open a blocking update banner whenever a newer release is published.
 test.beforeEach(async ({ page }) => {
@@ -31,14 +32,14 @@ test("composer: type a custom model id, persist it, and show it in the picker", 
   await expect(page.getByTestId("model-custom-form")).toBeVisible();
   await page.getByTestId("model-custom-id").fill("vendor/custom-e2e");
   await page.getByTestId("model-custom-name").fill("Custom E2E");
-  await page.screenshot({ path: "/workspace/out/custom-model-form.png" });
+  await page.screenshot({ path: shotPath("custom-model-form.png") });
   await page.getByTestId("model-custom-save").click();
   await expect(page.getByTestId("model-trigger")).toContainText("Custom E2E");
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("supercharge-studio/v1")!).settings.customModels);
   expect(saved).toEqual([{ id: "vendor/custom-e2e", name: "Custom E2E" }]);
   await page.getByTestId("model-trigger").click();
   await expect(page.getByTestId("model-choice").filter({ hasText: "Custom E2E" })).toBeVisible();
-  await page.screenshot({ path: "/workspace/out/custom-model-picker.png" });
+  await page.screenshot({ path: shotPath("custom-model-picker.png") });
 });
 
 test("composer: empty search still offers typing a model id", async ({ page }) => {

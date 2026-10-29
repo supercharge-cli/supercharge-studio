@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { shotPath } from "./shot";
 
 test.use({ viewport: { width: 390, height: 844 } });
 
@@ -132,7 +133,7 @@ test("mobile: type a custom model id when the list is empty or missing the wante
   await page.getByTestId("m-model-custom-toggle").click();
   await page.getByTestId("m-model-custom-id").fill("phone/custom-1");
   await page.getByTestId("m-model-custom-name").fill("Phone Custom");
-  await page.screenshot({ path: "/workspace/out/custom-model-mobile.png" });
+  await page.screenshot({ path: shotPath("custom-model-mobile.png") });
   await page.getByTestId("m-model-custom-save").click();
   await expect(page.getByTestId("m-model")).toContainText("Phone Custom");
   const saves = await page.evaluate(() => (window as any).setupSaves.filter((s: any) => s.op === "save"));
