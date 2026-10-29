@@ -1,5 +1,5 @@
 import { lazy, ReactNode, Suspense, useState } from "react";
-import { pickSetup, type SetupStatus } from "../lib/setup";
+import { mergeCli, pickSetup, type SetupStatus } from "../lib/setup";
 import type { ApiFormat, Provider, Settings as S } from "../lib/store";
 import { parseAgentUrl, uid } from "../lib/store";
 import type { ConfigOption } from "../acp/types";
@@ -27,6 +27,8 @@ type Props = {
   onSetupSaved?: (s: SetupStatus) => void;
   /** The open chat's agent session, switched to the saved model right away when the agent can. */
   sessionId?: () => string | undefined;
+  /** Read the CLI's configured provider again (references only), ignoring earlier removals. */
+  onCliImport?: () => Promise<Provider | null>;
 };
 
 const SECTIONS = [
@@ -90,12 +92,12 @@ function ProviderEditor({ p, desktop, onChange, onKey, onRemove }: { p: Provider
         </div>
         <p className="muted">{p.models.length} selected{discovered && p.models.some((id) => !discovered.some((m) => m.id === id)) ? " · Some saved models were not returned; they remain selected until you remove them." : ""}</p>
       </div>
-      <label>API key
+      {p.cli ? <p className="muted">The key stays in the Supercharge CLI.</p> : <label>API key
         <div className="row">
           <input data-testid="prov-key" type="password" placeholder={desktop ? "Stored securely; leave blank to keep" : "Desktop app required"} value={key} disabled={!desktop} onChange={(e) => setKey(e.target.value)} />
           <button className="secondary" disabled={!desktop || !key} onClick={async () => { try { setKeyState(`Saved (${await onKey(key)})`); setKey(""); } catch (e: any) { setKeyState(`Could not save key: ${e?.message ?? e}`); } }}>Save key</button>
         </div>
-      </label>
+      </label>}
       <div className="row between">
         <span className="muted">{keyState}</span>
         <button className="ghost danger-text" onClick={onRemove}><Icon name="trash" /> Remove</button>
@@ -179,7 +181,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
               <div key={p.id}>
                 <div className={`prov-row ${s.activeProviderId === p.id ? "active" : ""}`} data-testid="provider-row">
                   <div className="prov-main">
-                    <strong>{p.name || "Untitled"}</strong>
+                    <strong>{p.name || "Untitled"}{p.cli && <small className="muted" data-testid="prov-cli"> · Imported from CLI</small>}</strong>
                     <span className="muted">{p.models.join(", ") || "no models"} · {FORMATS.find((f) => f.v === p.format)?.label}</span>
                   </div>
                   {s.activeProviderId === p.id ? (
@@ -189,7 +191,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
                       setBusy(p.id);
                       try {
                         await props.onActivate(p, providers);
-                        set({ ...s, activeProviderId: p.id });
+                        set({ ...s, activeProviderId: p.cli ? undefined : p.id });
                       } catch (e: any) {
                         setProviderError(String(e?.message ?? e));
                       } finally {
@@ -203,9 +205,9 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
                   <ProviderEditor
                     p={p}
                     desktop={desktop}
-                    onChange={(np) => setProviders(providers.map((x) => (x.id === p.id ? np : x)))}
+                    onChange={(np) => setProviders(providers.map((x) => (x.id === p.id ? { ...np, edited: !!p.cli || undefined } : x)))}
                     onKey={(k) => props.onProviderKey(p.id, k)}
-                    onRemove={() => { setProviders(providers.filter((x) => x.id !== p.id)); setEditing(null); }}
+                    onRemove={() => { set({ ...s, providers: providers.filter((x) => x.id !== p.id), cliRemoved: p.cli ? [...(s.cliRemoved ?? []), p.cli] : s.cliRemoved }); setEditing(null); }}
                   />
                 )}
               </div>
@@ -215,6 +217,8 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
               setProviders([...providers, np]);
               setEditing(np.id);
             }}><Icon name="plus" /> Add provider</button>
+            <label className="check"><input type="checkbox" data-testid="cli-import" checked={s.cliImport !== false} onChange={(e) => set({ ...s, cliImport: e.target.checked })} /> Import the provider the Supercharge CLI is set up with</label>
+            {props.onCliImport && <button className="secondary" data-testid="cli-reimport" onClick={async () => { const p = await props.onCliImport!().catch(() => null); set({ ...s, cliRemoved: [], providers: (p && mergeCli(providers, p)) || providers }); setProviderError(p ? "" : "The CLI has no provider to import."); }}>Re-import from CLI</button>}
           </div>
         )}
 

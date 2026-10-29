@@ -11,7 +11,8 @@ export type Chat = { id: string; title: string; sessionId?: string; createdAt: n
 export type Project = { id: string; name: string; cwd: string; chats: Chat[] };
 export type Group = { id: string; name: string; collapsed?: boolean; projects: Project[] };
 export type ApiFormat = "responses" | "chat_completions" | "messages";
-export type Provider = { id: string; name: string; baseUrl: string; format: ApiFormat; models: string[] };
+/** `cli`: imported from the CLI's config (`providerId|baseUrl`; the key stays in the CLI). `edited`: changed in Studio since. */
+export type Provider = { id: string; name: string; baseUrl: string; format: ApiFormat; models: string[]; cli?: string; edited?: boolean };
 /** A theme id from lib/themes (or "system"). */
 export type Theme = string;
 
@@ -35,6 +36,10 @@ export type Settings = {
   secretInKeychain?: boolean;
   providers?: Provider[];
   activeProviderId?: string;
+  /** Import the CLI's configured provider on connect (default on). */
+  cliImport?: boolean;
+  /** Imported providers the user removed (`Provider.cli` keys); not re-added until "Re-import". */
+  cliRemoved?: string[];
   theme?: Theme;
   /** Chat text size in px (default 14). */
   fontSize?: number;

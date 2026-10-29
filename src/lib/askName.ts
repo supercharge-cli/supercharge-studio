@@ -1,8 +1,9 @@
-/** In-app name prompt (replaces window.prompt). The dialog UI loads on first use. */
+/** In-app name prompt (replaces window.prompt). This module (dialog included) loads on first use. */
+import { mountNameDialog } from "../components/NameDialog";
 export type AskNameOpts = { title: string; label?: string; initial?: string; placeholder?: string; ok?: string; validate?: (v: string) => string | null };
 
 export function askName(o: AskNameOpts): Promise<string | null> {
-  return import("../components/NameDialog").then((m) => new Promise<string | null>((resolve) => m.mountNameDialog(o, resolve)));
+  return new Promise<string | null>((resolve) => mountNameDialog(o, resolve));
 }
 
 /** Git branch-name rules (subset of check-ref-format) → error text, or null when fine. */

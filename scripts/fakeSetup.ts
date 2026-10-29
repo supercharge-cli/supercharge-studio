@@ -1,6 +1,6 @@
 /** Scripted provider setup for the fakes: models, save and a two-poll device-code login. */
-export function fakeSetup() {
-  const saved: any = { providerId: null, baseUrl: null, format: null, model: null, hasKey: false, nousSignedIn: false };
+export function fakeSetup(preset?: Record<string, unknown>) {
+  const saved: any = { providerId: null, baseUrl: null, format: null, model: null, hasKey: false, nousSignedIn: false, ...preset };
   let polls = 0;
   const saves: any[] = [];
   const run = async (op: string, p: any = {}): Promise<any> => {

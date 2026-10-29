@@ -5,6 +5,8 @@
  * the phone, which asks the paired computer through the gateway.
  */
 import { invoke, isDesktop } from "./desktop";
+import type { ModelOpt } from "./modelFallback";
+import type { Provider } from "./store";
 
 export type Fmt = "chat_completions" | "messages" | "responses";
 export type SetupProvider = { id: string; name: string; description: string; baseUrl: string; defaultModel: string; format: Fmt; keyOptional?: boolean; device?: boolean };
@@ -134,3 +136,75 @@ export async function pollDevice(api: SetupApi, interval: number, expiresIn: num
     if (r === "slow_down") every += 1000;
   }
 }
+
+// ---- Model saves (picker fallback and typed ids) ----
+export const asFmt = (f?: string | null): Fmt =>
+  f === "messages" || f === "responses" || f === "chat_completions" ? f : f === "anthropic" ? "messages" : "chat_completions";
+const withCur = (opts: { value: string; name?: string }[], cur?: string | null) =>
+  cur && !opts.some((o) => o.value === cur) ? [{ value: cur, name: cur }, ...opts] : opts;
+
+export async function setupModel(api: SetupApi): Promise<ModelOpt | undefined> {
+  const st: any = await api.status().catch(() => null);
+  const cur: string | undefined = st?.model ?? st?.modelId ?? undefined;
+  const pid = st?.providerId ?? "", base = st?.baseUrl ?? "", fmt = asFmt(st?.format);
+  const list = pid || base ? await api.models(pid, base, undefined, fmt).catch(() => []) : [];
+  if (!cur && !list.length) return undefined;
+  return { id: "model", name: "Model", currentValue: cur, options: withCur((list as any[]).map((m) => ({ value: m.id, name: m.name || m.id })), cur), source: "setup", setup: { providerId: pid, baseUrl: base, format: fmt } };
+}
+
+export function saveSetupModel(api: SetupApi, opt: ModelOpt, value: string, sessionId?: string) {
+  const s = (opt as any).setup ?? {};
+  const name = opt.options?.find((o) => o.value === value)?.name;
+  return api.save({ providerId: s.providerId, baseUrl: s.baseUrl, format: s.format, modelId: value, modelName: name && name !== value ? name : undefined, sessionId });
+}
+
+export async function saveCustomModel(api: SetupApi, modelId: string, extra: { modelName?: string; sessionId?: string; baseUrl?: string; format?: Fmt; providerId?: string; apiKey?: string } = {}) {
+  const st: any = await api.status().catch(() => null);
+  const name = extra.modelName?.trim();
+  return api.save({
+    providerId: extra.providerId || st?.providerId || "custom",
+    baseUrl: extra.baseUrl ?? st?.baseUrl ?? "",
+    format: asFmt(extra.format ?? st?.format),
+    modelId,
+    modelName: name && name !== modelId ? name : undefined,
+    sessionId: extra.sessionId,
+    ...(extra.apiKey !== undefined ? { apiKey: extra.apiKey } : {}),
+  });
+}
+
+// ---- CLI provider import ----
+/**
+ * The provider the Supercharge CLI is configured with, as a Studio provider reference.
+ * Only ids, base URL, format and model ids are read; the API key never leaves the CLI.
+ * Null when nothing is configured or the CLI has no setup methods (older CLIs).
+ */
+export async function readCli(api: SetupApi, list?: () => Promise<any>): Promise<Provider | null> {
+  const s: any = await api.status().catch(() => null);
+  const pid: string = s?.providerId || "", known = PROVIDERS.find((p) => p.id === pid);
+  const base: string = s?.baseUrl || known?.baseUrl || "";
+  if (s?.configured === false || !(pid || base)) return null;
+  const format = asFmt(s.format ?? known?.format);
+  const got: any = await (list?.() ?? Promise.reject()).catch(() => api.models(pid, base, undefined, format)).catch(() => []);
+  const cur: string | undefined = s.model ?? s.modelId;
+  const ids = [...new Set([cur, ...(got?.models ?? got ?? []).map((m: any) => m?.id)].filter(Boolean))] as string[];
+  const cli = `${pid || "custom"}|${normBase(base)}`;
+  let host = base;
+  try { host = new URL(normBase(base)).host; } catch { /* keep the URL */ }
+  return { id: `cli-${cli.replace(/[^a-z0-9]+/gi, "-")}`, name: known?.name ?? host, baseUrl: base, format, models: ids.slice(0, 200), cli };
+}
+
+/**
+ * Add or refresh the imported provider. Null when nothing changes: removed by the user,
+ * edited in Studio, or the same endpoint already set up by hand (no duplicates).
+ */
+export function mergeCli(list: Provider[], imp: Provider, removed: string[] = []): Provider[] | null {
+  if (!imp.cli || removed.includes(imp.cli)) return null;
+  const old = list.find((p) => p.cli === imp.cli);
+  if (!old) return list.some((p) => !p.cli && normBase(p.baseUrl) === normBase(imp.baseUrl)) ? null : [...list, imp];
+  const next = { ...imp, id: old.id };
+  return old.edited || JSON.stringify(next) === JSON.stringify(old) ? null : list.map((p) => (p === old ? next : p));
+}
+
+/** Point the CLI at an imported provider: no `apiKey`, so the CLI keeps using its own saved key. */
+export const applyCli = (api: SetupApi, p: Provider, sessionId?: string) =>
+  api.save({ providerId: p.cli!.split("|")[0], baseUrl: p.baseUrl, format: asFmt(p.format), modelId: p.models[0] ?? "", sessionId });

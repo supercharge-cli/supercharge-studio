@@ -1,4 +1,4 @@
-.psetup{display:flex;flex-direction:column;gap:10px;min-width:0}
+.psetup{display:flex;flex-direction:column;gap:10px;min-width:0;flex-shrink:0}
 .psetup-head{display:flex;align-items:center;gap:6px;min-height:30px}
 .psetup-head .spacer{flex:1}
 .psetup-head .icon{width:30px;height:30px;display:grid;place-items:center;border-radius:8px}

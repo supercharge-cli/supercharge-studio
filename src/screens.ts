@@ -6,3 +6,4 @@ export { default as CliSetup } from "./components/CliSetup";
 export { PlanApprovalModal } from "./components/PlanApproval";
 export { default as UpdateBanner } from "./components/UpdateBanner";
 export * as exportChat from "./lib/exportChat";
+export * as setupLib from "./lib/setup";

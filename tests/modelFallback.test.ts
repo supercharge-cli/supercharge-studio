@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { agentModel, mergeCustom, rememberCustom, sessionModel } from "../src/lib/modelFallback";
-import { saveCustomModel, setupModel } from "../src/lib/modelSave";
+import { saveCustomModel, setupModel } from "../src/lib/setup";
 
 describe("model picker fallback", () => {
   it("keeps the agent's option, even with no choices but a current model", () => {

@@ -1,9 +1,9 @@
-import { lazy, Suspense, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ModelPicker } from "./ModelPicker";
 import type { ConfigOption } from "../acp/types";
 import { optionFor, reasoningOption } from "../lib/sessionOptions";
 import { Icon } from "./Icon";
-const ThinkingControl = lazy(() => import("./ThinkingControl").then((m) => ({ default: m.ThinkingControl })));
+import { ThinkingControl } from "./ThinkingControl";
 import { ContextMeter, type WindowCtl } from "./ContextMeter";
 
 export function ModelControls({ options, onSelect, onCustom, children, context, window: win }: {
@@ -28,7 +28,7 @@ export function ModelControls({ options, onSelect, onCustom, children, context, 
         </button>
         {open && <ModelPicker model={model} onSelect={onSelect} onCustom={onCustom} onClose={close} />}
       </div>}
-      {(model || reasoning) && <Suspense fallback={null}><ThinkingControl option={reasoning} modelName={active?.name ?? active?.value} onSelect={(v) => reasoning && onSelect(reasoning.id, v)} onModel={() => setOpen(true)} /></Suspense>}
+      {(model || reasoning) && <ThinkingControl option={reasoning} modelName={active?.name ?? active?.value} onSelect={(v) => reasoning && onSelect(reasoning.id, v)} onModel={() => setOpen(true)} />}
       {context && <ContextMeter used={context.used} max={context.max} window={win} />}
       {children}
     </div>

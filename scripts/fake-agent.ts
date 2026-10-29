@@ -29,7 +29,11 @@ type St = { n: number; listed: Listed[]; known: Set<string>; modelFixed?: boolea
 const CLI = process.env.FAKE_AGENT_CLI === "1";
 // The CLI fake also offers the proposed ACP provider-setup extension (`_supercharge/setup/<op>`).
 const SETUP_METHODS = ["status", "models", "save", "device_start", "device_poll", "device_cancel"].map((op) => `_supercharge/setup/${op}`);
-const setupFake = fakeSetup();
+// FAKE_AGENT_PROVIDER=1: the CLI was already set up (OpenRouter, key saved in its config), in the CLI's
+// own status shape (`modelId`, `hasApiKey`, `configured`); sessions list that provider's models.
+const PRESET = process.env.FAKE_AGENT_PROVIDER === "1";
+const setupFake = fakeSetup(PRESET ? { configured: true, providerId: "openrouter", baseUrl: "https://openrouter.ai/api/v1", format: "openai", modelId: "model-a", hasApiKey: true, hasKey: true } : undefined);
+const MODELS = PRESET ? [["model-a", "Model A"], ["model-b", "Model B"]] : [["studio-test-1", "First"], ["studio-test-2", "Second"]];
 const ago = (m: number) => new Date(Date.now() - m * 60000).toISOString();
 const cliSeed = (): Listed[] => [
   { sessionId: "cli-a1", cwd: "/srv/alpha", title: "Fix login bug", updatedAt: ago(5) },
@@ -92,7 +96,7 @@ wss.on("connection", (ws: WebSocket) => {
     return { id: "context_window", name: "Context window", currentValue: cur ? String(cur) : "auto", options: base.map((v) => ({ value: v, name: v })) };
   };
   const optionsFor = (sid: string) => [
-    ...(noModel ? [] : [{ id: "model", name: "Model", currentValue: modelChoices.get(sid) ?? "studio-test-1", options: [{ value: "studio-test-1", name: "First" }, { value: "studio-test-2", name: "Second" }] }]),
+    ...(noModel ? [] : [{ id: "model", name: "Model", currentValue: modelChoices.get(sid) ?? MODELS[0][0], options: MODELS.map(([value, name]) => ({ value, name })) }]),
     { id: "reasoning_effort", name: "Reasoning Effort", category: "thought_level", currentValue: reasoningChoices.get(sid) ?? "high", options: [{ value: "off", name: "Off" }, { value: "low", name: "Low" }, { value: "medium", name: "Medium" }, { value: "high", name: "High" }, { value: "xhigh", name: "Extra High" }] },
     { id: "permission_mode", name: "Tool permissions", currentValue: permissionChoices.get(sid) ?? "ask", options: [{ value: "ask", name: "Ask" }, { value: "always-approve", name: "Always approve" }] },
     ...(CLI ? [] : [windowOpt(sid)]),
@@ -171,7 +175,7 @@ wss.on("connection", (ws: WebSocket) => {
           sessionId: `fake-${st.n}`,
           configOptions: optionsFor(`fake-${st.n}`),
           modes: modesFor(`fake-${st.n}`),
-          models: noModel ? undefined : { currentModelId: "studio-test-1", availableModels: [{ modelId: "studio-test-1", name: "First", _meta: { totalContextTokens: 200000 } }, { modelId: "studio-test-2", name: "Second", _meta: { totalContextTokens: 1000000 } }] },
+          models: noModel ? undefined : { currentModelId: MODELS[0][0], availableModels: MODELS.map(([modelId, name], i) => ({ modelId, name, _meta: { totalContextTokens: i ? 1000000 : 200000 } })) },
         });
       case "session/set_config_option": {
         const sid = m.params?.sessionId;
@@ -351,6 +355,9 @@ wss.on("connection", (ws: WebSocket) => {
         send({ method: "_supercharge/session/context_usage", params: { sessionId: sid, usedTokens: 52300, maxTokens: winFor(sid) } });
         return reply({ contextWindow: winFor(sid), overridden: n != null });
       }
+      case "_supercharge/models/list":
+        if (!PRESET) return send({ id: m.id, error: { code: -32601, message: "Method not found" } });
+        return reply({ currentModelId: "model-a", models: MODELS.map(([id, displayName]) => ({ id, displayName, provider: "openrouter", contextWindow: 200000, supportsReasoningEffort: false, pricing: null })) });
       default:
         if (CLI && SETUP_METHODS.includes(m.method)) {
           const op = m.method.split("/").pop();

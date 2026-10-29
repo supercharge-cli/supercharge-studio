@@ -1,5 +1,6 @@
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
-import { CUSTOM, CUSTOM_MODEL, FORMATS, filterModels, filterProviders, keyReusable, pollDevice, type DeviceStart, type Fmt, type SetupApi, type SetupModel, type SetupProvider, type SetupStatus } from "../lib/setup";
+import { applyCli, mergeCli, readCli, rpcSetup, CUSTOM, CUSTOM_MODEL, FORMATS, filterModels, filterProviders, keyReusable, pollDevice, type DeviceStart, type Fmt, type SetupApi, type SetupModel, type SetupProvider, type SetupStatus } from "../lib/setup";
+import type { Provider } from "../lib/store";
 import { Icon } from "./Icon";
 import "./provider-setup.css";
 
@@ -198,6 +199,47 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
         <p className="muted small">New chats use it. The CLI's /setup shows the same provider.</p>
         {onClose && <button onClick={onClose}>Done</button>}
       </div>}
+    </div>
+  );
+}
+
+// ---- Phone: the CLI's provider, imported (desktop keeps these in Settings → Providers) ----
+/** Phone copy of the CLI's provider references (never a key), the removals and the on/off toggle. */
+export { ModelCustomForm } from "./ModelCustomForm";
+export { saveCustomModel } from "../lib/setup";
+/** The paired computer's setup methods, through the gateway. */
+export const phoneSetup = (c: { ext: (m: string, p: Record<string, unknown>) => Promise<any> }) => rpcSetup((op, p) => c.ext("_supercharge/setup", { ...p, op }));
+const K = "supercharge-mobile/cli-";
+const get = (k: string, d: any) => { try { return JSON.parse(localStorage.getItem(K + k) ?? "") ?? d; } catch { return d; } };
+const put = (k: string, v: unknown) => { try { localStorage.setItem(K + k, JSON.stringify(v)); } catch { /* full or blocked */ } };
+
+/** Import the CLI's configured provider unless turned off; `again` also brings back removed ones. */
+export async function autoImport(api: SetupApi, again?: boolean): Promise<Provider[]> {
+  const list: Provider[] = get("providers", []);
+  if (!again && get("import", true) === false) return list;
+  const p = await readCli(api);
+  const next = p && mergeCli(list, p, again ? [] : get("removed", []));
+  if (again) put("removed", []);
+  if (next) put("providers", next);
+  return next ?? list;
+}
+
+export function CliProviders({ api, sessionId }: { api: SetupApi; sessionId: () => string | undefined }) {
+  const [list, setList] = useState<Provider[]>(() => get("providers", []));
+  const [on, setOn] = useState<boolean>(() => get("import", true));
+  const [msg, setMsg] = useState("");
+  return (
+    <div className="psetup" data-testid="m-cli-providers">
+      {list.map((p) => (
+        <div key={p.id} className="psetup-row" data-testid="m-cli-provider">
+          <span><strong>{p.name}</strong> <small className="muted">Imported from CLI</small><br /><small className="muted">{p.models.join(", ")}</small></span>
+          <button className="secondary compact" onClick={() => void applyCli(api, p, sessionId()).then(() => setMsg(`Using ${p.name}`), (e) => setMsg(String(e?.message ?? e)))}>Use</button>
+          <button className="ghost compact" aria-label="Remove" onClick={() => { const l = list.filter((x) => x !== p); put("providers", l); put("removed", [...get("removed", []), p.cli]); setList(l); }}>✕</button>
+        </div>
+      ))}
+      <div className="psetup-row"><label style={{ display: "inline" }}><input type="checkbox" style={{ width: "auto" }} data-testid="m-cli-import" checked={on} onChange={(e) => { put("import", e.target.checked); setOn(e.target.checked); }} /> Import the CLI's provider</label>
+        <button className="secondary compact" data-testid="m-cli-reimport" onClick={() => void autoImport(api, true).then(setList)}>Re-import from CLI</button></div>
+      {msg && <p className="muted small">{msg}</p>}
     </div>
   );
 }

@@ -55,6 +55,8 @@ const UpdateBanner = lazy(() => import("./screens").then((m) => ({ default: m.Up
 
 type View = "chat" | "settings" | "usage" | "tools";
 const ToolsScreen = lazy(() => import("./screens").then((m) => ({ default: m.ToolsScreen })));
+/** Provider setup helpers ride in the screens chunk (idle-loaded anyway). */
+const setupLib = () => import("./screens").then((m) => m.setupLib);
 const ModelControls = lazy(() => import("./components/ModelControls").then((m) => ({ default: m.ModelControls })));
 type PermState = { req: PermissionRequest; resolve: (o: PermissionOutcome) => void; token?: number };
 type PlanAsk = { req: PlanApprovalRequest; resolve: (r: PlanApprovalResult) => void };
@@ -491,6 +493,7 @@ export default function App() {
       const ch = f?.project.chats.find((x) => x.id === d.activeChatId);
       if (f && ch?.sessionId) void selectChat(f.project.id, ch.id, false);
       void syncCli();
+      void importCli(client);
     } catch (e: any) {
       setStatus(String(e?.message ?? e));
     }
@@ -572,7 +575,7 @@ export default function App() {
     setFallbackModel({}); setModelTick((n) => n + 1);
     // An agent that saved it over ACP switched its chats (switchedSessions) or reloaded itself;
     // only a config written by the desktop shell needs a restart.
-    const { switchedLive } = await import("./lib/setup");
+    const { switchedLive } = await setupLib();
     if (switchedLive(r) || clientRef.current?.hasExtension("_supercharge/setup/save") || !isDesktop()) return;
     try {
       const st = dataRef.current.settings;
@@ -586,7 +589,7 @@ export default function App() {
     return findProject(d, d.activeProjectId)?.project.chats.find((c) => c.id === d.activeChatId)?.sessionId || undefined;
   };
   const setupFor = async (op: string, params: any) => {
-    const api = (await import("./lib/setup")).pickSetup(clientRef.current);
+    const api = (await setupLib()).pickSetup(clientRef.current);
     if (!api) throw new Error("Need desktop for setup");
     const str = (k: string) => (typeof params?.[k] === "string" ? params[k] : "");
     const fmt = (["chat_completions", "messages", "responses"].includes(params?.format) ? params.format : "chat_completions") as "chat_completions" | "messages" | "responses";
@@ -602,8 +605,18 @@ export default function App() {
     throw new Error("Unknown setup step");
   };
 
+  /** Add the CLI's configured provider (ids and models only; its key stays in the CLI). `again`: the user asked. */
+  async function importCli(c: AcpClient | null, again?: boolean) {
+    if (!c?.hasExtension("_supercharge/setup/status") || (!again && dataRef.current.settings.cliImport === false)) return null;
+    const m = await setupLib();
+    const p = await m.readCli(m.rpcSetup((op, x) => c.ext(`_supercharge/setup/${op}`, x)), () => c.ext("_supercharge/models/list"));
+    if (p) update((d) => { const l = m.mergeCli(d.settings.providers ?? [], p, again ? [] : d.settings.cliRemoved); return l ? { ...d, settings: { ...d.settings, providers: l, ...(again && { cliRemoved: [] }) } } : d; });
+    return p;
+  }
+
   async function activateProvider(p: Provider, all: Provider[]) {
     update((d) => ({ ...d, settings: { ...d.settings, providers: all } }));
+    if (p.cli) { const m = await setupLib(); return void setupSaved(await m.applyCli(m.pickSetup(clientRef.current)!, p, activeSessionId())); }
     try {
       await providerApply(p);
       const st = dataRef.current.settings;
@@ -1046,7 +1059,7 @@ export default function App() {
     if (!activeSid || realModel) return;
     let live = true;
     void (async () => {
-      const m = sessionModel(sessModels.current[activeSid]) ?? await (async () => { const [{ pickSetup }, { setupModel }] = await Promise.all([import("./lib/setup"), import("./lib/modelSave")]); const api = pickSetup(clientRef.current); return api ? setupModel(api) : undefined; })();
+      const m = sessionModel(sessModels.current[activeSid]) ?? await (async () => { const { pickSetup, setupModel } = await setupLib(); const api = pickSetup(clientRef.current); return api ? setupModel(api) : undefined; })();
       if (live) setFallbackModel((all) => ({ ...all, [activeSid]: m }));
     })();
     return () => { live = false; };
@@ -1067,7 +1080,7 @@ export default function App() {
     try {
       if (m?.source === "session" && listed) await c.request("session/set_model", { sessionId: sid, modelId: value });
       else {
-        const [{ pickSetup }, { saveSetupModel, saveCustomModel }] = await Promise.all([import("./lib/setup"), import("./lib/modelSave")]);
+        const { pickSetup, saveSetupModel, saveCustomModel } = await setupLib();
         const api = pickSetup(c);
         if (!api) throw new Error("Need desktop for setup");
         const r = m?.source === "setup" && listed
@@ -1468,6 +1481,7 @@ export default function App() {
           acp={clientRef.current}
           openUrl={(url) => void invoke("setup_open", { url }).catch(() => window.open(url, "_blank"))}
           onSetupSaved={(st) => void setupSaved(st)}
+          onCliImport={() => importCli(clientRef.current, true)}
           sessionId={activeSessionId}
           onClose={() => setView("chat")}
           devices={<DevicesSection desktop={isDesktop()} prefs={gwPrefs} onPrefs={(g) => update((d) => ({ ...d, settings: { ...d.settings, gateway: g } }))} />}
@@ -1479,7 +1493,7 @@ export default function App() {
               return;
             }
             const stored = (await keychainSet(settings.secret)) ? { ...settings, secret: "", secretInKeychain: true } : { ...settings, secretInKeychain: false };
-            if (activeProvider && isDesktop()) {
+            if (activeProvider && !activeProvider.cli && isDesktop()) {
               try {
                 await providerApply(activeProvider);
                 const result = await agentRestart(stored.bind, secretRef.current || settings.secret, stored.alwaysApprove);
