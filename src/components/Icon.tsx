@@ -26,6 +26,7 @@ const P: Record<string, string> = {
   compose: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4ZM4 4h7",
   file: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8ZM14 2v6h6",
   qr: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM18 18h3v3h-3z",
+  laptop: "M4 5h16v11H4zM2 19h20",
   arrowLeft: "M19 12H5M12 19l-7-7 7-7",
 };
 

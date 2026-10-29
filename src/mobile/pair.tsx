@@ -5,7 +5,9 @@ import { candidates, GatewayTransport, type DeviceCreds } from "../gateway/trans
 import { parsePairUri } from "../gateway/crypto";
 import { defaultDeviceName, pendingCredsFromCode } from "./creds";
 import { phoneIp } from "./ip";
-import { canScan, onPairLink, scanQr } from "./scan";
+import { canScan, onPairLink } from "./scan";
+import Scanner from "./scanner";
+import { createPortal } from "react-dom";
 
 export default function Pair({ onPaired }: { onPaired: (c: DeviceCreds) => void }) {
   const [code, setCode] = useState("");
@@ -13,24 +15,9 @@ export default function Pair({ onPaired }: { onPaired: (c: DeviceCreds) => void 
   const [stage, setStage] = useState<"" | "connecting" | "waiting">("");
   const [err, setErr] = useState("");
   useEffect(() => { void onPairLink((c) => { setCode(c); void pair(c); }).catch(() => {}); }, []);
-  const [scanBusy, setScanBusy] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const pairing = useRef(false);
-  async function onScan() {
-    setErr("");
-    setScanBusy(true);
-    try {
-      const c = await scanQr();
-      if (!c) return;
-      setCode(c);
-      // Check the code before doing anything with it, so other QR codes just show a message.
-      try { parsePairUri(c); } catch (e: any) { setErr(String(e?.message ?? e)); return; }
-      await pair(c);
-    } catch (e: any) {
-      setErr(String(e?.message ?? e));
-    } finally {
-      setScanBusy(false);
-    }
-  }
+  const codeEl = useRef<HTMLTextAreaElement>(null);
   async function pair(c = code) {
     if (pairing.current) return;
     pairing.current = true;
@@ -49,6 +36,7 @@ export default function Pair({ onPaired }: { onPaired: (c: DeviceCreds) => void 
     } catch (e: any) {
       setErr(String(e?.message ?? e));
       setStage("");
+      setScanOpen(false);
     } finally {
       pairing.current = false;
     }
@@ -56,11 +44,13 @@ export default function Pair({ onPaired }: { onPaired: (c: DeviceCreds) => void 
   return (
     <div className="m-pair" data-testid="m-pair">
       <div className="m-hero"><div className="logo big"><img src="/logo.png" alt="" /></div><h1>Supercharge Studio</h1><p className="muted">Pair with Supercharge Studio on your computer: Settings → Devices → Show pairing code.</p></div>
-      {canScan() && <button className="m-big" disabled={!!stage || scanBusy} onClick={() => void onScan()} data-testid="m-scan"><Icon name="qr" /> Scan QR code</button>}
+      {canScan() && <button className="m-big" disabled={!!stage} onClick={() => { setErr(""); setScanOpen(true); }} data-testid="m-scan"><Icon name="qr" /> Scan QR code</button>}
       <label>Device name<input value={name} onChange={(e) => setName(e.target.value)} data-testid="m-name" /></label>
-      <label>Pairing code<textarea rows={3} value={code} placeholder="scstudio://pair?…" onChange={(e) => setCode(e.target.value)} data-testid="m-code" /></label>
+      <label>Pairing code<textarea ref={codeEl} rows={3} value={code} placeholder="scstudio://pair?…" onChange={(e) => setCode(e.target.value)} data-testid="m-code" /></label>
       <button className="m-big" disabled={!code.trim() || !!stage} onClick={() => void pair()} data-testid="m-pair-btn">{stage === "waiting" ? "Confirm on your computer…" : stage === "connecting" ? "Connecting…" : "Pair"}</button>
       {err && <div className="error-text" data-testid="m-error">{err}</div>}
+      {/* On <body>: the screen's entry animation would otherwise trap the fixed sheet inside it. */}
+      {scanOpen && createPortal(<Scanner waiting={stage === "waiting"} onCode={(c) => { setCode(c); void pair(c); }} onClose={() => setScanOpen(false)} onPaste={() => { setScanOpen(false); codeEl.current?.focus(); }} />, document.body)}
     </div>
   );
 }

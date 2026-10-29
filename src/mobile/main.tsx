@@ -1,5 +1,6 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
+// Named imports only: the default export objects would keep every compat helper in the bundle.
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
 import MobileApp from "./MobileApp";
 import "../styles.css";
 import "./mobile.css";
@@ -8,8 +9,8 @@ import "./mobile.css";
 document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 document.addEventListener("gesturestart", (e) => e.preventDefault());
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
     <MobileApp />
-  </React.StrictMode>,
+  </StrictMode>,
 );

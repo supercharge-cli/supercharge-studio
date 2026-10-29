@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+// The panel rules live in desktop.css (desktop-only) and styles.css (shared).
+const css = ["styles.css", "desktop.css"].map((f) => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8")).join("\n");
 const panel = readFileSync(new URL("../src/components/BrowserPanel.tsx", import.meta.url), "utf8");
 
 describe("side panel layout", () => {
