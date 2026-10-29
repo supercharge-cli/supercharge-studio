@@ -15,6 +15,9 @@ export const shared = (_command: "build" | "serve"): UserConfig => ({
       { find: /^react$/, replacement: "preact/compat" },
     ],
   } : {},
+  // The pairing screen's Tauri plugins are only reached through a lazy import; pre-bundle them so the
+  // dev server never re-optimizes and reloads the page mid-session (e2e) when that screen first loads.
+  optimizeDeps: { include: ["@tauri-apps/plugin-barcode-scanner", "@tauri-apps/plugin-deep-link"] },
   build: {
     target: "es2022",
     // terser packs ~4% smaller (gzip) than the default minifier; that headroom keeps features inside the budgets.

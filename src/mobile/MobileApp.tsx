@@ -15,9 +15,8 @@ import { ToolCard } from "../components/ToolCard";
 import { transition } from "../lib/motion";
 import { usePullToRefresh, useSwipeBack } from "./gestures";
 import { candidates, GatewayTransport, type DeviceCreds } from "../gateway/transport";
-import { defaultDeviceName, loadCreds, pendingCredsFromCode, saveCreds } from "./creds";
-import { canScan, onPairLink, scanQr } from "./scan";
-import { parsePairUri } from "../gateway/crypto";
+import { loadCreds, saveCreds } from "./creds";
+import { phoneIp } from "./ip";
 import { type Attachment, deviceBlocks, fmtSize, fromFile, isImage, rejectReason } from "../lib/attachments";
 import { APP_VERSION, checkUpdate, pickApk, UPDATE_EVERY } from "../lib/updates";
 import { effortLabel, reasoningOption } from "../lib/sessionOptions";
@@ -28,6 +27,7 @@ const CK = "supercharge-mobile/custom-models";
 const loadCustoms = (): CustomModel[] => { try { const j = JSON.parse(localStorage.getItem(CK) ?? "[]"); return Array.isArray(j) ? j.filter((x: any) => x?.id) : []; } catch { return []; } };
 const storeCustoms = (list: CustomModel[]) => { try { localStorage.setItem(CK, JSON.stringify(list)); } catch {} };
 /** Provider setup on the paired computer (same steps as the CLI's /setup), loaded on first open. */
+const Pair = lazy(() => import("./pair"));
 const PhoneSetup = lazy(() => import("../components/ProviderSetup").then((m) => ({
   default: function PhoneSetup({ client, onClose, sessionId }: { client: AcpClient; onClose: () => void; sessionId: () => string | undefined }) {
     const api = useMemo(() => m.phoneSetup(client), [client]);
@@ -61,11 +61,11 @@ function phoneNotify(kind: NotifyKind, sid: string, chatTitle: string, body: str
 const NOTIFY_KEY = "supercharge-mobile/notify";
 const loadNotifyPrefs = (): NotifyPrefs => { try { return { ...defaultNotifyPrefs, ...JSON.parse(localStorage.getItem(NOTIFY_KEY) ?? "{}") }; } catch { return defaultNotifyPrefs; } };
 const keepAlive = (on: boolean) => { try { (window as any).SuperchargeAndroid?.keepAlive?.(on); } catch { /* not available */ } };
-const SUGGESTIONS = ["Explain this project", "Find and fix a bug", "Write tests for recent changes", "Summarize what changed today"];
 
 type Sess = { sessionId: string; title?: string; cwd?: string; updatedAt?: string; _meta?: { project?: string; projectId?: string; group?: string; busy?: boolean } };
 type Project = { projectId: string; name: string; cwd: string; group: string };
 type HistoryView = "projects" | "chats";
+const SUGGESTIONS = ["Explain this project", "Find and fix a bug", "Write tests for recent changes", "Summarize what changed today"];
 const HISTORY_KEY = "supercharge-mobile/history-view";
 
 function sessionTime(s: Sess): number {
@@ -93,64 +93,6 @@ function chatBucket(ms: number, now = Date.now()): string {
   if (ms >= day - 86_400_000) return "Yesterday";
   if (ms >= day - 7 * 86_400_000) return "Previous 7 days";
   return "Older";
-}
-
-function Pair({ onPaired }: { onPaired: (c: DeviceCreds) => void }) {
-  const [code, setCode] = useState("");
-  const [name, setName] = useState(defaultDeviceName());
-  const [stage, setStage] = useState<"" | "connecting" | "waiting">("");
-  const [err, setErr] = useState("");
-  useEffect(() => { void onPairLink((c) => { setCode(c); void pair(c); }).catch(() => {}); }, []);
-  const [scanBusy, setScanBusy] = useState(false);
-  const pairing = useRef(false);
-  async function onScan() {
-    setErr("");
-    setScanBusy(true);
-    try {
-      const c = await scanQr();
-      if (!c) return;
-      setCode(c);
-      // Check the code before doing anything with it, so other QR codes just show a message.
-      try { parsePairUri(c); } catch (e: any) { setErr(String(e?.message ?? e)); return; }
-      await pair(c);
-    } catch (e: any) {
-      setErr(String(e?.message ?? e));
-    } finally {
-      setScanBusy(false);
-    }
-  }
-  async function pair(c = code) {
-    if (pairing.current) return;
-    pairing.current = true;
-    setErr("");
-    try {
-      const creds = await pendingCredsFromCode(c, name);
-      setStage("connecting");
-      const t = new GatewayTransport(candidates(creds), creds.deviceId, creds.key, name, undefined, (s) => s === "waiting" && setStage("waiting"));
-      t.localIp = await phoneIp();
-      await t.open();
-      t.close();
-      // Remember the address that worked so the next launch tries it first.
-      const direct = t.route === "direct" && t.connectedUrl ? t.connectedUrl : creds.url;
-      const alts = [creds.url, ...(creds.alts ?? [])].filter((u) => u !== direct);
-      onPaired({ ...creds, url: direct, alts, deviceId: t.deviceId });
-    } catch (e: any) {
-      setErr(String(e?.message ?? e));
-      setStage("");
-    } finally {
-      pairing.current = false;
-    }
-  }
-  return (
-    <div className="m-pair" data-testid="m-pair">
-      <div className="m-hero"><div className="logo big"><img src="/logo.png" alt="" /></div><h1>Supercharge Studio</h1><p className="muted">Pair with Supercharge Studio on your computer: Settings → Devices → Show pairing code.</p></div>
-      {canScan() && <button className="m-big" disabled={!!stage || scanBusy} onClick={() => void onScan()} data-testid="m-scan"><Icon name="qr" /> Scan QR code</button>}
-      <label>Device name<input value={name} onChange={(e) => setName(e.target.value)} data-testid="m-name" /></label>
-      <label>Pairing code<textarea rows={3} value={code} placeholder="scstudio://pair?…" onChange={(e) => setCode(e.target.value)} data-testid="m-code" /></label>
-      <button className="m-big" disabled={!code.trim() || !!stage} onClick={() => void pair()} data-testid="m-pair-btn">{stage === "waiting" ? "Confirm on your computer…" : stage === "connecting" ? "Connecting…" : "Pair"}</button>
-      {err && <div className="error-text" data-testid="m-error">{err}</div>}
-    </div>
-  );
 }
 
 export default function MobileApp() {
@@ -615,7 +557,7 @@ export default function MobileApp() {
   useSwipeBack(threadView, !!open, back);
   usePullToRefresh(listRef, ptr, !!creds && !open, async () => { await refresh(); setToast("Up to date"); });
 
-  if (!creds) return <div className="m-app"><Pair onPaired={(c) => { saveCreds(c); setCreds(c); }} /></div>;
+  if (!creds) return <div className="m-app"><Suspense fallback={null}><Pair onPaired={(c) => { saveCreds(c); setCreds(c); }} /></Suspense></div>;
 
   const title = list.find((s) => s.sessionId === open)?.title ?? "New chat";
   const isBusy = !!(open && busy[open]);
@@ -1030,12 +972,4 @@ export function isNearBottom(scrollHeight: number, scrollTop: number, clientHeig
 
 export function connLabel(c: ConnectionState): string {
   return c === "connecting" ? "Connecting…" : c === "reconnecting" ? "Connection lost, reconnecting…" : "Offline";
-}
-
-/** The phone's Wi-Fi IPv4 address from the native side, if available (used only for error messages). */
-async function phoneIp(): Promise<string | undefined> {
-  try {
-    if (!isDesktop()) return undefined;
-    return (await invoke<string | null>("local_ipv4")) ?? undefined;
-  } catch { return undefined; }
 }

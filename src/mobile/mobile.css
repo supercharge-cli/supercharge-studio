@@ -40,7 +40,6 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-none{padding:6px 10px 10px}
 .m-list .empty{margin-top:14vh}
 .m-skel{padding:8px}
-.m-unpair{margin:18px auto 0;display:flex;color:var(--muted)}
 .m-fab-row{position:absolute;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));display:flex;justify-content:flex-end;gap:8px;z-index:2}
 .m-fab{position:static;display:flex;align-items:center;gap:8px;padding:14px 18px;border-radius:18px;font-weight:600;box-shadow:0 10px 30px -10px rgba(0,0,0,.55);animation:pop .32s var(--spring) both}
 .m-disconnect{background:var(--panel);color:var(--fg);border:1px solid var(--line)}
@@ -61,9 +60,6 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-thread .toolcard{border-radius:14px}
 .m-welcome{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:12vh;text-align:center;animation:rise .35s var(--spring-soft) both}
 .m-welcome h2{margin:6px 0 10px;font-size:22px;font-weight:600}
-.m-suggest{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:440px}
-.m-suggestion{background:var(--panel);border:1px solid var(--line);color:var(--fg);padding:12px;border-radius:14px;text-align:left;font-size:13.5px;line-height:1.35}
-.m-suggestion:active{background:var(--hover)}
 .m-plan{border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:12px;font-size:13px}.m-plan ol{padding-left:22px;margin:8px 0 0}.m-plan li{margin:5px 0}.m-plan li.completed{color:var(--muted);text-decoration:line-through}.m-plan small{color:var(--muted);margin-left:5px}
 
 /* composer */
@@ -168,7 +164,7 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-thread .bubble.agent .md p{margin:0 0 10px}
 .m-thread .md-codehead{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 4px 12px}
 .m-thread .md-copy{min-height:36px;min-width:56px;border-radius:10px}
-.m-thread .toolcard summary,.m-thread .toolcard>button,.m-thread .toolcard .tool-head{min-height:44px}
+.m-thread .toolcard summary,.m-thread .toolcard>button{min-height:44px}
 .m-conn{display:flex;align-items:center;gap:8px;margin:8px 10px 0;padding:8px 12px;border-radius:12px;font-size:13.5px;background:color-mix(in srgb,#e0a030 16%,var(--panel));border:1px solid color-mix(in srgb,#e0a030 40%,var(--line));animation:rise .2s var(--spring-soft) both}
 .m-conn.closed{background:color-mix(in srgb,var(--bad) 14%,var(--panel));border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
 .m-conn-dot{width:8px;height:8px;border-radius:50%;background:#e0a030;animation:blink 1s infinite}
