@@ -35,6 +35,7 @@
     <color type="primary" scheme_preference="dark">#1a1a1a</color>
   </branding>
   <releases>
+    <release version="1.0.24" date="2026-10-29"><description><p>Redesigned phone pairing scanner: animated scan window in the app's colors, a success animation, a "Connecting to your computer" step, and clear messages with a paste-link option when the camera is blocked or missing. So far it has only been tested with a mocked camera; please try it on a real phone and report any issues.</p></description></release>
     <release version="1.0.23" date="2026-10-29"><description><p>Optional crash reports and anonymous usage stats in official builds, each with its own switch in Settings; prompts, code, file paths and keys are never included.</p></description></release>
     <release version="1.0.22" date="2026-10-29"><description><p>Providers already set up in the Supercharge CLI show up in Studio on connect (desktop and phone), marked Imported from CLI; keys stay in the CLI.</p></description></release>
     <release version="1.0.21" date="2026-10-23"><description><p>Type a custom model id in the picker when the list is empty or the model you want is missing; customs persist and send over ACP.</p></description></release>
