@@ -78,7 +78,7 @@ export function ChangesPane({ cwd, onCount }: { cwd?: string; onCount?: (n: numb
     } finally { setBusy(""); }
   };
   const newBranch = async () => {
-    const { askName, branchError } = await import("../lib/askName");
+    const { askName, branchError } = (await import("../screens")).askNameLib;
     const n = await askName({ title: "New branch", label: `Created from ${st?.branch ?? "HEAD"} and checked out`, placeholder: "feature/my-change", validate: (v) => branchError(v) ?? (branches.includes(v.trim()) ? "A branch with that name exists" : null) });
     if (n) void run("branch", () => git.checkout(root, n, true), `Switched to ${n}`);
   };

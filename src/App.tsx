@@ -57,7 +57,7 @@ type View = "chat" | "settings" | "usage" | "tools";
 const ToolsScreen = lazy(() => import("./screens").then((m) => ({ default: m.ToolsScreen })));
 /** Provider setup helpers ride in the screens chunk (idle-loaded anyway). */
 const setupLib = () => import("./screens").then((m) => m.setupLib);
-const ModelControls = lazy(() => import("./components/ModelControls").then((m) => ({ default: m.ModelControls })));
+const ModelControls = lazy(() => import("./screens").then((m) => ({ default: m.ModelControls })));
 type PermState = { req: PermissionRequest; resolve: (o: PermissionOutcome) => void; token?: number };
 type PlanAsk = { req: PlanApprovalRequest; resolve: (r: PlanApprovalResult) => void };
 
@@ -232,7 +232,7 @@ export default function App() {
     // Away from the computer: let paired phones alert too.
     const sid = (c as any).sessionId as string | undefined;
     if (sid && (!document.hasFocus() || document.visibilityState === "hidden")) hubRef.current?.agentEvent(sid, kind, body);
-    void import("./lib/notifyDeliver").then((m) => m.deliver({ kind, chatId: c.id, title: c.title, body }, d.settings.notify, d.activeChatId, c.title)).catch(() => {});
+    void import("./screens").then(({ notifyDeliver: m }) => m.deliver({ kind, chatId: c.id, title: c.title, body }, d.settings.notify, d.activeChatId, c.title)).catch(() => {});
   };
 
   // ---- Usage ----
@@ -778,7 +778,7 @@ export default function App() {
   async function newWorktreeChat(projectId: string) {
     const f = findProject(dataRef.current, projectId);
     if (!f) return;
-    const { askName, worktreeNameError } = await import("./lib/askName");
+    const { askName, worktreeNameError } = (await import("./screens")).askNameLib;
     const name = await askName({ title: "New chat in a worktree", label: "Runs on its own branch supercharge/<name>, in parallel with other chats", initial: `chat-${new Date().toISOString().slice(5, 16).replace(/[-T:]/g, "")}`, validate: worktreeNameError });
     if (!name) return;
     try {
@@ -1335,7 +1335,7 @@ export default function App() {
   const [scrollTo, setScrollTo] = useState<{ chatId: string; index: number; n: number } | null>(null);
   useEffect(() => {
     const t = setTimeout(() => {
-      void import("./lib/searchIndex").then(({ SearchIndex }) => {
+      void import("./screens").then(({ searchIndex: { SearchIndex } }) => {
         const ix = (searchRef.current ??= new SearchIndex());
         for (const g of data.groups) for (const p of g.projects) for (const c of p.chats)
           ix.upsert({ chatId: c.id, title: c.title, project: p.name, updatedAt: c.updatedAt ?? c.createdAt }, (sessions[c.id]?.items as any) ?? null);
@@ -1354,7 +1354,7 @@ export default function App() {
   // Opening the app right after an alert (or clicking a web alert) opens that chat.
   useEffect(() => {
     const open = (id: string | null) => { if (!id) return; const d = dataRef.current; for (const g of d.groups) for (const p of g.projects) if (p.chats.some((c) => c.id === id)) { setView("chat"); void selectChat(p.id, id); } };
-    const onFocus = () => void import("./lib/notifyDeliver").then((m) => open(m.takePending())).catch(() => {});
+    const onFocus = () => void import("./screens").then(({ notifyDeliver: m }) => open(m.takePending())).catch(() => {});
     const onOpen = (e: Event) => open((e as CustomEvent).detail);
     window.addEventListener("focus", onFocus);
     window.addEventListener("supercharge:open-chat", onOpen);
