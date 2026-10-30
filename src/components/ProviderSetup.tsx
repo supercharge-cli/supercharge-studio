@@ -1,5 +1,5 @@
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
-import { applyCli, mergeCli, readCli, rpcSetup, CUSTOM, CUSTOM_MODEL, FORMATS, filterModels, filterProviders, keyReusable, pollDevice, type DeviceStart, type Fmt, type SetupApi, type SetupModel, type SetupProvider, type SetupStatus } from "../lib/setup";
+import { applyCli, mergeCli, readCli, rpcSetup, CUSTOM, CUSTOM_MODEL, FORMATS, filterModels, filterProviders, keyReusable, pollDevice, unlistedProvider, type DeviceStart, type Fmt, type SetupApi, type SetupModel, type SetupProvider, type SetupStatus, type SetupStatusFull } from "../lib/setup";
 import type { Provider } from "../lib/store";
 import { Icon } from "./Icon";
 import "./provider-setup.css";
@@ -11,9 +11,9 @@ const TITLE: Record<Step, string> = { provider: "choose provider", url: "base UR
  * The CLI's `/setup` wizard: provider → (base URL) → API format → API key → model, or the
  * Nous Research device-code login. Saves to the Supercharge config the CLI reads.
  */
-export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }: { api: SetupApi; open: (url: string) => void; onSaved?: (s: SetupStatus) => void; onClose?: () => void; sessionId?: () => string | undefined }) {
+export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }: { api: SetupApi; open: (url: string) => void; onSaved?: (s: SetupStatusFull) => void; onClose?: () => void; sessionId?: () => string | undefined }) {
   const [step, setStep] = useState<Step>("provider");
-  const [status, setStatus] = useState<SetupStatus | null>(null);
+  const [status, setStatus] = useState<SetupStatusFull | null>(null);
   const [filter, setFilter] = useState("");
   const [sel, setSel] = useState(0);
   const [prov, setProv] = useState<SetupProvider>(CUSTOM);
@@ -76,7 +76,7 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
     go("format"); setSel(FORMATS.findIndex(([f]) => f === p.format));
   }
 
-  const providers = filterProviders(filter);
+  const providers = filterProviders(filter, unlistedProvider(status));
   const shownModels = filterModels(models, filter);
   const pickModel = (m: SetupModel) => (m.id === CUSTOM_MODEL ? (setCustom(custom || prov.defaultModel), setCustomName(""), setCustomBack("model"), setStep("custom")) : void save(m.id, m.name));
   const listKeys = (n: number, enter: () => void) => (e: KeyboardEvent) => {
@@ -87,7 +87,7 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
   const back: Partial<Record<Step, Step>> = { url: "provider", format: prov.id === CUSTOM.id ? "url" : "provider", key: "format", model: prov.device ? "provider" : "key", custom: customBack, error: err.back, device: "provider", done: "provider" };
   const copy = (t: string, what: string) => { void navigator.clipboard?.writeText(t).then(() => { setCopied(what); setTimeout(() => setCopied(""), 1500); }); };
   const fmtName = FORMATS.find(([f]) => f === fmt)?.[1];
-  const current = status?.model ? `${[...filterProviders(""), CUSTOM].find((p) => p.id === status.providerId)?.name ?? status.providerId ?? "Custom"} · ${status.model}` : "";
+  const current = status?.model ? `${[...filterProviders(""), unlistedProvider(status)].filter(Boolean).find((p) => p!.id === status.providerId)?.name ?? status.providerId ?? "Custom"} · ${status.model}` : "";
 
   return (
     <div className="psetup" data-testid="provider-setup">

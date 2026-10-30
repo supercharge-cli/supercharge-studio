@@ -12,6 +12,7 @@ use serde::Deserialize;
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, Url, WebviewBuilder, WebviewUrl,
 };
+use tauri::webview::PageLoadEvent;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin};
 use tokio::sync::oneshot;
@@ -195,6 +196,13 @@ struct Bounds {
 static BROWSER_HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub(crate) fn browser_hidden() -> bool { BROWSER_HIDDEN.load(std::sync::atomic::Ordering::SeqCst) }
 
+/// Tell the UI the side browser's real address (link clicks, redirects, history).
+fn report_browser_url(app: &AppHandle, url: &Url) {
+    let s = url.as_str();
+    if s == "about:blank" { return; }
+    let _ = app.emit("browser-navigated", s);
+}
+
 /// Create (or move) the side browser as a child webview of the main window.
 #[tauri::command]
 async fn browser_open(app: AppHandle, url: String, bounds: Bounds) -> Result<(), String> {
@@ -208,9 +216,23 @@ async fn browser_open(app: AppHandle, url: String, bounds: Bounds) -> Result<(),
     cursor::close(&app);
     cursor::remember(bounds.x, bounds.y, bounds.width, bounds.height);
     let window = app.get_window("main").ok_or("no main window")?;
+    let report = app.clone();
+    let report_done = app.clone();
     window
         .add_child(
-            WebviewBuilder::new(BROWSER, WebviewUrl::External(parsed)).initialization_script(BROWSER_INIT),
+            WebviewBuilder::new(BROWSER, WebviewUrl::External(parsed))
+                .initialization_script(BROWSER_INIT)
+                // Link clicks and redirects never pass through browser_navigate, so the
+                // address bar would keep the previous URL. Report the real page URL.
+                .on_navigation(move |url| {
+                    report_browser_url(&report, url);
+                    true
+                })
+                .on_page_load(move |_wv, payload| {
+                    if payload.event() == PageLoadEvent::Finished {
+                        report_browser_url(&report_done, payload.url());
+                    }
+                }),
             LogicalPosition::new(bounds.x, bounds.y),
             LogicalSize::new(bounds.width, bounds.height),
         )

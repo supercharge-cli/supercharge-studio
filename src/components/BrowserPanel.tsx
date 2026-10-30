@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { browser } from "../browser/bridge";
-import { isDesktop } from "../lib/desktop";
+import { isDesktop, listen } from "../lib/desktop";
 import { browserVisible, scanDocument, useOverlayCount } from "../browser/visibility";
 import type { PlanEntry } from "../acp/types";
 import { FilesPane } from "./FilesPane";
@@ -140,9 +140,16 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
   }, []);
 
   useEffect(() => {
-    const l = (u: string) => setUrl(u);
+    const l = (u: string) => {
+      // Don't clobber an address the user is in the middle of typing.
+      const input = document.activeElement;
+      if (input instanceof HTMLInputElement && input.getAttribute("aria-label") === "Address" && input.value !== u) return;
+      setUrl(u);
+    };
     browser.listeners.add(l);
-    return () => void browser.listeners.delete(l);
+    let stop = () => {};
+    void listen<string>("browser-navigated", (u) => browser.noteUrl(u)).then((un) => { stop = un; });
+    return () => { browser.listeners.delete(l); stop(); };
   }, []);
 
   // Keep the native webview glued to the placeholder div.
@@ -229,7 +236,7 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
             }}
           >
             <Icon name="globe" size={14} />
-            <input value={url} onChange={(e) => setUrl(e.target.value)} aria-label="Address" />
+            <input value={url} onChange={(e) => setUrl(e.target.value)} onBlur={() => setUrl(browser.url)} aria-label="Address" />
             <span className="bm-tools">
               <button type="button" className={`icon sm${vp ? " on" : ""}`} data-testid="computer-toggle" aria-pressed={!!vp} title="Computer mode: open the page at a desktop size" onClick={() => setVp((v) => (v ? null : screenSize()))}><Icon name="monitor" size={14} /></button>
               <button type="button" className={`icon sm${dev ? " on" : ""}`} data-testid="dev-toggle" aria-pressed={dev} title="Dev mode: console and network" onClick={() => setDev((v) => !v)}><Icon name="code" size={14} /></button>

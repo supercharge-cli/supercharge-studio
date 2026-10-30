@@ -40,9 +40,10 @@ export const CUSTOM: SetupProvider = P("custom", "Custom / paste a base URL", ""
 export const FORMATS: [Fmt, string, string][] = [["chat_completions", "Chat Completions", "/chat/completions"], ["messages", "Messages", "/messages"], ["responses", "Responses", "/responses"]];
 
 /** Type-to-filter, as in the CLI: id, name or description; Custom matches "custom", "openai", "base url". */
-export function filterProviders(query: string): SetupProvider[] {
+export function filterProviders(query: string, extra?: SetupProvider | null): SetupProvider[] {
   const q = query.trim().toLowerCase();
   const rows = PROVIDERS.filter((p) => !q || p.id.includes(q) || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
+  if (extra && (!q || extra.id.includes(q) || extra.name.toLowerCase().includes(q) || extra.description.toLowerCase().includes(q))) rows.push(extra);
   if (!q || "custom".includes(q) || "openai".includes(q) || "base url".includes(q)) rows.push(CUSTOM);
   return rows;
 }
@@ -58,6 +59,44 @@ export function filterModels(models: SetupModel[], query: string): SetupModel[] 
 }
 
 export type SetupStatus = { providerId?: string | null; baseUrl?: string | null; format?: string | null; model?: string | null; hasKey: boolean; nousSignedIn: boolean };
+
+/** One entry of the CLI's own provider catalog, sent in `setup/status` `providers`. */
+export type CliProvider = { id: string; name?: string; description?: string; baseUrl?: string; defaultModel?: string; format?: string };
+export type SetupStatusFull = SetupStatus & { providers?: CliProvider[] };
+
+/**
+ * Map the raw `setup/status` payload to the app's shape. The desktop shell already sends
+ * `model`/`hasKey`/`nousSignedIn` (camelCase via serde); the agent and gateway paths pass the
+ * CLI's raw `modelId`/`hasApiKey`/`oauth.nous.signedIn` through.
+ */
+export function normalizeStatus(raw: any): SetupStatusFull {
+  const r = raw ?? {};
+  const status: SetupStatusFull = {
+    providerId: r.providerId ?? null,
+    baseUrl: r.baseUrl ?? null,
+    format: r.format ?? null,
+    model: r.model ?? r.modelId ?? null,
+    hasKey: !!(r.hasKey ?? r.hasApiKey),
+    nousSignedIn: !!(r.nousSignedIn ?? r.oauth?.nous?.signedIn),
+  };
+  if (Array.isArray(r.providers)) status.providers = r.providers;
+  return status;
+}
+
+/** A CLI-connected provider the app's list does not know, pulled from the status (catalog first). */
+export function unlistedProvider(status: SetupStatusFull | null | undefined): SetupProvider | null {
+  const id = status?.providerId?.trim();
+  if (!id || id === CUSTOM.id || PROVIDERS.some((p) => p.id === id)) return null;
+  const from = status!.providers?.find((p) => p?.id === id);
+  return {
+    id,
+    name: from?.name || id.split(/[-_]/).map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" "),
+    description: from?.description || "Connected in the CLI — not in this app's list",
+    baseUrl: from?.baseUrl ?? status!.baseUrl ?? "",
+    defaultModel: from?.defaultModel ?? status!.model ?? "",
+    format: FORMATS.find(([f]) => f === (from?.format ?? status!.format))?.[0] ?? "chat_completions",
+  };
+}
 /**
  * `apiKey` undefined keeps the saved key when the base URL matches (or uses the Nous login token).
  * `sessionId`: the chat to switch right away; agents with `_supercharge/setup/save` take it
@@ -107,9 +146,10 @@ export const desktopSetup: SetupApi = {
 /** Backend over a JSON-RPC call: `_supercharge/setup/<op>` (agent) or the gateway's `_supercharge/setup`. */
 export function rpcSetup(call: (op: string, params: Record<string, unknown>) => Promise<any>): SetupApi {
   return {
-    status: () => call("status", {}),
+    status: () => call("status", {}).then(normalizeStatus),
     models: (providerId, baseUrl, apiKey, format) => call("models", { providerId, baseUrl, apiKey, format }).then((r) => r?.models ?? r ?? []),
-    save: ({ sessionId, ...r }) => call("save", sessionId ? { ...r, sessionId } : r),
+    save: ({ sessionId, ...r }) =>
+      call("save", sessionId ? { ...r, sessionId } : r).then((res) => ({ ...normalizeStatus(res), ...(Array.isArray(res?.switchedSessions) ? { switchedSessions: res.switchedSessions } : {}) })),
     deviceStart: () => call("device_start", {}),
     devicePoll: () => call("device_poll", {}).then((r) => (typeof r === "string" ? r : r?.status ?? "pending")),
     deviceCancel: () => call("device_cancel", {}).then(() => {}),

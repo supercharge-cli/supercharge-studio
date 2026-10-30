@@ -936,6 +936,7 @@ export default function App() {
       notifyEv("error", { chatId }, msg);
       throw e;
     } finally {
+      browser.hideCursor();
       setBusy((b) => ({ ...b, [chatId]: false }));
     }
   }

@@ -12,6 +12,8 @@ export default defineConfig({
     { command: "npx vite-node scripts/fake-agent.ts -- --port 2454 --secret e2e", port: 2454, reuseExistingServer: false, env: { FAKE_AGENT_CLI: "1", FAKE_AGENT_INIT_DELAY_MS: "1500" } },
     // A CLI already set up with a provider (auto-import into Studio).
     { command: "npx vite-node scripts/fake-agent.ts -- --port 2453 --secret e2e", port: 2453, reuseExistingServer: false, env: { FAKE_AGENT_CLI: "1", FAKE_AGENT_PROVIDER: "1" } },
+    // A CLI whose saved provider is missing from the app's list (pulled into the wizard).
+    { command: "npx vite-node scripts/fake-agent.ts -- --port 2455 --secret e2e", port: 2455, reuseExistingServer: false, env: { FAKE_AGENT_CLI: "1", FAKE_AGENT_SETUP_UNLISTED: "1" } },
     { command: "npx vite-node scripts/fake-gateway.ts -- --port 2431", env: { RELAY_AUDIT: "1" }, port: 2431, reuseExistingServer: false },
     { command: "npx vite --port 5174 --strictPort", port: 5174, reuseExistingServer: false },
   ],

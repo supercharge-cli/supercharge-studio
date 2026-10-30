@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CUSTOM, CUSTOM_MODEL, FORMATS, PROVIDERS, filterModels, filterProviders, keyReusable, normBase, pickSetup, pollDevice, rpcSetup, switchedLive, type SetupApi } from "../src/lib/setup";
+import { CUSTOM, CUSTOM_MODEL, FORMATS, PROVIDERS, filterModels, filterProviders, keyReusable, normBase, normalizeStatus, pickSetup, pollDevice, rpcSetup, switchedLive, unlistedProvider, type SetupApi } from "../src/lib/setup";
 import { GatewayHub, type HubHost } from "../src/gateway/hub";
 
 describe("provider setup catalog", () => {
@@ -27,6 +27,37 @@ describe("provider setup catalog", () => {
     expect(filterModels(m, "").map((x) => x.id)).toEqual(["a", "b", CUSTOM_MODEL]);
     expect(filterModels(m, "alp").map((x) => x.id)).toEqual(["a"]);
     expect(filterModels(m, "type").map((x) => x.id)).toEqual([CUSTOM_MODEL]);
+  });
+});
+
+describe("unlisted CLI providers", () => {
+  const cliProvider = { id: "agentrouter", name: "AgentRouter", description: "Aggregator", baseUrl: "https://api.agentrouter.org/v1", defaultModel: "gpt-5.6-sol", format: "responses" };
+  it("pulls a saved provider the app does not list, from the CLI catalog", () => {
+    const status = normalizeStatus({ providerId: "agentrouter", baseUrl: "https://api.agentrouter.org/v1", format: "responses", modelId: "gpt-5.6-sol", hasApiKey: true, providers: [cliProvider] });
+    expect(unlistedProvider(status)).toEqual({ id: "agentrouter", name: "AgentRouter", description: "Aggregator", baseUrl: "https://api.agentrouter.org/v1", defaultModel: "gpt-5.6-sol", format: "responses" });
+  });
+  it("falls back to the saved status when the catalog lacks it, and names a bare id", () => {
+    const status = normalizeStatus({ providerId: "my_gateway", baseUrl: "http://127.0.0.1:8080/v1", model: "m1" });
+    const p = unlistedProvider(status)!;
+    expect(p).toMatchObject({ id: "my_gateway", name: "My Gateway", baseUrl: "http://127.0.0.1:8080/v1", defaultModel: "m1", format: "chat_completions" });
+  });
+  it("returns nothing for listed, custom or absent providers", () => {
+    expect(unlistedProvider(normalizeStatus({ providerId: "groq" }))).toBeNull();
+    expect(unlistedProvider(normalizeStatus({ providerId: "custom" }))).toBeNull();
+    expect(unlistedProvider(normalizeStatus(null))).toBeNull();
+    expect(unlistedProvider(null)).toBeNull();
+  });
+  it("normalizes the raw CLI status fields", () => {
+    const s = normalizeStatus({ providerId: "x", modelId: "m", hasApiKey: true, oauth: { nous: { signedIn: true } } });
+    expect(s).toMatchObject({ model: "m", hasKey: true, nousSignedIn: true });
+    expect(normalizeStatus({ model: "m2", hasKey: true, nousSignedIn: false })).toMatchObject({ model: "m2", hasKey: true, nousSignedIn: false });
+  });
+  it("shows the extra provider in filtered lists before Custom", () => {
+    const extra = unlistedProvider(normalizeStatus({ providerId: "agentrouter", providers: [cliProvider] }));
+    expect(filterProviders("", extra).map((p) => p.id)).toEqual([...PROVIDERS.map((p) => p.id), "agentrouter", CUSTOM.id]);
+    expect(filterProviders("agentrouter", extra).map((p) => p.id)).toEqual(["agentrouter"]);
+    expect(filterProviders("agentrouter", null)).toEqual([]);
+    expect(filterProviders("custom", extra).map((p) => p.id)).toEqual([CUSTOM.id]);
   });
 });
 

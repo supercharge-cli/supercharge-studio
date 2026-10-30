@@ -66,13 +66,15 @@ describe("AI cursor", () => {
       return inner(cmd, args);
     };
     try {
-      await open().run("click", { x: 5, y: 5 });
+      const b = open();
+      await b.run("click", { x: 5, y: 5 });
       expect(calls.some((c) => c.cmd === "browser_eval" && String(c.args.script).includes("__sc.click"))).toBe(true);
       expect(warn).toHaveBeenCalledWith("[browser] AI cursor:", "browser_cursor not allowed");
-      await new Promise((r) => setTimeout(r, 3100)); // the hide call fails the same way
+      await b.hideCursor();
       const ops = calls.filter((c) => c.cmd === "browser_cursor").map((c) => c.args.op);
       expect(ops[0]).toBe("click");
-      expect(ops).toContain("hide");
+      expect(ops.at(-1)).toBe("hide");
+      expect(ops.filter((o) => o === "hide")).toHaveLength(1);
       expect(warn.mock.calls.length).toBe(ops.length);
     } finally { warn.mockRestore(); }
   }, 10000);
@@ -80,7 +82,9 @@ describe("AI cursor", () => {
   it("does not move for non-pointer ops", async () => {
     const b = open();
     await b.run("snapshot", {});
-    expect(calls.some((c) => c.cmd === "browser_cursor")).toBe(false);
+    expect(calls.filter((c) => c.cmd === "browser_cursor").map((c) => c.args.op)).toEqual(["show"]);
+    await b.hideCursor();
+    expect(calls.filter((c) => c.cmd === "browser_cursor").map((c) => c.args.op)).toEqual(["show", "hide"]);
     expect(Object.keys(POINTER_OPS)).toEqual(["click", "hover", "type", "press_key", "select_option", "scroll"]);
   });
 

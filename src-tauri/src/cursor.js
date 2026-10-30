@@ -6,7 +6,7 @@
 (() => {
   if (window.top !== window || !/cursor\.html$/.test(location.pathname)) return;
   const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let c, b, start = null, gone = false, ripT = 0, badgeT = 0;
+  let c, b, start = null, gone = false, ripT = 0;
   const ICON = { type: "⌨ typing", key: "⌨ key", scroll: "↕ scrolling", hover: "", click: "" };
   function take() {
     if (gone) return;
@@ -36,10 +36,8 @@
     document.documentElement.classList.toggle("rm", reduce());
     if (m.x != null && m.y != null) c.style.transform = `translate(${m.x - 2}px,${m.y - 1}px)`;
     const label = ICON[m.op] || "";
-    clearTimeout(badgeT);
     b.textContent = label;
     b.style.display = label ? "block" : "none";
-    if (label) badgeT = setTimeout(() => (b.style.display = "none"), 1600);
     if (m.op === "click") {
       clearTimeout(ripT);
       ripT = setTimeout(() => {

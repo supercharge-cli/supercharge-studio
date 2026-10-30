@@ -182,7 +182,8 @@ export class BrowserController {
   held = false;
   onHeld?: (held: boolean) => void;
   private resumers: (() => void)[] = [];
-  private cursorHide?: ReturnType<typeof setTimeout>;
+  /** The overlay is up for this turn. It stays until the turn ends (hideCursor). */
+  private cursorShown = false;
   takeOver(held: boolean) {
     this.held = held;
     this.onHeld?.(held);
@@ -199,10 +200,22 @@ export class BrowserController {
       : p?.ref != null || p?.selector || p?.element_text ? await this.evaluate(`(() => { const el = __sc.find(${target}); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`).catch(() => null) : null;
     xy = Array.isArray(xy) ? xy.map((v) => v * this.zoom) : op === "scroll" && this.bounds ? [this.bounds.width / 2, this.bounds.height / 2] : null;
     // The cursor is decoration: a failure must not stop the action, but it must be visible.
+    // It stays up for the rest of the turn; App hides it when the prompt finishes.
+    this.cursorShown = true;
     await invoke("browser_cursor", { op, x: xy?.[0] ?? null, y: xy?.[1] ?? null }).catch(cursorFailed);
-    clearTimeout(this.cursorHide);
-    this.cursorHide = setTimeout(() => void invoke("browser_cursor", { op: "hide" }).catch(cursorFailed), 3000);
     if (xy && !matchMedia("(prefers-reduced-motion: reduce)").matches) await new Promise((r) => setTimeout(r, 400));
+  }
+  /** Show the "Supercharge is browsing" layer without moving the pointer. */
+  async showCursor() {
+    if (!isDesktop() || this.cursorShown) return;
+    this.cursorShown = true;
+    await invoke("browser_cursor", { op: "show", x: null, y: null }).catch(cursorFailed);
+  }
+  /** Drop the cursor and the browsing message. Called when the agent turn ends. */
+  hideCursor() {
+    if (!this.cursorShown) return;
+    this.cursorShown = false;
+    return invoke("browser_cursor", { op: "hide" }).catch(cursorFailed);
   }
   /** Pull new console/network entries from the page. Returns true when something changed. */
   async pullDev() {
@@ -226,6 +239,14 @@ export class BrowserController {
 
   private emit() {
     this.listeners.forEach((l) => l(this.url));
+  }
+
+  /** The native page moved (a link, redirect, or history) without a bar submit. */
+  noteUrl(url: string) {
+    if (!url || url === this.url) return;
+    this.url = url;
+    if (this.tabs.length) this.tabs[this.tab] = url;
+    this.emit();
   }
 
   async open(url: string, bounds: Bounds) {
@@ -320,6 +341,7 @@ export class BrowserController {
     const target = JSON.stringify({ ref: p?.ref ?? null, selector: p?.selector ?? null, text: p?.element_text ?? null, x: p?.x ?? null, y: p?.y ?? null });
     const pointer = POINTER_OPS[op];
     if (pointer) await this.point(pointer, target, p);
+    else await this.showCursor();
     switch (op) {
       case "navigate":
         return this.navigate(String(p?.url ?? ""));
