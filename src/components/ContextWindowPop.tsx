@@ -42,3 +42,4 @@ export default function ContextWindowPop({ used, max, ctl, onDone }: { used: num
     </div>
   );
 }
+export { ContextWindowPop };

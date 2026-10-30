@@ -5,6 +5,9 @@ import type { UserConfig } from "vite";
  * react-dom). Set STUDIO_REACT=1 to opt out.
  */
 const compat = process.env.STUDIO_REACT !== "1";
+
+/** Babel plugin: remove `data-testid` JSX attributes from production builds (e2e drives the dev server, which keeps them). */
+export const stripTestIds = () => ({ visitor: { JSXAttribute(p: any) { if (p.node.name?.name === "data-testid") p.remove(); } } });
 export const shared = (_command: "build" | "serve"): UserConfig => ({
   resolve: compat ? {
     alias: [

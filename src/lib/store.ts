@@ -310,3 +310,7 @@ export function ensureFolderProject(d: AppData, cwd: string): { data: AppData; p
   const groups = has ? d.groups.map((g) => (g.name === CLI_GROUP ? { ...g, projects: [...g.projects, proj] } : g)) : [...d.groups, { id: uid(), name: CLI_GROUP, projects: [proj] }];
   return { data: { ...d, groups }, projectId: proj.id };
 }
+
+/** Port in a gateway URL such as ws://192.168.1.5:2421/gw. */
+export const urlPort = (u: string) => { try { return Number(new URL(u).port) || 0; } catch { return 0; } };
+export const gatewayBind = (p: GatewayPrefs) => `${p.mode === "lan" ? "0.0.0.0" : "127.0.0.1"}:${p.port}`;

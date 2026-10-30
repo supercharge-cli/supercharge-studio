@@ -1,17 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { gateway, GwPairing, GwStatus, listen } from "../lib/desktop";
 import { Icon } from "./Icon";
-import { defaultGatewayPrefs, GatewayPrefs } from "../lib/store";
-export { defaultGatewayPrefs };
+import { defaultGatewayPrefs, GatewayPrefs, gatewayBind, urlPort } from "../lib/store";
+export { defaultGatewayPrefs, gatewayBind, urlPort };
 export type { GatewayPrefs };
 import { BackgroundSetting } from "./Background";
 import { DEFAULT_RELAY, effectiveRelay, ensureHostId, needsFirewall, newHostId, reachOf, relayConnect, type Reach } from "../lib/reach";
 
 /** Device-facing connect URL on the relay for this computer (see docs/MOBILE-PLAN.md, Relay). */
 export const relayConnectUrl = (p: GatewayPrefs) => relayConnect(p);
-/** Port in a gateway URL such as ws://192.168.1.5:2421/gw. */
-export const urlPort = (u: string) => { try { return Number(new URL(u).port) || 0; } catch { return 0; } };
-export const gatewayBind = (p: GatewayPrefs) => `${p.mode === "lan" ? "0.0.0.0" : "127.0.0.1"}:${p.port}`;
 
 export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPrefs; onPrefs: (p: GatewayPrefs) => void; desktop: boolean }) {
   const [st, setSt] = useState<GwStatus | null>(null);

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import type { ConfigOption } from "../acp/types";
-const ContextWindowPop = lazy(() => import("./ContextWindowPop"));
+const ContextWindowPop = lazy(() => import("./ContextWindowPop").then((m) => ({ default: m.ContextWindowPop })));
 
 const fmt = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
 

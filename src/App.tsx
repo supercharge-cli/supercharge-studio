@@ -21,7 +21,8 @@ import { dueSchedules, nextRun } from "./lib/schedules";
 import { chatMentions, transcript } from "./lib/transcript";
 import type { ToolsTab } from "./components/Tools";
 import { extractMentions, fileItems, mentionBlocks } from "./lib/mentions";
-import { defaultGatewayPrefs, DevicesSection, gatewayBind, urlPort } from "./components/Devices";
+// Settings → Devices loads with the other on-demand screens.
+const DevicesSection = lazy(() => import("./screens").then((m) => ({ default: m.DevicesSection })));
 const SettingsScreen = lazy(() => import("./screens").then((m) => ({ default: m.SettingsScreen })));
 // Warm the lazy screens once the app is idle so the first open is instant.
 const idle = (globalThis as any).requestIdleCallback ?? ((f: () => void) => setTimeout(f, 1200));
@@ -42,7 +43,7 @@ import { type Attachment, fmtSize, fromFile, isImage, rejectReason, toBlocks } f
 import { FileEntry, projectFiles, projectReadText } from "./lib/desktop";
 import { agentCheck, agentFreePort, agentInfo, agentInstall, cliStatus, type CliStatus, agentLogNote, agentRestart, appConfig, ensureAgent, gateway, invoke, isDesktop, keychainGet, keychainSet, listen, mcpUrl, pickFolder, providerApply, providerSeedFromEnv, providerSetKey } from "./lib/desktop";
 import { git, refreshChanges, commitMessageHook, editedPaths } from "./lib/git";
-import { AppData, type Chat, applyTree, ensureFolderProject, findProject, load, mergeCliSessions, normCwd, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
+import { AppData, defaultGatewayPrefs, gatewayBind, urlPort, type Chat, applyTree, ensureFolderProject, findProject, load, mergeCliSessions, normCwd, mapProject, Provider, parseAgentUrl, save, uid, wsUrl } from "./lib/store";
 import { appendUsage, loadPricing, loadUsage, recordsFromUsage, savePricing, usageFromNotification, UsageRecord } from "./lib/usage";
 import { applyWindow, CONTEXT_WINDOW_EXT, windowOption } from "./lib/contextWindow";
 import type { WindowCtl } from "./components/ContextMeter";

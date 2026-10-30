@@ -1,10 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig, mergeConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { shared } from "./vite.shared";
-
-/** Babel plugin: remove `data-testid` JSX attributes. */
-const stripTestIds = () => ({ visitor: { JSXAttribute(p: any) { if (p.node.name?.name === "data-testid") p.remove(); } } });
+import { shared, stripTestIds } from "./vite.shared";
 
 /** Mobile companion UI (Tauri 2 mobile), sharing src/ with the desktop app. */
 export default defineConfig(({ command }) =>
@@ -14,6 +11,10 @@ export default defineConfig(({ command }) =>
       // Desktop-only icons stay out of the phone bundle.
       name: "mobile-icons", enforce: "pre",
       resolveId: (id: string, from?: string) => (/\/iconsDesktop(\.ts)?$/.test(id) && from?.includes("/src/components/") ? fileURLToPath(new URL("./src/components/iconsDesktop.mobile.ts", import.meta.url)) : null),
+    }, {
+      // Small shared on-demand modules load from the phone's single extras chunk.
+      name: "mobile-extras", enforce: "pre",
+      resolveId: (id: string, from?: string) => ((id === "./ContextWindowPop" && from?.endsWith("/components/ContextMeter.tsx")) || (id === "./imageResize" && from?.endsWith("/lib/attachments.ts")) ? fileURLToPath(new URL("./src/mobile/extras.ts", import.meta.url)) : null),
     }],
     build: { outDir: "dist-mobile", emptyOutDir: true, rollupOptions: {
       input: "mobile.html",

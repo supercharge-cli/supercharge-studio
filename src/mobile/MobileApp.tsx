@@ -5,7 +5,7 @@ import { answerOption, permKey } from "../lib/quick";
 import { clip, Deduper, defaultNotifyPrefs, notifyTitle, shouldNotify, type NotifyKind, type NotifyPrefs } from "../lib/notify";
 import type { Hit, SearchIndex } from "../lib/searchIndex";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-const ModelCustomForm = lazy(() => import("../components/ProviderSetup").then((m) => ({ default: m.ModelCustomForm })));
+const ModelCustomForm = lazy(() => import("./extras").then((m) => ({ default: m.ModelCustomForm })));
 import { AcpClient, ConnectionState } from "../acp/client";
 import { applyUpdate, ChatItem, emptySession, SessionState } from "../acp/session";
 import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionModes } from "../acp/types";
@@ -28,8 +28,8 @@ const CK = "supercharge-mobile/custom-models";
 const loadCustoms = (): CustomModel[] => { try { const j = JSON.parse(localStorage.getItem(CK) ?? "[]"); return Array.isArray(j) ? j.filter((x: any) => x?.id) : []; } catch { return []; } };
 const storeCustoms = (list: CustomModel[]) => { try { localStorage.setItem(CK, JSON.stringify(list)); } catch {} };
 /** Provider setup on the paired computer (same steps as the CLI's /setup), loaded on first open. */
-const Pair = lazy(() => import("./pair"));
-const PhoneSetup = lazy(() => import("../components/ProviderSetup").then((m) => ({
+const Pair = lazy(() => import("./extras").then((m) => ({ default: m.Pair })));
+const PhoneSetup = lazy(() => import("./extras").then((m) => ({
   default: function PhoneSetup({ client, onClose, sessionId }: { client: AcpClient; onClose: () => void; sessionId: () => string | undefined }) {
     const api = useMemo(() => m.phoneSetup(client), [client]);
     return <><m.CliProviders api={api} sessionId={sessionId} /><m.default api={api} open={(u) => window.open(u, "_blank")} onClose={onClose} sessionId={sessionId} /></>;
@@ -316,7 +316,7 @@ export default function MobileApp() {
         setErr("");
         await refresh();
         // The CLI's own provider shows up here without setting it up again (references only).
-        if ((c.initResult?.agentCapabilities as any)?._meta?.supercharge?.setup) void import("../components/ProviderSetup").then((m) => m.autoImport(m.phoneSetup(c))).catch(() => {});
+        if ((c.initResult?.agentCapabilities as any)?._meta?.supercharge?.setup) void import("./extras").then((m) => m.autoImport(m.phoneSetup(c))).catch(() => {});
       } catch (e: any) {
         setErr(String(e?.message ?? e));
       }
@@ -352,7 +352,7 @@ export default function MobileApp() {
   titleOf.current = (sid) => list.find((x) => x.sessionId === sid)?.title || "chat";
   useEffect(() => {
     const t = setTimeout(async () => {
-      if (!searchIx.current) { const { SearchIndex } = await import("../lib/searchIndex"); searchIx.current ??= new SearchIndex(); }
+      if (!searchIx.current) { const { SearchIndex } = await import("./extras"); searchIx.current ??= new SearchIndex(); }
       for (const x of list) {
         const at = Date.parse(x.updatedAt ?? "") || 0;
         searchIx.current!.upsert({ chatId: x.sessionId, title: x.title || "Untitled", project: x._meta?.project ?? (x.cwd ?? "").split(/[\\/]/).pop() ?? "", updatedAt: at }, (state[x.sessionId]?.items as any) ?? null);
@@ -492,7 +492,7 @@ export default function MobileApp() {
         if (!known) {
           const saved = loadCustoms();
           const name = typedName ?? saved.find((x) => x.id === value)?.name;
-          const m = await import("../components/ProviderSetup");
+          const m = await import("./extras");
           await m.saveCustomModel(m.phoneSetup(c), value, { modelName: name, sessionId: sid });
           setConfigBySession((all) => {
             const cur = all[sid] ?? [];
