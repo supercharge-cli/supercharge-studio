@@ -4201,6 +4201,7 @@ dependencies = [
  "if-addrs",
  "keyring",
  "libc",
+ "notify-rust",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",

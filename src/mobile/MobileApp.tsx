@@ -395,8 +395,13 @@ export default function MobileApp() {
   }
   useEffect(() => {
     const onOpen = (e: Event) => { const sid = String((e as CustomEvent).detail ?? ""); if (sid) { setDrawer(false); void openSession(sid); } };
+    // Text typed into a notification's Reply (Android): load that chat if needed, then send (queued while offline).
+    const onReply = (e: Event) => { const { chat, text } = (e as CustomEvent).detail ?? {}, t = String(text ?? "").trim(); if (chat && t) void Promise.resolve(loadedRef.current.has(chat) || openSession(chat)).then(() => { queued.current.push({ sid: chat, text: t }); flushQueued(); client.current?.reconnectNow(); }); };
     window.addEventListener("supercharge:open-chat", onOpen);
-    return () => window.removeEventListener("supercharge:open-chat", onOpen);
+    window.addEventListener("supercharge:reply", onReply);
+    const w = window as { __scReply?: number };
+    w.__scReply = 1;
+    return () => { window.removeEventListener("supercharge:open-chat", onOpen); window.removeEventListener("supercharge:reply", onReply); w.__scReply = 0; };
   });
   async function openSession(sid: string) {
     activeSessionRef.current = sid;

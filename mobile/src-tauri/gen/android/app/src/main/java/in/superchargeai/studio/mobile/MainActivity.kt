@@ -57,6 +57,27 @@ class MainActivity : TauriActivity() {
     i.removeExtra(QuickActions.EXTRA_KEY)
   }
 
+  private val replying = HashSet<String>()
+
+  /** Hand stored notification replies to the page (each once at a time). */
+  private fun sendReplies() { for (r in QuickActions.replies(this)) if (replying.add(r)) sendReply(r, 20) }
+
+  /**
+   * Retries until the page's reply listener is mounted (cold start), up to ~10s. The stored reply
+   * is dropped only once the page took it; otherwise it waits for the next resume.
+   */
+  private fun sendReply(json: String, tries: Int) {
+    val js = "window.__scReply?(window.dispatchEvent(new CustomEvent('supercharge:reply',{detail:$json})),1):0"
+    val w = webView ?: run { replying.remove(json); return }
+    w.evaluateJavascript(js) { r ->
+      when {
+        r == "1" -> { QuickActions.removeReply(applicationContext, json); replying.remove(json) }
+        tries > 0 -> w.postDelayed({ sendReply(json, tries - 1) }, 500)
+        else -> replying.remove(json)
+      }
+    }
+  }
+
   private fun sendAnswer(json: String) {
     webView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('supercharge:answer',{detail:$json}))", null)
   }
@@ -84,6 +105,8 @@ class MainActivity : TauriActivity() {
       // Give a cold-started page a moment to mount its listener.
       webView?.postDelayed({ webView?.evaluateJavascript(js, null) }, 400)
     }
+    // Replies typed into notifications while the app was closed.
+    sendReplies()
     pendingAnswer?.let { a ->
       pendingAnswer = null
       // The page re-asks pending approvals after it reconnects; it keeps this answer until then.
@@ -152,7 +175,9 @@ class MainActivity : TauriActivity() {
     if (key != null) {
       val id = chat.hashCode()
       n.addAction(Notification.Action.Builder(android.graphics.drawable.Icon.createWithResource(this, R.mipmap.ic_launcher), "Allow", QuickActions.answerIntent(this, key, true, id)).build())
-      n.addAction(Notification.Action.Builder(android.graphics.drawable.Icon.createWithResource(this, R.mipmap.ic_launcher), "Deny", QuickActions.answerIntent(this, key, false, id)).build())
+      n.addAction(Notification.Action.Builder(android.graphics.drawable.Icon.createWithResource(this, R.mipmap.ic_launcher), "Deny", QuickActions.answerIntent(this, key, false, id)).build())    } else {
+      // Finished / failed: reply right from the notification.
+      n.addAction(QuickActions.replyAction(this, chat, chat.hashCode()))
     }
     val built = n.build()
     try { nm.notify(chat.hashCode(), built) } catch (e: Exception) { /* blocked */ }
@@ -201,8 +226,15 @@ class MainActivity : TauriActivity() {
       w.post { a.sendAnswer("{key:" + JSONObject.quote(key) + ",allow:" + allow + "}") }
       return true
     }
+    /** A notification reply was stored: hand it to the running page now; false when the app isn't open. */
+    fun deliverReplies(): Boolean {
+      val a = live ?: return false
+      val w = a.webView ?: return false
+      w.post { a.sendReplies() }
+      return true
+    }
     const val EXTRA_CHAT = "supercharge_open_chat"
     private const val ALERTS = "supercharge-agent-updates"
-    private const val ALERTS_QUIET = "supercharge-agent-updates-quiet"
+    const val ALERTS_QUIET = "supercharge-agent-updates-quiet"
   }
 }

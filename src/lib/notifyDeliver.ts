@@ -28,7 +28,9 @@ export async function deliver(ev: NotifyEvent, prefs: NotifyPrefs | undefined, a
   const sound = prefs?.sound !== false;
   pending = { chatId: ev.chatId, at: Date.now() };
   if (isDesktop()) {
-    await invoke("plugin:notification|notify", { options: { title, body, ...(sound ? { sound: "default" } : {}) } }).catch(() => {});
+    // Linux: alert with Open / Reply (notification-action event); elsewhere the plugin.
+    if (!(await invoke<boolean>("notify_actions", { chat: ev.chatId, title, body, sound }).catch(() => false)))
+      await invoke("plugin:notification|notify", { options: { title, body, ...(sound ? { sound: "default" } : {}) } }).catch(() => {});
   } else {
     const n = new Notification(title, { body, silent: !sound, tag: `${ev.chatId}:${ev.kind}` });
     n.onclick = () => { window.focus(); window.dispatchEvent(new CustomEvent("supercharge:open-chat", { detail: ev.chatId })); n.close(); };

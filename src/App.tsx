@@ -1376,7 +1376,9 @@ export default function App() {
     const onOpen = (e: Event) => open((e as CustomEvent).detail);
     window.addEventListener("focus", onFocus);
     window.addEventListener("supercharge:open-chat", onOpen);
-    return () => { window.removeEventListener("focus", onFocus); window.removeEventListener("supercharge:open-chat", onOpen); };
+    // Open / Reply on a desktop alert: open the chat, and for Reply put the caret in the composer.
+    const off = isDesktop() ? listen<{ chat: string; action: string }>("notification-action", (a) => { open(a.chat); if (a.action === "reply") setTimeout(() => document.querySelector<HTMLElement>(".composer textarea")?.focus(), 300); }) : null;
+    return () => { window.removeEventListener("focus", onFocus); window.removeEventListener("supercharge:open-chat", onOpen); void off?.then((f) => f()); };
   }, []);
 
   const paletteCommands: Command[] = useMemo(() => {

@@ -58,6 +58,8 @@ gtk = "0.18"
 webkit2gtk = "2.0"
 cairo-rs = { version = "0.18", features = ["png"] }
 libc = "0.2"
+# Agent alerts with a Reply action (same crate the notification plugin uses).
+notify-rust = "4.18"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
