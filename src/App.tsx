@@ -664,7 +664,10 @@ export default function App() {
   /** The in-app browser's MCP server, attached to every session/new and session/load. */
   async function browserMcp(c: AcpClient): Promise<unknown[]> {
     if (mcpRef.current === undefined) mcpRef.current = await mcpUrl();
-    const httpMcp = !!(c.initResult?.agentCapabilities?.mcpCapabilities as any)?.http;
+    // A chat can be opened while the handshake is still running; without waiting, the session
+    // would be created without the browser tools and keep lacking them.
+    const init = c.initResult ?? (await c.initialized());
+    const httpMcp = !!(init?.agentCapabilities?.mcpCapabilities as any)?.http;
     return [...(mcpRef.current && httpMcp ? [{ type: "http", name: "supercharge-studio-browser", url: mcpRef.current, headers: [] }] : []), ...acpServers(dataRef.current.mcpServers, httpMcp)];
   }
 

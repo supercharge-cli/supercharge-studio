@@ -123,6 +123,7 @@ export class AcpClient {
   private dedup = new LegacyNotificationDedup();
 
   initResult: InitializeResult | null = null;
+  private initWaiters: ((r: InitializeResult | null) => void)[] = [];
   extensions: ExtensionInfo = { methods: [], features: [], notifications: [], meta: {} };
 
   constructor(opts: AcpClientOptions) {
@@ -147,6 +148,7 @@ export class AcpClient {
 
   private setState(s: ConnectionState, info?: { attempt?: number; delayMs?: number; error?: string }) {
     this._state = s;
+    if (s === "closed") this.flushInit();
     this.opts.onStateChange?.(s, info);
   }
 
@@ -423,7 +425,24 @@ export class AcpClient {
     });
     this.initResult = res;
     this.extensions = discoverExtensions(res);
+    this.flushInit();
     return res;
+  }
+
+  /**
+   * The initialize result once the handshake is done (at once if it already is), or null if
+   * the client closes first. Callers that read agent capabilities (e.g. whether the agent takes
+   * HTTP MCP servers) must wait for this: before it, initResult is still null.
+   */
+  initialized(): Promise<InitializeResult | null> {
+    if (this.initResult || this._state === "closed") return Promise.resolve(this.initResult);
+    return new Promise((r) => this.initWaiters.push(r));
+  }
+
+  private flushInit() {
+    const w = this.initWaiters;
+    this.initWaiters = [];
+    for (const r of w) r(this.initResult);
   }
 
   authenticate(methodId: string) {

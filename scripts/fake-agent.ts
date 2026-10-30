@@ -119,15 +119,20 @@ wss.on("connection", (ws: WebSocket) => {
     if (m.id != null && !m.method) return pending.get(m.id)?.(m), pending.delete(m.id);
     const reply = (result: any) => send({ id: m.id, result });
     switch (m.method) {
-      case "initialize":
-        return reply({
+      case "initialize": {
+        // FAKE_AGENT_INIT_DELAY_MS: a slow handshake (a real CLI loading a large provider model list).
+        const ms = Number(process.env.FAKE_AGENT_INIT_DELAY_MS || 0);
+        const res = {
           protocolVersion: 1,
           agentCapabilities: CLI
             ? { loadSession: true, sessionCapabilities: { list: {}, resume: {} }, mcpCapabilities: { http: true }, _meta: { supercharge: { methods: ["_supercharge/session/context_window", ...SETUP_METHODS], ...(process.env.FAKE_AGENT_STEER === "1" ? { steer: true } : {}) } } }
             : { loadSession: false, _meta: { "supercharge/demo": true } },
           authMethods: [],
           _meta: { agentVersion: "fake-1.0", availableCommands: [{ name: "help", description: "Show help" }, { name: "setup", description: "Configure provider" }] },
-        });
+        };
+        if (ms) return void setTimeout(() => reply(res), ms);
+        return reply(res);
+      }
       case "session/list": {
         if (!CLI) return reply({ sessions: listed.map((x) => ({ ...x })) });
         const all = listed.filter((x) => !m.params?.cwd || x.cwd === m.params.cwd);

@@ -27,3 +27,18 @@ test("browser MCP server is re-registered after the agent restarts mid-session",
   await ask("mcpcheck two");
   await expect(page.locator(".bubble.agent").last()).toContainText("mcp attached: supercharge-studio-browser");
 });
+
+test("a chat opened before the agent handshake finishes still gets the browser tools", async ({ page }) => {
+  const slow = { ...SETTINGS, bind: "127.0.0.1:2454" };
+  await page.addInitScript((s) => {
+    (window as any).__SC_TEST_MCP_URL = "http://127.0.0.1:9/mcp/test";
+    if (!localStorage.getItem("supercharge-studio/v1"))
+      localStorage.setItem("supercharge-studio/v1", JSON.stringify({ settings: s, groups: [{ id: "g1", name: "P", projects: [{ id: "p1", name: "mcp", cwd: "/srv/slow", chats: [] }] }], activeProjectId: "p1" }));
+  }, slow);
+  await page.goto("/");
+  await expect(page.locator(".status")).toHaveText("open");
+  await page.locator('[data-cwd="/srv/slow"]').getByTestId("new-chat").click(); // initialize is still pending
+  await page.locator(".composer textarea").fill("mcpcheck early");
+  await page.locator(".composer textarea").press("Enter");
+  await expect(page.locator(".bubble.agent").last()).toContainText("mcp attached: supercharge-studio-browser", { timeout: 10000 });
+});

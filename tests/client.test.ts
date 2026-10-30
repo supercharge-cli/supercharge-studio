@@ -32,6 +32,26 @@ describe("AcpClient", () => {
     expect(sent.params.clientInfo.name).toBe("supercharge-studio");
   });
 
+  it("lets callers wait for the handshake before reading agent capabilities", async () => {
+    const c = mk();
+    let seen: unknown = "pending";
+    const waiting = c.initialized().then((r) => (seen = r));
+    await c.connect();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(seen).toBe("pending");
+    const init = await c.initialize();
+    await waiting;
+    expect(seen).toBe(init);
+    expect(await c.initialized()).toBe(init);
+  });
+
+  it("stops waiting for the handshake when the client closes", async () => {
+    const c = mk();
+    const waiting = c.initialized();
+    c.close();
+    expect(await waiting).toBeNull();
+  });
+
   it("tracks request ids and matches out-of-order responses", async () => {
     agent.on("a", (m, s) => setTimeout(() => reply(s, m.id, "A"), 30));
     agent.on("b", (m, s) => reply(s, m.id, "B"));
