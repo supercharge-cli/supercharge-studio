@@ -1,4 +1,5 @@
 import { memo, ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { follows, pinToEnd } from "../lib/follow";
 
 /**
  * Windowed list with measured row heights and stick-to-bottom behaviour.
@@ -30,13 +31,15 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
 
   // Scroll handling is coalesced to one read + one state update per frame.
   const frame = useRef(0);
+  const lastTop = useRef(0);
   const onScroll = useCallback(() => {
     if (frame.current) return;
     frame.current = requestAnimationFrame(() => {
       frame.current = 0;
       const el = ref.current;
       if (!el) return;
-      stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      stick.current = follows(stick.current, lastTop.current, el.scrollTop, el.scrollHeight - el.scrollTop - el.clientHeight < 60);
+      lastTop.current = el.scrollTop;
       setAway(!stick.current);
       if (virtual) setView((v) => (Math.abs(v.top - el.scrollTop) < 40 && v.h === el.clientHeight ? v : { top: el.scrollTop, h: el.clientHeight }));
     });
@@ -51,11 +54,7 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
-      if (stick.current) el.scrollTop = el.scrollHeight;
-    });
-    ro.observe(el.firstElementChild as Element);
-    return () => ro.disconnect();
+    return pinToEnd(el, el.firstElementChild as Element, () => stick.current);
   }, []);
 
   // Row heights come from one ResizeObserver (batched, no forced synchronous layout).

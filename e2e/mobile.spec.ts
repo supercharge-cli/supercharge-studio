@@ -222,3 +222,26 @@ test("thinking block streams open on the phone, then folds", async ({ page }) =>
   await expect(page.locator(".m-thread .bubble.thought").last()).toHaveText("Reading the files first.");
 });
 
+test("jump to latest reaches the newest message while streaming, then keeps following", async ({ page }) => {
+  await pair(page);
+  await page.getByTestId("m-chat").nth(1).click();
+  await page.getByTestId("m-input").fill("essay for the phone");
+  await page.getByTestId("m-send").click();
+  const thread = page.getByTestId("m-thread");
+  const gap = () => thread.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+  await expect(page.locator(".bubble.agent").last()).toContainText("Paragraph 15");
+  await thread.hover();
+  await page.mouse.wheel(0, -3000);
+  await expect(page.getByTestId("m-jump")).toBeVisible();
+  const held = await thread.evaluate((el) => el.scrollTop);
+  await page.waitForTimeout(300);
+  expect(await thread.evaluate((el) => el.scrollTop)).toBe(held);
+  await shot(page, "43-mobile-jump-button");
+  await page.getByTestId("m-jump").click();
+  await expect(page.getByTestId("m-jump")).toBeHidden();
+  for (let i = 0; i < 4; i++) { await page.waitForTimeout(150); expect(await gap()).toBeLessThanOrEqual(2); }
+  await expect(page.locator(".bubble.agent").last()).toContainText("The end.");
+  await expect.poll(gap).toBeLessThanOrEqual(2);
+  await shot(page, "44-mobile-jumped-to-latest");
+});
+

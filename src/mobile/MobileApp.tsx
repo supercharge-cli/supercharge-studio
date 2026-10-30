@@ -12,6 +12,7 @@ import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionModes }
 import { ModeControl } from "../components/ModeControl";
 import { Icon } from "../components/Icon";
 import { Thought, ThoughtLive } from "../components/Thought";
+import { follows, pinToEnd } from "../lib/follow";
 import { Markdown } from "../components/Markdown";
 import { ToolCard } from "../components/ToolCard";
 import { transition } from "../lib/motion";
@@ -178,6 +179,7 @@ export default function MobileApp() {
   const [modePop, setModePop] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const stuck = useRef(true);
+  const lastTop = useRef(0);
   const pickView = (v: HistoryView) => { setHistoryView(v); localStorage.setItem(HISTORY_KEY, v); };
   const fileInput = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -535,14 +537,20 @@ export default function MobileApp() {
     if (el && stuck.current) el.scrollTop = el.scrollHeight;
   }, [sess]);
   useEffect(() => { stuck.current = true; setAtBottom(true); }, [open]);
+  // Messages paint lazily (content-visibility), so the end moves as they render: keep re-pinning while stuck.
+  useEffect(() => {
+    const el = scroller.current;
+    return el?.firstElementChild ? pinToEnd(el, el.firstElementChild, () => stuck.current) : undefined;
+  }, [open]);
   const onThreadScroll = () => {
     const el = scroller.current;
     if (!el) return;
-    const near = isNearBottom(el.scrollHeight, el.scrollTop, el.clientHeight);
-    stuck.current = near;
-    setAtBottom((v) => (v === near ? v : near));
+    const on = (stuck.current = follows(stuck.current, lastTop.current, el.scrollTop, isNearBottom(el.scrollHeight, el.scrollTop, el.clientHeight)));
+    lastTop.current = el.scrollTop;
+    setAtBottom((v) => (v === on ? v : on));
   };
-  const jumpToEnd = () => { const el = scroller.current; if (!el) return; stuck.current = true; setAtBottom(true); el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }); };
+  // Straight to the newest message (also mid-stream); following continues until the reader scrolls up.
+  const jumpToEnd = () => { const el = scroller.current; if (!el) return; haptic(); stuck.current = true; setAtBottom(true); el.scrollTop = el.scrollHeight; };
 
   const grouped = useMemo(() => {
     const m = new Map<string, { project: Project; sessions: Sess[] }>();

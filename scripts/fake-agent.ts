@@ -231,6 +231,10 @@ wss.on("connection", (ws: WebSocket) => {
         }
         if (/authfail/.test(text))
           return send({ id: m.id, error: { code: -32603, message: "Internal error", data: "Unauthorized (401): Invalid or expired credentials" } });
+        if (/essay/.test(text)) {
+          for (let i = 0; i < 70; i++) { say(sid, `Paragraph ${i}: the quick brown fox jumps over the lazy dog, again and again.\n\n`); await sleep(45); }
+          say(sid, "The end.");
+        }
         if (/ponder/.test(text)) {
           for (const w of ["Reading ", "the ", "files ", "first."]) { update(sid, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: w } }); await sleep(350); }
           say(sid, "Done thinking.");
@@ -340,7 +344,7 @@ wss.on("connection", (ws: WebSocket) => {
         // Attachments: report each non-text block so tests can check what the client sent.
         const att = (m.params?.prompt ?? []).filter((b: any) => b?.type && b.type !== "text");
         if (att.length) say(sid, `attachments: ${att.map((b: any) => b.type === "image" ? `image(${b.mimeType})` : b.type === "resource" ? `resource(${decodeURIComponent(String(b.resource?.uri ?? "").split("/").pop() ?? "")}${b.resource?.text != null ? ",text" : ",blob"})` : `link(${b.name})`).join(" ")} `);
-        if (!/stream|tool|perm|slow|browser|modelfail|edit|long|tokens/.test(text)) say(sid, `echo: ${text}`);
+        if (!/stream|tool|perm|slow|browser|modelfail|edit|long|tokens|essay|ponder/.test(text)) say(sid, `echo: ${text}`);
         // Usage: context_usage (preferred by Studio), response_completed (snake_case), and turn report.
         const usage = { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 200, reasoningTokens: 50, modelCalls: 1, modelUsage: { "fake-model": { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 200, reasoningTokens: 50, modelCalls: 1 } } };
         const msgId = `m${nextId++}`;

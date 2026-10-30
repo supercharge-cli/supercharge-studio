@@ -426,3 +426,22 @@ test("thinking block opens while the agent thinks, then folds to how long it too
   await expect(second).toHaveAttribute("aria-expanded", "false");
 });
 
+
+test("jump to latest lands on the newest line mid-stream and keeps following until scrolled up", async ({ page }) => {
+  await boot(page);
+  await ask(page, "essay please");
+  const list = page.locator(".messages");
+  const gap = () => list.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+  await expect(page.locator(".bubble.agent").last()).toContainText("Paragraph 12");
+  await list.hover();
+  await page.mouse.wheel(0, -2000);
+  await expect(page.getByTestId("jump-latest")).toBeVisible();
+  const held = await list.evaluate((el) => el.scrollTop);
+  await page.waitForTimeout(300);
+  expect(await list.evaluate((el) => el.scrollTop)).toBe(held); // reading up stays put while text streams in
+  await page.getByTestId("jump-latest").click();
+  await expect(page.getByTestId("jump-latest")).toBeHidden();
+  for (let i = 0; i < 4; i++) { await page.waitForTimeout(150); expect(await gap()).toBeLessThanOrEqual(2); }
+  await expect(page.locator(".bubble.agent").last()).toContainText("The end.");
+  await expect.poll(gap).toBeLessThanOrEqual(2);
+});
