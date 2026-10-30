@@ -113,10 +113,14 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollTo?.n, items.length > 0]);
 
+  // A user's scroll-up detaches at once: the coalesced scroll read lands a frame later, and a
+  // streaming render in between would otherwise snap the view back to the bottom.
+  const up = () => { stick.current = false; };
+  const onKey = (e: { key: string }) => { if (/^(ArrowUp|PageUp|Home)$/.test(e.key)) up(); };
   const jump = () => { const el = ref.current; if (!el) return; stick.current = true; setAway(false); el.scrollTop = el.scrollHeight; };
   return (
     <div className="vlist-wrap">
-    <div className={className} ref={ref} onScroll={onScroll} data-virtual={virtual || undefined}>
+    <div className={className} ref={ref} onScroll={onScroll} onWheel={(e) => { if (e.deltaY < 0) up(); }} onKeyDown={onKey} data-virtual={virtual || undefined}>
       <div className="thread">
         {header}
         {padTop > 0 && <div style={{ height: padTop }} aria-hidden />}

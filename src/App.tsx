@@ -21,7 +21,7 @@ import { dueSchedules, nextRun } from "./lib/schedules";
 import { chatMentions, transcript } from "./lib/transcript";
 import type { ToolsTab } from "./components/Tools";
 import { extractMentions, fileItems, mentionBlocks } from "./lib/mentions";
-// Settings → Devices loads with the other on-demand screens.
+// Settings → Devices loads with the other on-demand screens (own Suspense, so Settings keeps its tab while it loads).
 const DevicesSection = lazy(() => import("./screens").then((m) => ({ default: m.DevicesSection })));
 const SettingsScreen = lazy(() => import("./screens").then((m) => ({ default: m.SettingsScreen })));
 // Warm the lazy screens once the app is idle so the first open is instant.
@@ -1503,7 +1503,7 @@ export default function App() {
           onCliImport={() => importCli(clientRef.current, true)}
           sessionId={activeSessionId}
           onClose={() => setView("chat")}
-          devices={<DevicesSection desktop={isDesktop()} prefs={gwPrefs} onPrefs={(g) => update((d) => ({ ...d, settings: { ...d.settings, gateway: g } }))} />}
+          devices={<Suspense fallback={null}><DevicesSection desktop={isDesktop()} prefs={gwPrefs} onPrefs={(g) => update((d) => ({ ...d, settings: { ...d.settings, gateway: g } }))} /></Suspense>}
           onConfig={(id, v) => { if (activeChat?.sessionId) changeOption(activeChat.sessionId, id, v); }}
           onSave={async (settings) => {
             const activeProvider = settings.providers?.find((p) => p.id === settings.activeProviderId);
