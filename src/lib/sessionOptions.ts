@@ -13,6 +13,7 @@ export function optionFor(options: ConfigOption[] | undefined, id: "model" | "re
 const EFFORT_LABELS: Record<string, string> = {
   off: "Off",
   none: "Off",
+  minimal: "Minimal",
   low: "Low",
   medium: "Medium",
   high: "High",
@@ -47,4 +48,20 @@ export function reasoningOption(options: ConfigOption[] | undefined): ConfigOpti
     id: raw.id || "reasoning_effort",
     options: raw.options.map((c) => ({ ...c, name: effortLabel(c.value, c.name) })),
   };
+}
+
+/** Wire value to send so a session matches the level the user last picked, or undefined when nothing should change. */
+export function effortToApply(options: ConfigOption[] | undefined, last: string | undefined): string | undefined {
+  const r = reasoningOption(options);
+  const hit = last ? r?.options?.find((c) => sameEffort(c.value, last)) : undefined;
+  return hit && !sameEffort(hit.value, r!.currentValue) ? hit.value : undefined;
+}
+
+/**
+ * The model the composer shows: the session's own model when the agent lists the last pick (so a chat on another
+ * model never looks like it runs the last pick), else the last pick (typed ids saved through setup), else the fallback.
+ */
+export function shownModel(agent: ConfigOption | undefined, last: string | undefined, fallback: string | undefined): string | undefined {
+  const listed = !!last && !!agent?.options?.some((o) => o.value === last);
+  return (listed || !last ? agent?.currentValue : undefined) ?? last ?? fallback;
 }

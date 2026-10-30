@@ -92,6 +92,9 @@ test("desktop model and thinking controls follow the selected chat", async ({ pa
   await page.getByTestId("new-chat").first().click();
   await ask(page, "other chat");
   await expect(page.getByTestId("model-trigger")).toContainText("Second");
+  // ...and the last thinking level, which the agent would otherwise reset to its default.
+  await expect(page.getByTestId("thinking-chip")).toContainText("Low");
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("supercharge-studio/v1")!).settings.lastEffort)).toBe("low");
   await page.getByTestId("chat").filter({ hasText: "first chat" }).click();
   await expect(page.getByTestId("model-trigger")).toContainText("Second");
 });

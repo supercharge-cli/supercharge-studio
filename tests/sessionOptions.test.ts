@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effortLabel, normalizeEffort, optionFor, reasoningOption, sameEffort, updateSessionOptions } from "../src/lib/sessionOptions";
+import { effortLabel, effortToApply, normalizeEffort, optionFor, reasoningOption, sameEffort, shownModel, updateSessionOptions } from "../src/lib/sessionOptions";
 
 const first = [{ id: "model", name: "Model", currentValue: "studio-p-1", options: [{ value: "studio-p-1", name: "First" }, { value: "studio-p-2", name: "Second" }] }];
 const second = [{ id: "model", name: "Model", currentValue: "studio-p-2", options: [{ value: "studio-p-1", name: "First" }, { value: "studio-p-2", name: "Second" }] }, { id: "reasoning_effort", currentValue: "low", options: [{ value: "low" }, { value: "high" }] }];
@@ -34,5 +34,23 @@ describe("session configuration", () => {
     const byId = reasoningOption([{ id: "reasoning_effort", category: "thought_level", currentValue: "high", options: [{ value: "off", name: "Off" }, { value: "high", name: "High" }] }]);
     expect(byId?.currentValue).toBe("high");
     expect(reasoningOption(first)).toBeUndefined();
+  });
+  it("reapplies the last thinking level only when the model offers it (CLI reasoning_effort shape)", () => {
+    const cli = [{ id: "reasoning_effort", name: "Reasoning Effort", category: "thought_level", type: "select", currentValue: "medium", options: ["minimal", "low", "medium", "high", "xhigh"].map((value) => ({ value, name: value === "xhigh" ? "X-High" : value })) }];
+    expect(effortToApply(cli, "high")).toBe("high");
+    expect(effortToApply(cli, "medium")).toBeUndefined();
+    expect(effortToApply(cli, undefined)).toBeUndefined();
+    expect(effortToApply(cli, "max")).toBeUndefined();
+    expect(effortToApply(first, "high")).toBeUndefined();
+    expect(effortToApply([{ id: "reasoning_effort", currentValue: "low", options: [{ value: "none" }, { value: "low" }] }], "off")).toBe("none");
+    expect(effortLabel("minimal")).toBe("Minimal");
+  });
+  it("shows the session's real model before the last pick", () => {
+    const agent = { id: "model", currentValue: "studio-test-1", options: [{ value: "studio-test-1" }, { value: "grok-4.6" }] };
+    expect(shownModel(agent, "grok-4.6", undefined)).toBe("studio-test-1");
+    expect(shownModel(agent, undefined, undefined)).toBe("studio-test-1");
+    expect(shownModel(agent, "vendor/typed", undefined)).toBe("vendor/typed");
+    expect(shownModel(undefined, "grok-4.6", "x")).toBe("grok-4.6");
+    expect(shownModel(undefined, undefined, "x")).toBe("x");
   });
 });

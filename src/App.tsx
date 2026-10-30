@@ -11,7 +11,7 @@ const CliSetup = lazy(() => import("./screens").then((m) => ({ default: m.CliSet
 import type { Command } from "./components/CommandPalette";
 const CommandPalette = lazy(() => import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })));
 import { ComposerMenu } from "./components/ComposerMenu";
-import { optionFor, updateSessionOptions } from "./lib/sessionOptions";
+import { effortToApply, optionFor, reasoningOption, shownModel, updateSessionOptions } from "./lib/sessionOptions";
 import { providerCatalogKey } from "./lib/catalog";
 import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./lib/composer";
 import { resolveTheme, themeList } from "./lib/themes";
@@ -144,6 +144,12 @@ export default function App() {
     return { configOptions: r.configOptions, contextWindow: n ?? null };
   };
   const rememberWindows = (models: any) => { for (const m of models?.availableModels ?? []) { const t = Number(m?._meta?.totalContextTokens ?? m?._meta?.contextWindow); if (t > 0) ctxMax.current[m.modelId] = t; } };
+  /** Keep the composer's model and thinking picks for the next chat (desktop and phone). */
+  const rememberPick = (option: ConfigOption | undefined, value: string) => {
+    if (!option) return;
+    if (optionFor([option], "model")) update((d) => ({ ...d, settings: { ...d.settings, lastModel: value } }));
+    else if (reasoningOption([option])) update((d) => ({ ...d, settings: { ...d.settings, lastEffort: value } }));
+  };
   const rememberOptions = (sid: string, options: ConfigOption[]) => {
     optionsRef.current = updateSessionOptions(optionsRef.current, sid, options);
     setOptionsBySession(optionsRef.current);
@@ -293,6 +299,7 @@ export default function App() {
             if (!agent?.options?.some((o) => o.value === value)) { await fallbackRef.current.pick(sid, value); return withModel(sid); }
           }
           const result = await c.setConfigOption(sid, id, value);
+          rememberPick(optionsRef.current[sid]?.find((o) => o.id === id), value);
           if (Array.isArray(result?.configOptions)) rememberOptions(sid, result.configOptions);
     rememberWindows(result?.models ?? (c.initResult?._meta as any)?.modelState);
           return withModel(sid);
@@ -761,9 +768,15 @@ export default function App() {
       rememberModes(res.sessionId, res.modes);
       rememberWindows((res as any).models);
       sessModels.current[res.sessionId] = (res as any).models;
-      const last = dataRef.current.settings.lastModel, mo = optionFor(res.configOptions ?? [], "model");
-      if (last && mo && mo.currentValue !== last && mo.options?.some((o) => o.value === last))
-        void c.setConfigOption(res.sessionId, mo.id, last).then((r: any) => { if (Array.isArray(r?.configOptions)) rememberOptions(res.sessionId, r.configOptions); }).catch(() => {});
+      // New chats start with the last model and thinking level picked (the agent resets both per session).
+      const { lastModel: last, lastEffort } = dataRef.current.settings, mo = optionFor(res.configOptions ?? [], "model");
+      const set = (id: string, v: string) => c.setConfigOption(res.sessionId, id, v).then((r: any) => { if (Array.isArray(r?.configOptions)) { rememberOptions(res.sessionId, r.configOptions); return r.configOptions as ConfigOption[]; } });
+      void (async () => {
+        let opts = res.configOptions ?? [];
+        if (last && mo && mo.currentValue !== last && mo.options?.some((o) => o.value === last)) opts = (await set(mo.id, last)) ?? opts;
+        const e = effortToApply(opts, lastEffort);
+        if (e) await set(reasoningOption(opts)!.id, e);
+      })().catch(() => {});
       loaded.current.add(res.sessionId);
       attached.current.add(res.sessionId);
       update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, sessionId: res.sessionId } : x)) })));
@@ -1066,7 +1079,7 @@ export default function App() {
   }, [activeSid, !!realModel, modelTick, status]);
   const customs = data.settings.customModels ?? [];
   const baseModel: ModelOpt | undefined = realModel ?? (activeSid ? fallbackModel[activeSid] : undefined);
-  const cur = data.settings.lastModel ?? baseModel?.currentValue;
+  const cur = shownModel(realModel, data.settings.lastModel, baseModel?.currentValue);
   const modelOption: ModelOpt | undefined = !activeSid ? undefined : { ...(baseModel ?? { id: "model", name: "Model", source: "custom" }), currentValue: cur, options: mergeCustom(baseModel?.options ?? [], customs, cur) };
   fallbackRef.current.opt = activeSid && fallbackModel[activeSid] ? fallbackModel[activeSid] : fallbackRef.current.opt;
   const pickerOptions = modelOption ? [modelOption, ...configOptions.filter((o) => o.id !== "model")] : configOptions;
@@ -1126,7 +1139,7 @@ export default function App() {
     }
     const option = optionsRef.current[sid]?.find((o) => o.id === id);
     if (!option?.options?.some((v) => v.value === value)) return;
-    if (optionFor([option], "model")) update((d) => ({ ...d, settings: { ...d.settings, lastModel: value } }));
+    rememberPick(option, value);
     void clientRef.current?.setConfigOption(sid, id, value)
       .then((r: any) => { if (Array.isArray(r?.configOptions)) rememberOptions(sid, r.configOptions); })
       .catch((e: any) => setNotice(`Could not change ${id}: ${e?.message ?? e}`));

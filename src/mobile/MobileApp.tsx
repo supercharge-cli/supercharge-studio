@@ -20,7 +20,7 @@ import { loadCreds, saveCreds } from "./creds";
 import { phoneIp } from "./ip";
 import { type Attachment, deviceBlocks, fmtSize, fromFile, isImage, rejectReason } from "../lib/attachments";
 import { APP_VERSION, checkUpdate, pickApk, UPDATE_EVERY } from "../lib/updates";
-import { effortLabel, reasoningOption } from "../lib/sessionOptions";
+import { effortLabel, reasoningOption, sameEffort } from "../lib/sessionOptions";
 import { ContextMeter, type WindowCtl } from "../components/ContextMeter";
 import { applyWindow, windowOption } from "../lib/contextWindow";
 import { mergeCustom, rememberCustom, type CustomModel } from "../lib/modelFallback";
@@ -839,7 +839,7 @@ export default function MobileApp() {
                       <div className="m-think-pop" role="dialog" aria-label="Thinking">
                         <b>{optionLabel(thinkingOption)}</b>
                         <input type="range" aria-label="Thinking level" min={0} max={Math.max(0, (thinkingOption.options?.length ?? 1) - 1)} step={1} disabled={settingOption}
-                          value={Math.max(0, thinkingOption.options!.findIndex((v) => v.value === thinkingOption.currentValue))}
+                          value={Math.max(0, thinkingOption.options!.findIndex((v) => sameEffort(v.value, thinkingOption.currentValue)))}
                           onChange={(e) => { const choice = thinkingOption.options![Number(e.target.value)]; if (choice) void chooseOption(thinkingOption.id, choice.value); }} />
                       </div>
                     )}
@@ -863,7 +863,7 @@ export default function MobileApp() {
                 <span>Thinking</span>
                 <b>{optionLabel(thinkingOption)}</b>
                 <input type="range" aria-label="Thinking level" data-testid="m-thinking" min={0} max={Math.max(0, (thinkingOption.options?.length ?? 1) - 1)} step={1} disabled={settingOption}
-                  value={Math.max(0, thinkingOption.options!.findIndex((v) => v.value === thinkingOption.currentValue))}
+                  value={Math.max(0, thinkingOption.options!.findIndex((v) => sameEffort(v.value, thinkingOption.currentValue)))}
                   onChange={(e) => { haptic(); const choice = thinkingOption.options![Number(e.target.value)]; if (choice) void chooseOption(thinkingOption.id, choice.value); }} />
               </label>
             )}

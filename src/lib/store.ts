@@ -23,6 +23,8 @@ const gatewayPrefs = (saved?: GatewayPrefs): GatewayPrefs => ensureHostId({ ...d
 export type Settings = {
   /** Model last picked in the composer; new chats start with it when the agent offers it. */
   lastModel?: string;
+  /** Thinking level last picked (reasoning_effort); new chats start with it when their model offers it. */
+  lastEffort?: string;
   /** Model ids the user typed in the picker (shown alongside agent/setup lists). */
   customModels?: { id: string; name?: string }[];
   bind: string;
