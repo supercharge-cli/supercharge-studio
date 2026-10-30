@@ -329,6 +329,9 @@ export default function App() {
   const hub = hubRef.current;
   const busyRef = useRef(busy);
   busyRef.current = busy;
+  // Phones read "busy" from the chat list (keep-alive, live status): tell them when a turn starts or ends.
+  const busyKey = Object.keys(busy).filter((k) => busy[k]).join();
+  useEffect(() => { hub.sessionsChanged(); }, [busyKey]);
 
   const connect = useCallback(async () => {
     clientRef.current?.close();

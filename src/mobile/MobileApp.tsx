@@ -26,6 +26,7 @@ import { effortLabel, reasoningOption, sameEffort } from "../lib/sessionOptions"
 import { ContextMeter, type WindowCtl } from "../components/ContextMeter";
 import { applyWindow, windowOption } from "../lib/contextWindow";
 import { mergeCustom, rememberCustom, type CustomModel } from "../lib/modelFallback";
+import { approvalText, liveText } from "../lib/liveStatus";
 const CK = "supercharge-mobile/custom-models";
 const loadCustoms = (): CustomModel[] => { try { const j = JSON.parse(localStorage.getItem(CK) ?? "[]"); return Array.isArray(j) ? j.filter((x: any) => x?.id) : []; } catch { return []; } };
 const storeCustoms = (list: CustomModel[]) => { try { localStorage.setItem(CK, JSON.stringify(list)); } catch {} };
@@ -64,6 +65,8 @@ function phoneNotify(kind: NotifyKind, sid: string, chatTitle: string, body: str
 const NOTIFY_KEY = "supercharge-mobile/notify";
 const loadNotifyPrefs = (): NotifyPrefs => { try { return { ...defaultNotifyPrefs, ...JSON.parse(localStorage.getItem(NOTIFY_KEY) ?? "{}") }; } catch { return defaultNotifyPrefs; } };
 const keepAlive = (on: boolean) => { try { (window as any).SuperchargeAndroid?.keepAlive?.(on); } catch { /* not available */ } };
+/** Live line on the Android keep-alive notification ("Thinking…", "Running: …", approvals with Allow / Deny); Android skips repeats. */
+const status = (sid: string, title: string, text: string, key = "") => { try { (window as any).SuperchargeAndroid?.status?.(sid, title, text, key); } catch { /* not available */ } };
 
 type Sess = { sessionId: string; title?: string; cwd?: string; updatedAt?: string; _meta?: { project?: string; projectId?: string; group?: string; busy?: boolean } };
 type Project = { projectId: string; name: string; cwd: string; group: string };
@@ -112,6 +115,7 @@ export default function MobileApp() {
   const openRef = useRef<string | null>(null);
   openRef.current = open;
   const titleOf = useRef<(sid: string) => string>(() => "chat");
+  const bg = (sid: string, text: string, key?: string) => status(sid, titleOf.current(sid), text, key);
   const notifyRef = useRef((kind: NotifyKind, sid: string, body: string, key?: string) => phoneNotify(kind, sid, titleOf.current(sid), body, notifyPrefs.current, openRef.current, key));
   /** Allow / Deny tapped on a notification before the request reached this page (after a reconnect). */
   const answers = useRef(new Map<string, boolean>());
@@ -120,6 +124,11 @@ export default function MobileApp() {
   const photoInput = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<Record<string, SessionState>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  /** Turns this phone started and still waits on; the computer's list may not show them busy yet. */
+  const mine = useRef(new Set<string>());
+  const tools = useRef(new Map());
   const [draft, setDraft] = useState("");
   const [permQueue, setPermQueue] = useState<{ req: PermissionRequest; resolve: (o: PermissionOutcome) => void }[]>([]);
   const perm = permQueue[0] ?? null;
@@ -199,7 +208,17 @@ export default function MobileApp() {
     if (!c) return;
     const r: any = await c.listSessions();
     const seen = new Set<string>();
-    setList((r.sessions ?? []).filter((x: Sess) => !seen.has(x.sessionId) && !!seen.add(x.sessionId)));
+    const l: Sess[] = (r.sessions ?? []).filter((x: Sess) => !seen.has(x.sessionId) && !!seen.add(x.sessionId));
+    setList(l);
+    // Turns keep running on the computer while the phone is away: take "busy" from it.
+    const next: Record<string, boolean> = {};
+    for (const x of l) {
+      const id = x.sessionId, now = !!x._meta?.busy || mine.current.has(id);
+      if (busyRef.current[id] && !now) notifyRef.current("done", id, "The agent finished its reply");
+      next[id] = now;
+    }
+    mine.current.forEach((id) => (next[id] = true));
+    setBusy(next);
     setListed(true);
     setProjects(r._meta?.projects ?? []);
     setPrompts(r._meta?.prompts ?? []);
@@ -249,6 +268,8 @@ export default function MobileApp() {
       onStateChange: (s) => setConn(s),
       // Token chunks are applied in one state update per animation frame.
       onUpdate: (sid, u) => {
+        const live = busyRef.current[sid] && liveText(u, tools.current);
+        if (live) bg(sid, live);
         if (u.sessionUpdate === "config_option_update" && Array.isArray(u.configOptions))
           setConfigBySession((all) => ({ ...all, [sid]: u.configOptions as ConfigOption[] }));
         if (u.sessionUpdate === "current_mode_update")
@@ -276,8 +297,10 @@ export default function MobileApp() {
       onPermissionRequest: (req) => new Promise((resolve) => {
         const key = permKey(req), early = answers.current.get(key), opt = early != null && answerOption(req.options, early);
         if (opt) { answers.current.delete(key); return resolve({ outcome: "selected", optionId: opt }); }
-        notifyRef.current("permission", req.sessionId, `Allow: ${(req as any).toolCall?.title ?? "a tool call"}?`, key);
-        setPermQueue((pending) => [...pending, { req: cleanPermission(req), resolve }]);
+        const sid = req.sessionId, t = (req as any).toolCall?.title;
+        notifyRef.current("permission", sid, `Allow: ${t ?? "a tool call"}?`, key);
+        bg(sid, approvalText(t), key);
+        setPermQueue((pending) => [...pending, { req: cleanPermission(req), resolve: (o) => { bg(sid, "Working…"); resolve(o); } }]);
       }),
       onReconnected: () => {
         loadedRef.current.clear();
@@ -285,11 +308,7 @@ export default function MobileApp() {
         setModesBySession({});
         // Questions asked on the old socket can't be answered any more; the desktop asks again on load.
         setPermQueue((q) => { q.forEach((x) => x.resolve({ outcome: "cancelled" })); return []; });
-        void refresh().then(() => {
-          // Turns keep running on the computer while the phone is away: take "busy" from it.
-          setBusy(Object.fromEntries(sessionsRef.current.map((s) => [s.sessionId, !!s._meta?.busy])));
-          flushQueued();
-        }).catch(() => {});
+        void refresh().then(flushQueued).catch(() => {});
         const sid = activeSessionRef.current;
         if (sid) {
           setState((all) => ({ ...all, [sid]: emptySession() }));
@@ -462,6 +481,7 @@ export default function MobileApp() {
     setAtBottom(true);
     if (inputRef.current) inputRef.current.style.height = "";
     setBusy((b) => ({ ...b, [open]: true }));
+    mine.current.add(open);
     try {
       const r = await c.prompt(open, text, extra);
       if (r.stopReason !== "end_turn") setState((all) => ({ ...all, [open]: { ...all[open], items: [...all[open].items, { kind: "system", text: `stopped: ${r.stopReason}` }] } }));
@@ -473,6 +493,8 @@ export default function MobileApp() {
       setState((all) => ({ ...all, [open]: { ...(all[open] ?? emptySession()), items: [...(all[open]?.items ?? []), { kind: "system", text: `The turn failed: ${e?.message ?? e}`, error: true } as any] } }));
       notifyRef.current("error", open, String(e?.message ?? e));
       setBusy((b) => ({ ...b, [open]: false }));
+    } finally {
+      mine.current.delete(open);
     }
   }
 

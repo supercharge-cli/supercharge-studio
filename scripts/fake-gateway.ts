@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
  *   GET /handoff?sid=..  → send a handoff to all devices
  *   GET /pair?relay=1    → same, but the direct URL is unreachable and `r=` points at the relay
  *   GET /relay-stats     → frames forwarded by the relay double and whether any was plaintext
+ *   GET /busy?sid&on=1   → mark a session busy (on=1) or idle on the computer and tell the phones
  *   GET /perm            → raise a permission request on session s1; result at /perm-result
  */
 import { createServer } from "http";
@@ -64,6 +65,20 @@ const hub: GatewayHub = new GatewayHub((d, m) => conns.get(d)?.(m), {
       hub.update(sid, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Done thinking." } });
       return { stopReason: "end_turn" };
     }
+    if (/bgwork/.test(text)) {
+      // Background-mode run: think, edit a file, ask before running tests, then reply.
+      hub.update(sid, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Planning the fix." } });
+      await sleep(300);
+      hub.update(sid, { sessionUpdate: "tool_call", toolCallId: "b1", title: "Edit", kind: "edit", status: "in_progress", locations: [{ path: "/work/api/src/login.ts" }] });
+      await sleep(300);
+      hub.update(sid, { sessionUpdate: "tool_call_update", toolCallId: "b1", status: "completed" });
+      hub.update(sid, { sessionUpdate: "tool_call", toolCallId: "b2", title: "Run bun test", kind: "execute", status: "pending" });
+      const { answer } = hub.requestPermission(sid, { toolCall: { toolCallId: "b2", title: "Run bun test" }, options: [{ optionId: "y", name: "Allow once", kind: "allow_once" }, { optionId: "n", name: "Reject", kind: "reject_once" }] });
+      const o = await answer;
+      hub.update(sid, { sessionUpdate: "tool_call_update", toolCallId: "b2", status: "completed" });
+      hub.update(sid, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Tests ${(o as any).optionId === "y" ? "pass" : "skipped"}.` } });
+      return { stopReason: "end_turn" };
+    }
     if (/perm/.test(text)) {
       const { answer } = hub.requestPermission(sid, { toolCall: { toolCallId: "t9", title: "Run npm test", rawInput: { command: "npm test" } }, options: [{ optionId: "y", name: "Allow once", kind: "allow_once" }, { optionId: "n", name: "Reject", kind: "reject_once" }] });
       const o = await answer;
@@ -117,6 +132,13 @@ const http = createServer(async (req, res) => {
   if (u.pathname === "/relay-stats") return res.end(JSON.stringify(relayStats));
   if (u.pathname === "/drop") { for (const c of wss.clients) c.terminate(); return res.end("{}"); }
   if (u.pathname === "/handoff") return res.end(JSON.stringify({ n: hub.handoff(u.searchParams.get("sid") ?? "s2") }));
+  if (u.pathname === "/busy") {
+    // A turn starting / ending on the computer (not from the phone).
+    const s: any = sessions.find((x) => x.sessionId === (u.searchParams.get("sid") ?? "s2"));
+    if (s) s.busy = u.searchParams.get("on") === "1";
+    hub.sessionsChanged();
+    return res.end("{}");
+  }
   if (u.pathname === "/perm") {
     permResult = null;
     const { answer } = hub.requestPermission("s1", { toolCall: { toolCallId: "t1", title: "Delete dist" }, options: [{ optionId: "ok", name: "Allow once", kind: "allow_once" }] });

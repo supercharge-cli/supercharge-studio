@@ -15,6 +15,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -25,6 +26,10 @@ class MainActivity : TauriActivity() {
   private var webView: WebView? = null
   private var keepingAlive = false
   private var pendingChat: String? = null
+  /** Back while a chat is working: leave the page running in the background instead of closing it. */
+  private val backToHome = object : OnBackPressedCallback(false) {
+    override fun handleOnBackPressed() { moveTaskToBack(true) }
+  }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
@@ -39,6 +44,7 @@ class MainActivity : TauriActivity() {
       insets
     }
     window.decorView.post { setup(window.decorView) }
+    onBackPressedDispatcher.addCallback(this, backToHome)
     pendingChat = intent?.getStringExtra(EXTRA_CHAT)
     takeAnswer(intent)
     live = this
@@ -87,6 +93,7 @@ class MainActivity : TauriActivity() {
 
   override fun onDestroy() {
     if (live === this) live = null
+    if (keepingAlive && !isChangingConfigurations) KeepAliveService.handoff(applicationContext)
     setKeepAlive(false)
     super.onDestroy()
   }
@@ -105,13 +112,14 @@ class MainActivity : TauriActivity() {
   private fun setKeepAlive(on: Boolean) {
     if (on == keepingAlive) return
     keepingAlive = on
+    backToHome.isEnabled = on
     val i = Intent(this, KeepAliveService::class.java)
-    if (!on) { stopService(i); return }
+    if (!on) { stopService(i); KeepAliveService.reset(); return }
     if (Build.VERSION.SDK_INT >= 33 &&
       ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
       ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 42)
     }
-    try { ContextCompat.startForegroundService(this, i) } catch (e: Exception) { keepingAlive = false }
+    try { ContextCompat.startForegroundService(this, i) } catch (e: Exception) { keepingAlive = false; backToHome.isEnabled = false }
   }
 
   /** Agent alert ("Agent updates" channel); tapping it opens that chat. `key` adds Allow / Deny buttons. */
@@ -158,6 +166,10 @@ class MainActivity : TauriActivity() {
     @JavascriptInterface
     fun keepAlive(on: Boolean) { runOnUiThread { setKeepAlive(on) } }
 
+    /** Live line on the keep-alive notification; a non-empty `key` adds Allow / Deny for that approval. */
+    @JavascriptInterface
+    fun status(chat: String, title: String, text: String, key: String) { runOnUiThread { KeepAliveService.update(applicationContext, chat, title, text, key) } }
+
     @JavascriptInterface
     fun notify(chat: String, title: String, body: String, sound: Boolean) { runOnUiThread { showAlert(chat, title, body, sound) } }
 
@@ -189,7 +201,7 @@ class MainActivity : TauriActivity() {
       w.post { a.sendAnswer("{key:" + JSONObject.quote(key) + ",allow:" + allow + "}") }
       return true
     }
-    private const val EXTRA_CHAT = "supercharge_open_chat"
+    const val EXTRA_CHAT = "supercharge_open_chat"
     private const val ALERTS = "supercharge-agent-updates"
     private const val ALERTS_QUIET = "supercharge-agent-updates-quiet"
   }
