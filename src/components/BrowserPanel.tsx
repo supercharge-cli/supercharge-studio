@@ -128,6 +128,11 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
     if (activeTerm === id) setActiveTerm(next.length ? next[next.length - 1].id : "");
     if (!next.length && tab === "terminal") setTab("browser");
   };
+  const [held, setHeld] = useState(browser.held);
+  useEffect(() => {
+    browser.onHeld = setHeld;
+    return () => { browser.onHeld = undefined; };
+  }, []);
   useEffect(() => {
     // The agent used a browser tool while the Tools tab was showing: switch to the browser.
     browser.showBrowserTab = () => setTab("browser");
@@ -232,6 +237,7 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
             </span>
           </form>
           {design && <div className="bm-hint small" data-testid="design-hint">Click an element to attach it to your message. Shift+click picks several, Enter attaches them, Esc stops.</div>}
+          {held && <div className="bm-hint small" role="status">You have the browser; Supercharge waits. <button type="button" className="link" onClick={() => browser.takeOver(false)}>Hand back</button></div>}
           {/* The slot stays mounted in computer mode so the native view (page and session) is kept. */}
           <div ref={slot} className={`webslot${vp ? " computer" : ""}`}>
             {!isDesktop() && !vp && <iframe title="browser" src={url} sandbox="allow-scripts allow-forms allow-same-origin" />}

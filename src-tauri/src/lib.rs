@@ -37,6 +37,7 @@ mod setup;
 mod terminal;
 mod pick;
 mod screenshot;
+mod cursor;
 mod secrets;
 mod agent;
 mod updater;
@@ -190,7 +191,7 @@ struct Bounds {
 /// Set while the app has hidden the side browser (an overlay covers its area).
 /// Moving or reopening the view must not show it again until the app says so.
 static BROWSER_HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-fn browser_hidden() -> bool { BROWSER_HIDDEN.load(std::sync::atomic::Ordering::SeqCst) }
+pub(crate) fn browser_hidden() -> bool { BROWSER_HIDDEN.load(std::sync::atomic::Ordering::SeqCst) }
 
 /// Create (or move) the side browser as a child webview of the main window.
 #[tauri::command]
@@ -201,6 +202,9 @@ async fn browser_open(app: AppHandle, url: String, bounds: Bounds) -> Result<(),
         wv.navigate(parsed).map_err(|e| e.to_string())?;
         return browser_set_bounds(app, bounds).await;
     }
+    // A new browser view stacks on top: rebuild the AI cursor layer above it when next needed.
+    cursor::close(&app);
+    cursor::remember(bounds.x, bounds.y, bounds.width, bounds.height);
     let window = app.get_window("main").ok_or("no main window")?;
     window
         .add_child(
@@ -219,7 +223,7 @@ async fn browser_open(app: AppHandle, url: String, bounds: Bounds) -> Result<(),
 /// available. We wrap the app UI in a gtk::Overlay and place the browser as an overlay
 /// child positioned with margins.
 #[cfg(target_os = "linux")]
-mod linux_layout {
+pub(crate) mod linux_layout {
     use gtk::prelude::*;
     use std::cell::RefCell;
     use tauri::Runtime;
@@ -256,7 +260,8 @@ mod linux_layout {
         });
     }
 
-    pub fn place<R: Runtime>(browser: &tauri::Webview<R>, x: f64, y: f64, w: f64, h: f64) {
+    /// Place a child webview (the browser, or the AI cursor layer above it) in the overlay.
+    pub fn place<R: Runtime>(browser: &tauri::Webview<R>, x: f64, y: f64, w: f64, h: f64, show: bool) {
         let _ = browser.with_webview(move |pw| {
             let bw: gtk::Widget = pw.inner().upcast();
             OVERLAY.with(|o| {
@@ -273,7 +278,7 @@ mod linux_layout {
                 bw.set_margin_start(x.max(0.0) as i32);
                 bw.set_margin_top(y.max(0.0) as i32);
                 bw.set_size_request(w.max(1.0) as i32, h.max(1.0) as i32);
-                if super::browser_hidden() { bw.hide() } else { bw.show() }
+                if show { bw.show() } else { bw.hide() }
             });
         });
     }
@@ -293,9 +298,11 @@ async fn browser_navigate(app: AppHandle, url: String) -> Result<(), String> {
 #[tauri::command]
 async fn browser_set_bounds(app: AppHandle, bounds: Bounds) -> Result<(), String> {
     let wv = app.get_webview(BROWSER).ok_or("browser not open")?;
+    cursor::remember(bounds.x, bounds.y, bounds.width, bounds.height);
+    cursor::sync(&app);
     #[cfg(target_os = "linux")]
     {
-        linux_layout::place(&wv, bounds.x, bounds.y, bounds.width, bounds.height);
+        linux_layout::place(&wv, bounds.x, bounds.y, bounds.width, bounds.height, !browser_hidden());
         return Ok(());
     }
     #[allow(unreachable_code)]
@@ -312,6 +319,7 @@ async fn browser_set_visible(app: AppHandle, visible: bool) -> Result<(), String
 }
 
 fn browser_apply_visible(app: &AppHandle, visible: bool) -> Result<(), String> {
+    cursor::sync(app);
     let Some(wv) = app.get_webview(BROWSER) else { return Ok(()) };
     #[cfg(target_os = "linux")]
     {
@@ -348,6 +356,7 @@ async fn browser_screenshot(app: AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 async fn browser_close(app: AppHandle) -> Result<(), String> {
+    cursor::close(&app);
     if let Some(wv) = app.get_webview(BROWSER) {
         wv.close().map_err(|e| e.to_string())?;
     }
@@ -461,7 +470,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_config, host_package, updater::update_download, updater::update_restart, agent_probe, agent_start, agent_stop, agent::agent_info, agent::agent_log, agent::agent_install, cliinstall::cli_status, cliinstall::cli_install, agent::agent_check, agent::agent_free_port, agent::agent_log_note,
             stdio_start, stdio_send, stdio_stop,
-            browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible, browser_screenshot, browser_set_zoom,
+            browser_open, browser_navigate, browser_set_bounds, browser_eval, browser_close, browser_set_visible, browser_screenshot, browser_set_zoom, cursor::browser_cursor,
             secrets::secret_get, secrets::secret_set, mcp::mcp_result, mcp::mcp_info,
             providers::provider_set_key, providers::provider_has_key, providers::provider_seed_from_env, providers::provider_apply, providers::provider_discover_models, agent_restart,
             setup::setup_status, setup::setup_models, setup::setup_save, setup::setup_device_start, setup::setup_device_poll, setup::setup_device_cancel, setup::setup_open,

@@ -34,6 +34,9 @@ export const browserClientMeta = () => ({
   supercharge: { browser: { methods: BROWSER_METHODS, available: isDesktop() } },
 });
 
+/** Browser ops that show the AI cursor, and what it shows. */
+export const POINTER_OPS: Record<string, string> = { click: "click", hover: "hover", type: "type", press_key: "key", select_option: "click", scroll: "scroll" };
+
 export type Bounds = { x: number; y: number; width: number; height: number };
 
 /** Page-side helpers, inlined into every evaluated script. */
@@ -169,7 +172,34 @@ export class BrowserController {
   /** Set by the app: design mode picked elements (context files for the composer). */
   onDesignPick?: (files: File[]) => void;
   setAllowEval(v: boolean) { this.allowEval = v; try { localStorage.setItem("sc.browser.eval", v ? "1" : "0"); } catch { /* private mode */ } }
-  async setZoom(zoom: number) { if (isDesktop() && this.bounds) await invoke("browser_set_zoom", { zoom }).catch(() => {}); }
+  zoom = 1;
+  async setZoom(zoom: number) { this.zoom = zoom; if (isDesktop() && this.bounds) await invoke("browser_set_zoom", { zoom }).catch(() => {}); }
+
+  /** The user moved their own mouse over the AI cursor layer: AI actions wait until they hand back. */
+  held = false;
+  onHeld?: (held: boolean) => void;
+  private resumers: (() => void)[] = [];
+  private cursorHide?: ReturnType<typeof setTimeout>;
+  takeOver(held: boolean) {
+    this.held = held;
+    this.onHeld?.(held);
+    if (!held) this.resumers.splice(0).forEach((f) => f());
+  }
+  /** Before a pointer action: wait while the user has the page, then move the AI cursor there. */
+  async point(op: string, target: string, p: any) {
+    if (!isDesktop()) return;
+    if (this.held) await new Promise<void>((ok, no) => {
+      const t = setTimeout(() => no(new Error("The user took over the side browser. Wait for them to hand it back or ask them.")), 120000);
+      this.resumers.push(() => { clearTimeout(t); ok(); });
+    });
+    let xy: number[] | null = p?.x != null && p?.y != null ? [+p.x, +p.y]
+      : p?.ref != null || p?.selector || p?.element_text ? await this.evaluate(`(() => { const el = __sc.find(${target}); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`).catch(() => null) : null;
+    xy = Array.isArray(xy) ? xy.map((v) => v * this.zoom) : op === "scroll" && this.bounds ? [this.bounds.width / 2, this.bounds.height / 2] : null;
+    await invoke("browser_cursor", { op, x: xy?.[0] ?? null, y: xy?.[1] ?? null }).catch(() => {});
+    clearTimeout(this.cursorHide);
+    this.cursorHide = setTimeout(() => void invoke("browser_cursor", { op: "hide" }).catch(() => {}), 3000);
+    if (xy && !matchMedia("(prefers-reduced-motion: reduce)").matches) await new Promise((r) => setTimeout(r, 400));
+  }
   /** Pull new console/network entries from the page. Returns true when something changed. */
   async pullDev() {
     if (!isDesktop() || !this.bounds) return false;
@@ -284,6 +314,8 @@ export class BrowserController {
   /** Run one browser operation by short name (shared by ACP extensions and MCP tools). */
   async run(op: string, p: any): Promise<any> {
     const target = JSON.stringify({ ref: p?.ref ?? null, selector: p?.selector ?? null, text: p?.element_text ?? null, x: p?.x ?? null, y: p?.y ?? null });
+    const pointer = POINTER_OPS[op];
+    if (pointer) await this.point(pointer, target, p);
     switch (op) {
       case "navigate":
         return this.navigate(String(p?.url ?? ""));
@@ -381,6 +413,7 @@ export class BrowserController {
 
   /** Serve MCP tool calls forwarded by the desktop shell (see src-tauri/src/mcp.rs). */
   async serveMcp() {
+    void listen("browser-takeover", () => this.takeOver(true));
     return listen<{ id: number; name: string; arguments: any }>("mcp://call", async ({ id, name, arguments: args }) => {
       let result: any;
       try {
