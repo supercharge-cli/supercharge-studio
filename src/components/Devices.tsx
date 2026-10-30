@@ -95,7 +95,7 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
             <strong>Mobile gateway</strong>
             <div className="muted">{st?.running ? <>Listening on <code>{st.url}</code></> : "Off"}</div>
           </div>
-          <label className="switch"><input type="checkbox" data-testid="gw-toggle" checked={!!st?.running} onChange={(e) => void toggle(e.target.checked)} /><i /></label>
+          <label className="switch"><input type="checkbox" aria-label="Mobile gateway" data-testid="gw-toggle" checked={!!st?.running} onChange={(e) => void toggle(e.target.checked)} /><i /></label>
         </div>
         <div className="row between reach-row">
           <div><strong>Connection</strong><div className="muted small" data-testid="gw-reach-help">{reachHelp}</div></div>
@@ -114,7 +114,7 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
           <input placeholder="wss://my-tunnel.example.com/gw" value={prefs.publicUrl} onChange={(e) => onPrefs({ ...prefs, publicUrl: e.target.value })} />
         </label>
         <label>Custom relay URL (Public mode, optional)
-          <input data-testid="gw-relay" placeholder={DEFAULT_RELAY} value={prefs.relayUrl ?? ""} onBlur={() => st?.running && void gateway.relaySet(effectiveRelay(prefs), prefs.hostId).then(refresh).catch((e) => setErr(String(e)))} onChange={(e) => onPrefs({ ...prefs, relayUrl: e.target.value, hostId: prefs.hostId || newHostId() })} />
+          <input aria-label="Relay URL" data-testid="gw-relay" placeholder={DEFAULT_RELAY} value={prefs.relayUrl ?? ""} onBlur={() => st?.running && void gateway.relaySet(effectiveRelay(prefs), prefs.hostId).then(refresh).catch((e) => setErr(String(e)))} onChange={(e) => onPrefs({ ...prefs, relayUrl: e.target.value, hostId: prefs.hostId || newHostId() })} />
           <span className="muted small">Leave empty to use the built-in relay. Phones try the direct address first, then the relay.</span>
           {st?.running && /bound to another key/.test(st.relay ?? "") && (
             <span className="small">This computer's relay ID is taken on that relay. <button className="ghost" data-testid="gw-relay-reset" onClick={() => { const hostId = newHostId(); onPrefs({ ...prefs, hostId }); void gateway.relaySet(effectiveRelay(prefs), hostId).then(refresh).catch((e) => setErr(String(e))); }}>Use a new relay ID</button> (then show a new pairing code).</span>

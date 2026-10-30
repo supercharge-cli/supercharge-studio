@@ -20,6 +20,41 @@ async function call(method, path, body) {
   if (!r.ok) throw new Error(`${method} ${path}: ${r.status} ${JSON.stringify(j.value ?? j).slice(0, 300)}`);
   return j.value;
 }
+// Release builds strip data-testid (vite.shared stripTestIds), so this script must only use hooks
+// that survive the build: classes, titles, roles, aria labels and visible text (XPath, "//…").
+const SEL = {
+  sidebar: "aside.sidebar",
+  cliSetupTitle: ".cli-setup h2",
+  cliSkip: ".cli-setup .row > button.ghost",
+  notice: ".notice",
+  status: ".status",
+  openPalette: ".side-foot button.side-search",
+  openUsage: "//div[contains(@class,'side-foot-row')]/button[normalize-space()='Usage']",
+  openSettings: "//div[contains(@class,'side-foot-row')]/button[normalize-space()='Settings']",
+  tab: (label) => `//nav[contains(@class,'screen-nav')]/button[normalize-space()='${label}']`,
+  agentBind: '.settings-screen input[placeholder^="127.0.0.1:2419"]',
+  settingsSave: "//button[normalize-space()='Save & reconnect']",
+  composerMenu: '.cmenu[role="listbox"]',
+  composerMenuItem: '.cmenu [role="option"]',
+  newChat: 'button[title="New chat in this folder"]',
+  addProject: 'button[title^="Add project"],button[title^="Open folder"]',
+  agentLogButton: ".agent-log button",
+  gwToggle: 'input[type="checkbox"][aria-label="Mobile gateway"]',
+  gwRelay: 'input[aria-label="Relay URL"]',
+  gwRelayStatus: ".relay-status",
+  gwRelayReset: "//button[contains(normalize-space(),'new relay ID') or contains(normalize-space(),'New relay ID')]",
+  gwDiag: ".gw-diag",
+  gwPortNote: ".gw-diag .warn-text",
+  gwPair: "//button[contains(normalize-space(),'Show pairing code') or contains(normalize-space(),'New code')]",
+  gwUri: ".pair input.mono",
+  pairAllow: "//div[@role='dialog' and @aria-label='Pair device']//button[normalize-space()='Allow']",
+  collapseSidebar: 'button[title="Collapse sidebar"]',
+  expandSidebar: 'button[title="Expand sidebar"]',
+};
+const TABS = { connection: "Connection", providers: "Providers", appearance: "Appearance", agent: "Agent", devices: "Devices" };
+/** In-page lookup for exec(): CSS or XPath, same rules as find(). */
+const Q = `const q = (s) => s.startsWith("/") ? document.evaluate(s, document, null, 9, null).singleNodeValue : document.querySelector(s);`;
+const inPage = (expr, ...sels) => `${Q} ${expr.replace(/\$(\d)/g, (_, i) => `q(${JSON.stringify(sels[+i])})`)}`;
 let sid = "";
 const s = (p) => `/session/${sid}${p}`;
 const exec = (script, args = []) => call("POST", s("/execute/sync"), { script, args });
@@ -27,7 +62,7 @@ const ELEM = "element-6066-11e4-a52e-4f735466cecc";
 async function find(css, timeout = 8000) {
   const end = Date.now() + timeout;
   for (;;) {
-    try { const v = await call("POST", s("/element"), { using: "css selector", value: css }); const id = v?.[ELEM] ?? Object.values(v ?? {})[0]; if (id) return id; } catch (e) { if (Date.now() > end) throw new Error(`not found: ${css}`); }
+    try { const v = await call("POST", s("/element"), { using: css.startsWith("/") ? "xpath" : "css selector", value: css }); const id = v?.[ELEM] ?? Object.values(v ?? {})[0]; if (id) return id; } catch (e) { if (Date.now() > end) throw new Error(`not found: ${css}`); }
     if (Date.now() > end) throw new Error(`not found: ${css}`);
     await sleep(200);
   }
@@ -53,33 +88,33 @@ try {
   // clicks/keys in the single-page app (seen on Ubuntu 22.04 CI: every step took exactly 5 minutes).
   const caps = { "tauri:options": { application: BIN }, pageLoadStrategy: "none", timeouts: { pageLoad: 10000, script: 30000, implicit: 0 } };
   sid = (await call("POST", "/session", { capabilities: { alwaysMatch: caps } })).sessionId;
-  await find('[data-testid="sidebar"]', 20000);
+  await find(SEL.sidebar, 20000);
   // No CLI on CI runners: the first-run setup screen covers the app; check it, then dismiss it.
   for (let i = 0; i < 20; i++) {
-    const t = await exec("return document.querySelector('[data-testid=cli-setup] h2')?.innerText || ''");
-    if (t) { console.log(`ok  cli setup screen: ${t}`); await exec("document.querySelector('[data-testid=cli-skip]')?.click(); return 1"); await sleep(300); break; }
+    const t = await exec(inPage("return $0?.innerText || ''", SEL.cliSetupTitle));
+    if (t) { console.log(`ok  cli setup screen: ${t}`); await exec(inPage("$0?.click(); return 1", SEL.cliSkip)); await sleep(300); break; }
     await sleep(250);
   }
   await exec("window.__smoke = 1");
   await check("start");
   const waitOpen = async (label) => {
     for (let i = 0; i < 60; i++) {
-      const t = await exec("return document.querySelector('.status')?.textContent || ''");
+      const t = await exec(inPage("return $0?.textContent || ''", SEL.status));
       if (t.includes("open")) return console.log(`ok  ${label}: connected`);
       await sleep(250);
     }
     await check(`${label}-not-connected`);
-    throw new Error(`${label}: never connected (status: ${await exec("return document.querySelector('[data-testid=notice]')?.innerText || document.querySelector('.status')?.title || ''")})`);
+    throw new Error(`${label}: never connected (status: ${await exec(inPage("return $0?.innerText || $1?.title || ''", SEL.notice, SEL.status))})`);
   };
   if (process.env.SMOKE_EXPECT_OPEN) await waitOpen("startup");
   if (process.env.SMOKE_PASTE_URL) {
-    await click('[data-testid="open-settings"]');
-    await click('[data-testid="tab-connection"]');
-    const id = await find('[data-testid="agent-bind"]');
+    await click(SEL.openSettings);
+    await click(SEL.tab(TABS.connection));
+    const id = await find(SEL.agentBind);
     await call("POST", s(`/element/${id}/clear`), {});
     await call("POST", s(`/element/${id}/value`), { text: process.env.SMOKE_PASTE_URL });
-    await click('[data-testid="tab-connection"]'); // blur: the URL is split into address + key
-    await click('[data-testid="settings-save"]');
+    await click(SEL.tab(TABS.connection)); // blur: the URL is split into address + key
+    await click(SEL.settingsSave);
     await sleep(2500);
     await waitOpen("pasted-url");
     const bind = await exec("return JSON.parse(localStorage.getItem('supercharge-studio/v1')||'{}').settings?.bind");
@@ -91,14 +126,14 @@ try {
     // Real file listing through the desktop backend: "@" opens the project picker.
     const ta = await find(".composer textarea");
     await call("POST", s(`/element/${ta}/value`), { text: "/" });
-    await find('[data-testid="composer-menu"]');
-    const cmds = await exec("return document.querySelector('[data-testid=composer-menu]').innerText");
+    await find(SEL.composerMenu);
+    const cmds = await exec(inPage("return $0.innerText", SEL.composerMenu));
     for (const c of ["/new", "/setup", "/models", "/theme", "/help"]) if (!cmds.includes(c)) throw new Error(`slash menu is missing ${c}`);
     console.log("ok  slash menu:", cmds.split("\n").filter((l) => l.startsWith("/")).length, "commands");
     await call("POST", s(`/element/${ta}/clear`), {});
     await call("POST", s(`/element/${ta}/value`), { text: `look at @${process.env.SMOKE_COMPOSER}` });
-    for (let i = 0; i < 40 && !(await exec("return !!document.querySelector('[data-testid=composer-menu-item]')")); i++) await sleep(250);
-    const first = await exec("return document.querySelector('[data-testid=composer-menu-item]')?.innerText || document.querySelector('[data-testid=composer-menu]')?.innerText || 'no menu'");
+    for (let i = 0; i < 40 && !(await exec(inPage("return !!$0", SEL.composerMenuItem))); i++) await sleep(250);
+    const first = await exec(inPage("return $0?.innerText || $1?.innerText || 'no menu'", SEL.composerMenuItem, SEL.composerMenu));
     console.log("mention picker first row:", first.replace(/\n/g, " "));
     await call("POST", s(`/element/${ta}/value`), { text: "\uE007" });
     await sleep(300);
@@ -108,49 +143,49 @@ try {
     await check("composer-mention");
     await call("POST", s(`/element/${ta}/clear`), {});
   }
-  await click('[data-testid="open-palette"]'); await check("palette"); await key(["\uE00C"]);
-  await click('[data-testid="new-chat"]').catch(() => {}); await check("new-chat");
-  await click('[data-testid="add-project"]').catch(() => {}); await key(["\uE00C"]); await check("add-project");
-  await click('[data-testid="open-usage"]'); await check("usage");
-  await click('[data-testid="open-settings"]');
-  for (const t of ["connection", "providers", "appearance", "agent", "devices"]) { await click(`[data-testid="tab-${t}"]`); await check(`settings-${t}`); }
-  await click('[data-testid="tab-connection"]');
-  await click('[data-testid="agent-log"] button').catch(() => {}); await check("agent-log");
+  await click(SEL.openPalette); await check("palette"); await key(["\uE00C"]);
+  await click(SEL.newChat).catch(() => {}); await check("new-chat");
+  await click(SEL.addProject).catch(() => {}); await key(["\uE00C"]); await check("add-project");
+  await click(SEL.openUsage); await check("usage");
+  await click(SEL.openSettings);
+  for (const t of ["connection", "providers", "appearance", "agent", "devices"]) { await click(SEL.tab(TABS[t])); await check(`settings-${t}`); }
+  await click(SEL.tab(TABS.connection));
+  await click(SEL.agentLogButton).catch(() => {}); await check("agent-log");
   if (process.env.SMOKE_GATEWAY) {
     // Real gateway end to end: turn it on in the UI, show a code, pair a simulated phone that
     // first tries a dead address, approve in the app, and exchange an encrypted message.
-    await click('[data-testid="tab-devices"]');
+    await click(SEL.tab(TABS.devices));
     if (process.env.SMOKE_RELAY) {
-      if (await exec("return !!document.querySelector('[data-testid=gw-toggle]').checked")) await exec("document.querySelector('[data-testid=gw-toggle]').click()");
+      if (await exec(inPage("return !!$0.checked", SEL.gwToggle))) await exec(inPage("$0.click()", SEL.gwToggle));
       await sleep(500);
-      const r = await find('[data-testid="gw-relay"]');
+      const r = await find(SEL.gwRelay);
       await call("POST", s(`/element/${r}/clear`), {});
       await call("POST", s(`/element/${r}/value`), { text: process.env.SMOKE_RELAY });
     }
-    if (!(await exec("return !!document.querySelector('[data-testid=gw-toggle]').checked"))) await exec("document.querySelector('[data-testid=gw-toggle]').click()");
-    await find('[data-testid="gw-diag"]', 10000);
-    console.log("gateway diagnostics:", (await exec("return document.querySelector('[data-testid=gw-diag]').innerText")).replace(/\n/g, " | "));
+    if (!(await exec(inPage("return !!$0.checked", SEL.gwToggle)))) await exec(inPage("$0.click()", SEL.gwToggle));
+    await find(SEL.gwDiag, 10000);
+    console.log("gateway diagnostics:", (await exec(inPage("return $0.innerText", SEL.gwDiag))).replace(/\n/g, " | "));
     if (process.env.SMOKE_RELAY) {
       let rs = "";
       for (let i = 0; i < 60 && !/online/.test(rs); i++) {
-        rs = await exec("return document.querySelector('[data-testid=gw-relay-status]')?.innerText || ''");
-        if (/bound to another key/.test(rs)) { console.log("relay id taken, using a new one"); await click('[data-testid="gw-relay-reset"]'); }
+        rs = await exec(inPage("return $0?.innerText || ''", SEL.gwRelayStatus));
+        if (/bound to another key/.test(rs)) { console.log("relay id taken, using a new one"); await click(SEL.gwRelayReset); }
         await sleep(250);
       }
       if (!/online/.test(rs)) throw new Error(`relay never came online: ${rs}`);
       console.log("ok  relay:", rs.trim());
     }
     if (process.env.SMOKE_EXPECT_PORT_MOVED) {
-      const note = await exec("return document.querySelector('[data-testid=gw-port-note]')?.innerText || ''");
+      const note = await exec(inPage("return $0?.innerText || ''", SEL.gwPortNote));
       if (!/in use/.test(note)) throw new Error("gateway: expected a port-moved note, got: " + note);
       console.log("ok  gateway port moved:", note.trim());
     }
-    await click('[data-testid="gw-pair"]');
-    const uri = await exec("return document.querySelector('[data-testid=gw-uri]').value");
+    await click(SEL.gwPair);
+    const uri = await exec(inPage("return $0.value", SEL.gwUri));
     console.log("pairing code:", uri.replace(/k=[^&]+/, "k=…"));
     const phone = spawn("npx", ["vite-node", "scripts/phone-sim.ts", "--", uri, process.env.SMOKE_RELAY ? "--relay-only" : "--dead-first"], { stdio: ["ignore", "pipe", "inherit"] });
     let out = ""; phone.stdout.on("data", (d) => { out += d; process.stdout.write("phone> " + d); });
-    await click('[data-testid="pair-allow"]').catch(async () => { await sleep(3000); await click('[data-testid="pair-allow"]'); });
+    await click(SEL.pairAllow).catch(async () => { await sleep(3000); await click(SEL.pairAllow); });
     const code = await new Promise((r) => { phone.on("exit", r); setTimeout(() => r(/encrypted reply: \{/.test(out) ? 0 : 1), 40000); });
     phone.kill();
     if (code !== 0 || !/paired: device/.test(out) || !/encrypted reply: \{/.test(out)) throw new Error("gateway: simulated phone did not pair");
@@ -158,8 +193,8 @@ try {
     console.log("ok  gateway: phone paired through failover");
   }
   await key(["\uE00C"]);
-  await click('[data-testid="collapse-sidebar"]').catch(() => {}); await check("sidebar-collapsed");
-  await click('[data-testid="expand-sidebar"]').catch(() => {});
+  await click(SEL.collapseSidebar).catch(() => {}); await check("sidebar-collapsed");
+  await click(SEL.expandSidebar).catch(() => {});
   await exec("document.querySelector('button[title^=\"Show browser\"],button[title^=\"Hide browser\"]')?.click()"); await sleep(800); await check("browser-panel");
   await key(["\uE009", "k"]); await check("palette-shortcut"); await key(["\uE00C"]);
   console.log("app smoke: all screens ok");
