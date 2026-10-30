@@ -231,6 +231,10 @@ wss.on("connection", (ws: WebSocket) => {
         }
         if (/authfail/.test(text))
           return send({ id: m.id, error: { code: -32603, message: "Internal error", data: "Unauthorized (401): Invalid or expired credentials" } });
+        if (/ponder/.test(text)) {
+          for (const w of ["Reading ", "the ", "files ", "first."]) { update(sid, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: w } }); await sleep(350); }
+          say(sid, "Done thinking.");
+        }
         if (/stream/.test(text)) {
           update(sid, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Thinking about it" } });
           update(sid, { sessionUpdate: "plan", entries: [{ content: "Say hello", status: "completed" }, { content: "Say bye", status: "pending" }] });

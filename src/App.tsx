@@ -29,6 +29,7 @@ const idle = (globalThis as any).requestIdleCallback ?? ((f: () => void) => setT
 if (typeof window !== "undefined") idle(() => { void import("./screens"); });
 const UsageScreen = lazy(() => import("./screens").then((m) => ({ default: m.UsageScreen })));
 import { transition } from "./lib/motion";
+import { Thought, ThoughtLive } from "./components/Thought";
 import { Icon } from "./components/Icon";
 import { Markdown } from "./components/Markdown";
 import { PermissionModal } from "./components/Permission";
@@ -1428,8 +1429,9 @@ export default function App() {
   });
 
   const renderItem = useCallback(
-    (m: ChatItem) =>
-      m.kind === "tool" ? (
+    (m: ChatItem, i: number) =>
+      m.kind === "thought" ? <Thought text={m.text} index={i} />
+      : m.kind === "tool" ? (
         sess.toolCalls[m.toolCallId] ? <ToolCard tc={sess.toolCalls[m.toolCallId]} /> : null
       ) : m.kind === "agent" ? (
         <div className="bubble agent"><Markdown text={m.text} /></div>
@@ -1601,6 +1603,7 @@ export default function App() {
               {notice && <button className="icon sm" title="Dismiss" aria-label="Dismiss" onClick={() => setNotice("")}><Icon name="x" size={14} /></button>}
             </div>
           )}
+          <ThoughtLive.Provider value={`${activeChat?.id ?? ""}|${isBusy && sess.items[sess.items.length - 1]?.kind === "thought" ? sess.items.length - 1 : -1}`}>
           <VirtualList
             key={activeChat?.id ?? "none"}
             className="messages"
@@ -1643,6 +1646,7 @@ export default function App() {
             }
             footer={isBusy && <div className="typing" aria-label="Agent is working"><i /><i /><i /></div>}
           />
+          </ThoughtLive.Provider>
           <div className={`composer-wrap${dragOver ? " drag-over" : ""}`} data-testid="composer-wrap"
             onDragOver={(e) => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); setDragOver(true); } }}
             onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }}

@@ -205,3 +205,20 @@ test("reconnects at once after the link drops (app resumed) and reloads the open
   await expect(page.getByTestId("m-conn")).toHaveCount(0);
   await shot(page, "m2-resumed");
 });
+
+test("thinking block streams open on the phone, then folds", async ({ page }) => {
+  await pair(page);
+  await page.getByTestId("m-chat").first().click();
+  await page.getByTestId("m-input").fill("ponder on phone");
+  await page.getByTestId("m-send").click();
+  const toggle = page.getByTestId("thought-toggle").last();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(toggle).toContainText("Thinking…");
+  await shot(page, "42-mobile-thinking");
+  await expect(page.locator(".bubble.agent").last()).toHaveText("Done thinking.");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(toggle).toHaveText(/Thought for \ds/);
+  await toggle.click();
+  await expect(page.locator(".m-thread .bubble.thought").last()).toHaveText("Reading the files first.");
+});
+

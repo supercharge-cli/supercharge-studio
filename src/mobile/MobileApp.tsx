@@ -11,6 +11,7 @@ import { applyUpdate, ChatItem, emptySession, SessionState } from "../acp/sessio
 import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionModes } from "../acp/types";
 import { ModeControl } from "../components/ModeControl";
 import { Icon } from "../components/Icon";
+import { Thought, ThoughtLive } from "../components/Thought";
 import { Markdown } from "../components/Markdown";
 import { ToolCard } from "../components/ToolCard";
 import { transition } from "../lib/motion";
@@ -591,7 +592,8 @@ export default function MobileApp() {
   const optionLabel = (option: ConfigOption) => { const cur = option.options?.find((v) => v.value === option.currentValue); return (option.id === "reasoning_effort" || option.category === "thought_level") ? effortLabel(option.currentValue ?? "", cur?.name) : (cur?.name ?? option.currentValue ?? option.name ?? option.id); };
   const hasSettings = !!(modelOption || thinkingOption || permissionOption || sessionModes);
   const renderItem = (m: ChatItem, i: number) =>
-    m.kind === "tool" ? (sess.toolCalls[m.toolCallId] ? <ToolCard key={i} tc={sess.toolCalls[m.toolCallId]} compact /> : null)
+    m.kind === "thought" ? <div key={i} data-mi={i}><Thought text={m.text} index={i} /></div>
+      : m.kind === "tool" ? (sess.toolCalls[m.toolCallId] ? <ToolCard key={i} tc={sess.toolCalls[m.toolCallId]} compact /> : null)
       : m.kind === "agent" ? <div key={i} data-mi={i} className={`bubble agent${flashMsg === i ? " search-flash" : ""}`}><Markdown text={m.text} /></div>
       : <div key={i} data-mi={i} className={`bubble ${(m as any).error ? "error" : m.kind}${flashMsg === i ? " search-flash" : ""}`} role={(m as any).error ? "alert" : undefined}>{m.text}</div>;
   const q = search.trim().toLowerCase();
@@ -772,7 +774,7 @@ export default function MobileApp() {
                 </div>
               )}
               {sess.plan.length > 0 && <section className="m-plan" data-testid="m-plan"><strong>Plan</strong><ol>{sess.plan.map((step, i) => <li key={`${i}-${step.content}`} className={step.status === "completed" ? "completed" : ""}>{step.content} <small>{step.status?.replaceAll("_", " ")}</small></li>)}</ol></section>}
-              {sess.items.map(renderItem)}
+              <ThoughtLive.Provider value={`${open}|${isBusy && sess.items[sess.items.length - 1]?.kind === "thought" ? sess.items.length - 1 : -1}`}>{sess.items.map(renderItem)}</ThoughtLive.Provider>
               {isBusy && <div className="typing"><i /><i /><i /></div>}
             </div>
           </div>

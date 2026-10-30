@@ -54,6 +54,11 @@ const hub: GatewayHub = new GatewayHub((d, m) => conns.get(d)?.(m), {
     if (extra.length) hub.update(sid, { sessionUpdate: "user_message_chunk", content: { type: "text", text: `${text ? "\n" : ""}📎 ${extra.map((b: any) => b.name).join(", ")}` } });
     if (extra.length) hub.update(sid, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Got ${extra.length} attachment(s): ${extra.map((b: any) => b.name ?? b.type).join(", ")}. ` } });
     if (/mdcode/.test(text)) { hub.update(sid, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Highlighted:\n\n" + HL_SAMPLE } }); return { stopReason: "end_turn" }; }
+    if (/ponder/.test(text)) {
+      for (const w of ["Reading ", "the ", "files ", "first."]) { hub.update(sid, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: w } }); await sleep(350); }
+      hub.update(sid, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Done thinking." } });
+      return { stopReason: "end_turn" };
+    }
     if (/perm/.test(text)) {
       const { answer } = hub.requestPermission(sid, { toolCall: { toolCallId: "t9", title: "Run npm test", rawInput: { command: "npm test" } }, options: [{ optionId: "y", name: "Allow once", kind: "allow_once" }, { optionId: "n", name: "Reject", kind: "reject_once" }] });
       const o = await answer;

@@ -1,4 +1,5 @@
 import { expect, Page, test } from "@playwright/test";
+import { shotPath } from "./shot";
 
 // Keep runs hermetic: the live release check would open a blocking update banner whenever a newer release is published.
 test.beforeEach(async ({ page }) => {
@@ -117,6 +118,9 @@ test("streams a reply with thought and plan", async ({ page }) => {
   await page.getByTestId("tab-picker").getByRole("button", { name: "Browser" }).click();
   await ask(page, "stream please");
   await expect(page.locator(".bubble.agent").last()).toHaveText("Hello from the fake agent.");
+  // The finished thought folds to a header; tapping it shows the reasoning again.
+  await expect(page.getByTestId("thought-toggle")).toHaveAttribute("aria-expanded", "false");
+  await page.getByTestId("thought-toggle").click();
   await expect(page.locator(".bubble.thought")).toContainText("Thinking");
   // The panel stays on the user's tab; they switch to the plan themselves.
   await page.getByTestId("plan-tab").click();
@@ -393,3 +397,32 @@ test("renders GFM tables with alignment, inline code and horizontal scroll on na
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   if (process.env.SHOTS) await wrap.screenshot({ path: `${process.env.SHOTS}/table-narrow.png` });
 });
+
+test("thinking block opens while the agent thinks, then folds to how long it took", async ({ page }) => {
+  await boot(page);
+  await ask(page, "ponder please");
+  const toggle = page.getByTestId("thought-toggle");
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(toggle).toContainText("Thinking…");
+  await expect(page.locator(".bubble.thought")).toContainText("Reading the");
+  await page.screenshot({ path: shotPath("thought-live.png") });
+  await expect(page.locator(".bubble.agent").last()).toContainText("Done thinking.");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(toggle).toHaveText(/Thought for \ds/);
+  await expect(page.locator(".bubble.thought")).toHaveCount(0);
+  await toggle.click();
+  await expect(page.locator(".bubble.thought")).toHaveText("Reading the files first.");
+  await page.screenshot({ path: shotPath("thought-done.png") });
+  // A manual pick during the turn sticks: closing it while live keeps it closed.
+  await ask(page, "ponder again");
+  await expect(page.getByTestId("thought-toggle")).toHaveCount(2);
+  const second = page.getByTestId("thought-toggle").nth(1);
+  await expect(second).toHaveAttribute("aria-expanded", "true");
+  await second.click();
+  await expect(second).toHaveAttribute("aria-expanded", "false");
+  await expect(second).toContainText("Thinking…");
+  await expect(page.locator(".bubble.agent").last()).toContainText("Done thinking.");
+  await expect(second).toHaveText(/Thought for \ds/);
+  await expect(second).toHaveAttribute("aria-expanded", "false");
+});
+
