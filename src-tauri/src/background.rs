@@ -61,6 +61,7 @@ pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
 /// Install the tray (best effort: some Linux desktops have no tray) and load the saved choice.
 pub fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     KEEP_RUNNING.store(load().keep_running, Ordering::SeqCst);
+    refresh_autostart(app);
     let open = MenuItem::with_id(app, "open", "Open Supercharge Studio", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &quit])?;
@@ -87,6 +88,21 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         eprintln!("tray unavailable: {e}");
     }
     Ok(())
+}
+
+/// An enabled login entry is rewritten so it starts the binary running now. Otherwise an
+/// entry left by an older install at another path keeps starting that old build at login,
+/// and single-instance then hands every later launch of the new one to it.
+fn refresh_autostart<R: Runtime>(app: &AppHandle<R>) {
+    if in_flatpak() {
+        return;
+    }
+    let al = app.autolaunch();
+    if al.is_enabled().unwrap_or(false) {
+        if let Err(e) = al.enable() {
+            eprintln!("autostart refresh failed: {e}");
+        }
+    }
 }
 
 fn in_flatpak() -> bool {

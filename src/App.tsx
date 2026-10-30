@@ -781,7 +781,7 @@ export default function App() {
         if (last && mo && mo.currentValue !== last && mo.options?.some((o) => o.value === last)) opts = (await set(mo.id, last)) ?? opts;
         const e = effortToApply(opts, lastEffort);
         if (e) await set(reasoningOption(opts)!.id, e);
-      })().catch(() => {});
+      })().catch((e: any) => { console.warn("[chat] could not apply last model/thinking pick:", e); void agentLogNote(`could not apply last model/thinking pick: ${e?.message ?? e}`); });
       loaded.current.add(res.sessionId);
       attached.current.add(res.sessionId);
       update((d) => mapProject(d, projectId, (p) => ({ ...p, chats: p.chats.map((x) => (x.id === chatId ? { ...x, sessionId: res.sessionId } : x)) })));

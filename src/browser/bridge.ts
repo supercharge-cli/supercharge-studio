@@ -147,6 +147,9 @@ const HELPERS = `
 /** Script sent to the page: installs helpers, then evaluates `expression`. */
 export const wrapScript = (expression: string) => `(${HELPERS.trim()}, (${expression}))`;
 
+/** Log a failed AI cursor call (missing permission, layer not created, ...) instead of hiding it. */
+export function cursorFailed(e: unknown) { console.warn("[browser] AI cursor:", e); }
+
 export class BrowserController {
   url = "about:blank";
   bounds: Bounds | null = null;
@@ -195,9 +198,10 @@ export class BrowserController {
     let xy: number[] | null = p?.x != null && p?.y != null ? [+p.x, +p.y]
       : p?.ref != null || p?.selector || p?.element_text ? await this.evaluate(`(() => { const el = __sc.find(${target}); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`).catch(() => null) : null;
     xy = Array.isArray(xy) ? xy.map((v) => v * this.zoom) : op === "scroll" && this.bounds ? [this.bounds.width / 2, this.bounds.height / 2] : null;
-    await invoke("browser_cursor", { op, x: xy?.[0] ?? null, y: xy?.[1] ?? null }).catch(() => {});
+    // The cursor is decoration: a failure must not stop the action, but it must be visible.
+    await invoke("browser_cursor", { op, x: xy?.[0] ?? null, y: xy?.[1] ?? null }).catch(cursorFailed);
     clearTimeout(this.cursorHide);
-    this.cursorHide = setTimeout(() => void invoke("browser_cursor", { op: "hide" }).catch(() => {}), 3000);
+    this.cursorHide = setTimeout(() => void invoke("browser_cursor", { op: "hide" }).catch(cursorFailed), 3000);
     if (xy && !matchMedia("(prefers-reduced-motion: reduce)").matches) await new Promise((r) => setTimeout(r, 400));
   }
   /** Pull new console/network entries from the page. Returns true when something changed. */

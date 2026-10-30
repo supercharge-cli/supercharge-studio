@@ -1,6 +1,7 @@
 //! Model providers managed by the app and applied to the Supercharge agent config
 //! (~/.supercharge/config.toml). Each provider's models become `[model.studio-<id>-<hash>]`
-//! tables and the active provider's first model becomes `[models] default`. Nothing else:
+//! tables (with thinking levels for models that take them, see effort.rs) and the active
+//! provider's first model becomes `[models] default`. Nothing else:
 //! no `allowed_models`, no role or fork models, so every other configured model stays usable.
 //! API keys are read from secure storage here, never sent through the UI.
 
@@ -215,8 +216,25 @@ fn backup(path: &std::path::Path, text: &str) -> Result<(), String> {
 pub fn clean_config_file(path: &std::path::Path) -> bool {
     let Ok(text) = std::fs::read_to_string(path) else { return false };
     let Ok(mut doc) = text.parse::<DocumentMut>() else { return false };
-    if !clean_studio_locks(&mut doc) { return false; }
-    backup(path, &text).and_then(|_| write_atomic(path, &doc.to_string())).is_ok()
+    let cleaned = clean_studio_locks(&mut doc);
+    let thinking = add_studio_thinking(&mut doc);
+    if !cleaned && !thinking { return false; }
+    (if cleaned { backup(path, &text) } else { Ok(()) }).and_then(|_| write_atomic(path, &doc.to_string())).is_ok()
+}
+
+/// Studio model tables written by older builds have no thinking keys, so the agent offered no
+/// thinking level for them (or rejected the one the app sent). Add them where the model takes
+/// one; tables that already say anything about thinking are left alone. True when it changed.
+pub fn add_studio_thinking(doc: &mut DocumentMut) -> bool {
+    let Some(models) = doc.get_mut("model").and_then(Item::as_table_mut) else { return false };
+    let mut changed = false;
+    for (k, item) in models.iter_mut() {
+        if !is_studio_id(&k) { continue }
+        let Some(t) = item.as_table_mut() else { continue };
+        let Some(id) = t.get("model").and_then(Item::as_str).map(str::to_owned) else { continue };
+        changed |= crate::effort::write(t, crate::effort::levels(&id, None));
+    }
+    changed
 }
 
 pub fn key_account(id: &str) -> String {
@@ -271,6 +289,7 @@ pub fn apply_to_doc(doc: &mut DocumentMut, active: &Provider, api_key: Option<&s
                 t.insert("api_key", value(key));
             }
             t.insert("api_backend", value(active.format.as_str()));
+            crate::effort::write(&mut t, crate::effort::levels(m, None));
             model_tbl.insert(&key, Item::Table(t));
             keys.push(key);
         }
@@ -513,6 +532,40 @@ mod tests {
         assert!(doc["ui"].get("fork_secondary_model").is_none());
         assert_eq!(doc["ui"]["yolo"].as_bool(), Some(false));
         assert_eq!(doc["model"][&keys[0]]["api_backend"].as_str(), Some("responses"));
+    }
+
+    #[test]
+    fn thinking_models_get_levels_the_agent_accepts() {
+        let prov = p("zenllm", &["glm-5.3-flash", "gpt-4o"]);
+        let keys = apply_to_doc(&mut DocumentMut::new(), &prov, None);
+        let mut doc = DocumentMut::new();
+        apply_to_doc(&mut doc, &prov, None);
+        let glm = doc["model"][&keys[0]].as_table().unwrap();
+        assert_eq!(glm.get("supports_reasoning_effort").and_then(Item::as_bool), Some(true));
+        let vals: Vec<&str> = glm["reasoning_efforts"].as_array().unwrap().iter().map(|v| v.as_inline_table().unwrap()["value"].as_str().unwrap()).collect();
+        assert_eq!(vals, ["none", "low", "medium", "high"]);
+        assert!(doc["model"][&keys[1]].get("supports_reasoning_effort").is_none() && doc["model"][&keys[1]].get("reasoning_efforts").is_none());
+    }
+
+    #[test]
+    fn startup_adds_thinking_to_old_studio_tables_only() {
+        let dir = std::env::temp_dir().join(format!("scs-think-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        let k = "studio-zenllm-fb7bbfd49ff9ea03";
+        let text = format!("# mine\n[models]\ndefault = \"glm-5.3-flash\"\n\n[model.{k}]\nmodel = \"glm-5.3-flash\"\nname = \"zenllm · glm-5.3-flash\"\n\n[model.studio-zenllm-0000000000000001]\nmodel = \"glm-5.3\"\nsupports_reasoning_effort = false\n\n[model.\"glm-5.3-flash\"]\nmodel = \"glm-5.3-flash\"\n");
+        std::fs::write(&path, &text).unwrap();
+        assert!(clean_config_file(&path));
+        let now = std::fs::read_to_string(&path).unwrap();
+        let doc: DocumentMut = now.parse().unwrap();
+        assert_eq!(doc["model"][k]["supports_reasoning_effort"].as_bool(), Some(true));
+        // The user's own answer and the user's own tables stay as they were; no backup for this.
+        assert_eq!(doc["model"]["studio-zenllm-0000000000000001"]["supports_reasoning_effort"].as_bool(), Some(false));
+        assert!(doc["model"]["glm-5.3-flash"].get("supports_reasoning_effort").is_none());
+        assert!(now.starts_with("# mine") && !dir.join("config.toml.bak").exists());
+        // Second start: nothing left to do.
+        assert!(!clean_config_file(&path));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

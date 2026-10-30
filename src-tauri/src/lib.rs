@@ -34,6 +34,7 @@ mod uploads;
 mod mcp;
 mod providers;
 mod setup;
+mod effort;
 mod terminal;
 mod pick;
 mod screenshot;

@@ -223,6 +223,9 @@ pub fn apply(doc: &mut DocumentMut, r: &SaveReq, key: &str) -> Result<(), String
         for k in stale { h.remove(&k); }
     }
     if key.is_empty() { m.remove("api_key"); } else { m.insert("api_key", value(key)); }
+    // Agents that do not read the provider's model list (or have no entry for this id) only
+    // offer a thinking level when the table says the model takes one.
+    crate::effort::write(m, crate::effort::levels(mid, None));
     Ok(())
 }
 
@@ -472,6 +475,21 @@ mod tests {
         assert_eq!(m.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["a", "b", "c"]);
         assert_eq!(m[0].name, "Alpha");
         assert_eq!(m[1].context, Some(8192));
+    }
+
+    #[test]
+    fn setup_model_gets_thinking_levels_when_it_takes_them() {
+        let mut doc = DocumentMut::new();
+        apply(&mut doc, &req("zenllm", "https://api.zenllm.org/v1", "chat_completions", "glm-5.3-flash"), "k").unwrap();
+        let m = &doc["model"]["glm-5.3-flash"];
+        assert_eq!(m["supports_reasoning_effort"].as_bool(), Some(true));
+        assert_eq!(m["reasoning_efforts"].as_array().map(|a| a.len()), Some(4));
+        // Saving again keeps what is there (and whatever the user changed it to).
+        doc["model"]["glm-5.3-flash"]["supports_reasoning_effort"] = value(false);
+        apply(&mut doc, &req("zenllm", "https://api.zenllm.org/v1", "chat_completions", "glm-5.3-flash"), "k").unwrap();
+        assert_eq!(doc["model"]["glm-5.3-flash"]["supports_reasoning_effort"].as_bool(), Some(false));
+        apply(&mut doc, &req("zenllm", "https://api.zenllm.org/v1", "chat_completions", "gpt-4o"), "k").unwrap();
+        assert!(doc["model"]["gpt-4o"].get("supports_reasoning_effort").is_none());
     }
 
     #[test]

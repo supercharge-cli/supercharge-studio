@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrowserController, POINTER_OPS, wrapScript } from "../src/browser/bridge";
 
 const PRE = wrapScript("@@").indexOf("@@");
@@ -58,6 +58,25 @@ describe("AI cursor", () => {
     expect(calls.find((c) => c.cmd === "browser_cursor")!.args).toEqual({ op: "scroll", x: 400, y: 300 });
   });
 
+  it("logs a failing cursor call and still performs the action", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const inner = (globalThis as any).__TAURI_INTERNALS__.invoke;
+    (globalThis as any).__TAURI_INTERNALS__.invoke = async (cmd: string, args: any) => {
+      if (cmd === "browser_cursor") { calls.push({ cmd, args }); throw "browser_cursor not allowed"; }
+      return inner(cmd, args);
+    };
+    try {
+      await open().run("click", { x: 5, y: 5 });
+      expect(calls.some((c) => c.cmd === "browser_eval" && String(c.args.script).includes("__sc.click"))).toBe(true);
+      expect(warn).toHaveBeenCalledWith("[browser] AI cursor:", "browser_cursor not allowed");
+      await new Promise((r) => setTimeout(r, 3100)); // the hide call fails the same way
+      const ops = calls.filter((c) => c.cmd === "browser_cursor").map((c) => c.args.op);
+      expect(ops[0]).toBe("click");
+      expect(ops).toContain("hide");
+      expect(warn.mock.calls.length).toBe(ops.length);
+    } finally { warn.mockRestore(); }
+  }, 10000);
+
   it("does not move for non-pointer ops", async () => {
     const b = open();
     await b.run("snapshot", {});
@@ -91,6 +110,11 @@ describe("AI cursor", () => {
     expect(js).not.toMatch(/__TAURI/);
     expect(js).toMatch(/prefers-reduced-motion/);
     expect(js).toMatch(/Supercharge is browsing/);
+    // On Linux the layer only shows what keeps repainting (see public/cursor.html).
+    const html = readFileSync("public/cursor.html", "utf8");
+    expect(html).toMatch(/#c\{[^}]*animation:k [^}]*infinite/);
+    expect(html).toMatch(/#l\{[^}]*animation:k [^}]*infinite/);
+    expect(html).toMatch(/@keyframes k\{/);
     // The page's own init script never mentions the layer.
     expect(readFileSync("src-tauri/src/browser_init.js", "utf8")).not.toMatch(/cursor/i);
   });
