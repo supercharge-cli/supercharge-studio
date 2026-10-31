@@ -38,8 +38,12 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
       frame.current = 0;
       const el = ref.current;
       if (!el) return;
-      stick.current = follows(stick.current, lastTop.current, el.scrollTop, el.scrollHeight - el.scrollTop - el.clientHeight < 60);
-      lastTop.current = el.scrollTop;
+      const top = el.scrollTop;
+      const near = el.scrollHeight - top - el.clientHeight < 60;
+      // A scroll up detaches even when the wheel handler did not run (Playwright, trackpads).
+      if (top < lastTop.current - 1) stick.current = false;
+      stick.current = follows(stick.current, lastTop.current, top, near);
+      lastTop.current = top;
       setAway(!stick.current);
       if (virtual) setView((v) => (Math.abs(v.top - el.scrollTop) < 40 && v.h === el.clientHeight ? v : { top: el.scrollTop, h: el.clientHeight }));
     });
@@ -54,7 +58,12 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    return pinToEnd(el, el.firstElementChild as Element, () => stick.current);
+    // Native listener: React's onWheel can land after the browser has already
+    // scrolled and the pin-to-end observer has snapped back to the bottom.
+    const wheel = (e: WheelEvent) => { if (e.deltaY < 0) { stick.current = false; setAway(true); } };
+    el.addEventListener("wheel", wheel, { passive: true });
+    const unpin = pinToEnd(el, el.firstElementChild as Element, () => stick.current);
+    return () => { el.removeEventListener("wheel", wheel); unpin(); };
   }, []);
 
   // Row heights come from one ResizeObserver (batched, no forced synchronous layout).
@@ -115,7 +124,7 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
 
   // A user's scroll-up detaches at once: the coalesced scroll read lands a frame later, and a
   // streaming render in between would otherwise snap the view back to the bottom.
-  const up = () => { stick.current = false; };
+  const up = () => { stick.current = false; setAway(true); };
   const onKey = (e: { key: string }) => { if (/^(ArrowUp|PageUp|Home)$/.test(e.key)) up(); };
   const jump = () => { const el = ref.current; if (!el) return; stick.current = true; setAway(false); el.scrollTop = el.scrollHeight; };
   return (

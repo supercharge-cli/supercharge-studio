@@ -89,7 +89,7 @@ html.theme-anim *,html.theme-anim *::before,html.theme-anim *::after{transition:
 .ctx-meter{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);padding:0 4px}.ctx-meter circle{fill:none;stroke-width:2.5}.ctx-bg{stroke:var(--line)}.ctx-fg{stroke:var(--acc);stroke-linecap:round}.ctx-meter.warm .ctx-fg{stroke:var(--warn)}.ctx-meter.hot .ctx-fg{stroke:var(--bad)}
 @media(prefers-reduced-motion:reduce){.thinking-fill,.thinking-thumb{transition:none}}
 .file-ico{flex:none}
-.vlist-wrap{flex:1;min-height:0;display:flex;flex-direction:column;position:relative}
+.vlist-wrap{flex:1;min-height:0;display:flex;flex-direction:column;position:relative;overflow:hidden}
 .jump-latest{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);font-size:12px;padding:5px 12px;min-height:0;border-radius:999px;background:var(--raise);color:var(--fg);border:1px solid var(--line);box-shadow:var(--shadow);z-index:3;cursor:pointer}.jump-latest:hover{background:var(--hover)}
 .row-wrap.enter{animation:msg-in .16s ease-out}
 @keyframes msg-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
