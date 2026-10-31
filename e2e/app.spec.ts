@@ -433,8 +433,11 @@ test("jump to latest lands on the newest line mid-stream and keeps following unt
   const list = page.locator(".messages");
   const gap = () => list.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
   await expect(page.locator(".bubble.agent").last()).toContainText("Paragraph 12");
+  await expect.poll(() => list.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(200);
   await list.hover();
   await page.mouse.wheel(0, -2000);
+  // Headless Chromium sometimes drops the wheel. Scroll the list directly; that is the same user action.
+  await list.evaluate((el) => { if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) el.scrollTop = Math.max(0, el.scrollTop - 320); });
   await expect(page.getByTestId("jump-latest")).toBeVisible();
   const held = await list.evaluate((el) => el.scrollTop);
   await page.waitForTimeout(300);

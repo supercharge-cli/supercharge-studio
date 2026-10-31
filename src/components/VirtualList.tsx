@@ -33,6 +33,14 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
   const frame = useRef(0);
   const lastTop = useRef(0);
   const onScroll = useCallback(() => {
+    const elNow = ref.current;
+    if (elNow) {
+      const top = elNow.scrollTop;
+      // Detach before the frame callback. A streaming pin can put the view back
+      // at the bottom in the same frame, and the deferred read would miss the scroll up.
+      if (top < lastTop.current - 1) { stick.current = false; setAway(true); }
+      lastTop.current = top;
+    }
     if (frame.current) return;
     frame.current = requestAnimationFrame(() => {
       frame.current = 0;
@@ -40,8 +48,6 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
       if (!el) return;
       const top = el.scrollTop;
       const near = el.scrollHeight - top - el.clientHeight < 60;
-      // A scroll up detaches even when the wheel handler did not run (Playwright, trackpads).
-      if (top < lastTop.current - 1) stick.current = false;
       stick.current = follows(stick.current, lastTop.current, top, near);
       lastTop.current = top;
       setAway(!stick.current);
@@ -60,8 +66,14 @@ export function VirtualList<T>({ items, render, keyOf, threshold = 80, estimate 
     if (!el) return;
     // Native listener: React's onWheel can land after the browser has already
     // scrolled and the pin-to-end observer has snapped back to the bottom.
-    const wheel = (e: WheelEvent) => { if (e.deltaY < 0) { stick.current = false; setAway(true); } };
-    el.addEventListener("wheel", wheel, { passive: true });
+    const wheel = (e: WheelEvent) => {
+      if (e.deltaY >= 0 || el.scrollHeight - el.clientHeight < 40) return;
+      stick.current = false;
+      setAway(true);
+      const next = Math.max(0, el.scrollTop + e.deltaY);
+      if (next < el.scrollTop - 1) { e.preventDefault(); el.scrollTop = next; }
+    };
+    el.addEventListener("wheel", wheel, { passive: false });
     const unpin = pinToEnd(el, el.firstElementChild as Element, () => stick.current);
     return () => { el.removeEventListener("wheel", wheel); unpin(); };
   }, []);
