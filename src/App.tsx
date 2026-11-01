@@ -52,6 +52,7 @@ import { contextFromUsageNotification, isResponseCompleted, usedFromResponseComp
 import { isTerminalTarget } from "./lib/terminalInput";
 import { useBrowserOverlay } from "./browser/visibility";
 import { agentModel, mergeCustom, rememberCustom, sessionModel, type ModelOpt } from "./lib/modelFallback";
+import { pluginTarget, unwrapPluginResult } from "./lib/plugins";
 import { APP_VERSION, checkUpdate, pickAsset, UPDATE_EVERY, type AvailableUpdate } from "./lib/updates";
 const UpdateBanner = lazy(() => import("./screens").then((m) => ({ default: m.UpdateBanner })));
 
@@ -1209,7 +1210,27 @@ export default function App() {
     }
   };
   useEffect(() => { const t = setInterval(() => runDue.current(), 30_000); return () => clearInterval(t); }, []);
+  const pluginSession = useRef<{ client: AcpClient; cwd: string; sid: Promise<string> } | null>(null);
+  useEffect(() => () => { const session = pluginSession.current; if (session) void session.sid.then((sid) => session.client.closeSession(sid)).catch(() => {}); }, []);
+  const pluginRpc = useCallback(async (method: string, params: Record<string, unknown> = {}) => {
+    const c = clientRef.current;
+    const target = pluginTarget(data.settings.bind, data.settings.transport === "stdio");
+    if (!target.secure) throw new Error("Plugin management requires WSS for remote agents.");
+    if (!c?.hasExtension("_supercharge/plugins/catalog")) throw new Error("Update this agent to enable plugin management.");
+    if (!active) throw new Error("Select a project first.");
+    const cwd = normCwd(active.project.cwd);
+    if (pluginSession.current?.client !== c || pluginSession.current.cwd !== cwd) {
+      const old = pluginSession.current;
+      if (old) void old.sid.then((id) => old.client.closeSession(id)).catch(() => {});
+      pluginSession.current = { client: c, cwd, sid: c.newSession(cwd, { "_supercharge/management": true }, []).then((r) => r.sessionId) };
+    }
+    const sid = await pluginSession.current.sid;
+    if (!sid || clientRef.current !== c) throw new Error("Agent connection changed; retry on the selected target.");
+    return unwrapPluginResult(await c.ext(`_supercharge/${method}`, { ...params, sessionId: sid }));
+  }, [data.settings.bind, data.settings.transport, active?.project.id, active?.project.cwd, conn]);
   const toolsApp = {
+    pluginRpc,
+    pluginTarget: pluginTarget(data.settings.bind, data.settings.transport === "stdio").label,
     cwd: active ? normCwd(activeChat?.cwd ?? active.project.cwd) : undefined,
     runs,
     stop: (id: string) => { const s = allChats.find((x) => x.c.id === id)?.c.sessionId; if (s) clientRef.current?.cancel(s); },
@@ -1237,6 +1258,8 @@ export default function App() {
     { name: "settings", detail: "Open settings", icon: "settings", run: () => openSettings() },
     { name: "usage", detail: "Token usage and costs", icon: "chart", run: () => setView("usage") },
     { name: "rules", detail: "Edit AGENTS.md and rules files", icon: "file", run: () => openTools("rules") },
+    { name: "plugins", detail: "Install and manage plugins", icon: "plug", run: () => openTools("plugins") },
+    { name: "connections", detail: "Connect plugin accounts", icon: "server", run: () => openTools("connections") },
     { name: "mcp", detail: "Manage MCP servers", icon: "server", run: () => openTools("mcp") },
     { name: "schedule", detail: "Scheduled runs", icon: "refresh", run: () => openTools("schedules") },
     { name: "tasks", detail: "Running chats and queued messages", icon: "bolt", run: () => openTools("running") },

@@ -20,6 +20,8 @@ import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
 import { writeFileSync } from "fs";
 import { fakeSetup } from "./fakeSetup";
+import { fakePlugins, PLUGIN_METHODS } from "./fakePlugins";
+const pluginFixture = process.env.FAKE_AGENT_PLUGINS === "1" ? fakePlugins() : null;
 const HL_SAMPLE = ["ts", "rust", "python"].map((l) => "```" + l + "\n" + readFileSync(new URL(`../e2e/fixtures/hl-${l}.txt`, import.meta.url), "utf8") + "```").join("\n\n");
 
 // Session state is per connection, unless FAKE_AGENT_SHARED=1 (one agent serving several
@@ -118,6 +120,8 @@ wss.on("connection", (ws: WebSocket) => {
     cur = m;
     if (m.id != null && !m.method) return pending.get(m.id)?.(m), pending.delete(m.id);
     const reply = (result: any) => send({ id: m.id, result });
+    const pluginReply = pluginFixture?.(m.method, m.params ?? {});
+    if (pluginReply !== undefined) return reply(pluginReply);
     switch (m.method) {
       case "initialize": {
         // FAKE_AGENT_INIT_DELAY_MS: a slow handshake (a real CLI loading a large provider model list).
@@ -128,7 +132,7 @@ wss.on("connection", (ws: WebSocket) => {
             ? { loadSession: true, sessionCapabilities: { list: {}, resume: {} }, mcpCapabilities: { http: true }, _meta: { supercharge: { methods: ["_supercharge/session/context_window", ...SETUP_METHODS], ...(process.env.FAKE_AGENT_STEER === "1" ? { steer: true } : {}) } } }
             : { loadSession: false, _meta: { "supercharge/demo": true } },
           authMethods: [],
-          _meta: { agentVersion: "fake-1.0", availableCommands: [{ name: "help", description: "Show help" }, { name: "setup", description: "Configure provider" }] },
+          _meta: { ...(pluginFixture ? { methods: PLUGIN_METHODS } : {}), agentVersion: "fake-1.0", availableCommands: [{ name: "help", description: "Show help" }, { name: "setup", description: "Configure provider" }] },
         };
         if (ms) return void setTimeout(() => reply(res), ms);
         return reply(res);

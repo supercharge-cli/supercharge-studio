@@ -80,6 +80,10 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-pop-item{background:none;color:var(--fg);text-align:left;padding:10px 12px;border-radius:10px;white-space:nowrap}
 .m-pop-item[aria-pressed=true]{color:var(--acc)}
 .m-thinking{flex-wrap:wrap}.m-thinking input[type=range]{flex:1 0 100%;accent-color:var(--acc)}
+.m-compose-tools{display:flex;gap:6px;overflow-x:auto;padding:2px 4px 0;scrollbar-width:none}
+.m-compose-tools::-webkit-scrollbar{display:none}
+.m-compose-tools .m-think-anchor,.m-compose-tools .m-chip{flex:none;max-width:none}
+.m-compose-tools .m-chip{display:inline-flex;overflow:visible;text-overflow:clip}
 .m-compose-row{display:flex;align-items:center;gap:6px}
 .m-attach{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--hover);color:var(--fg)}
 .m-model-chip{background:none;color:var(--muted);font-size:12.5px;padding:6px 8px;border-radius:14px;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -190,6 +194,16 @@ button,a{-webkit-tap-highlight-color:transparent}
 @media (max-width:400px){.m-compose-row .m-attach{width:38px;min-width:38px}.m-compose-row .m-chip{padding:8px 8px}}
 .m-compose-row>.m-chip{flex-shrink:4;max-width:28%}
 @media (min-width:350px){.m-compose-row>.m-think-anchor{min-width:4.5em}}
+/* Composer breathing room: the box was packed so labels and the field felt cramped. */
+.m-composer{padding:10px 12px calc(12px + env(safe-area-inset-bottom))}
+.m-compose-box{gap:10px;padding:14px 14px 12px;border-radius:28px}
+.m-compose-box textarea{min-height:48px;padding:10px 6px;font-size:17px;line-height:1.45}
+.m-compose-meta{padding:0 2px}
+.m-compose-meta .m-chip{max-width:none;padding:8px 12px;font-size:14px}
+.m-compose-tools{gap:8px;padding:2px 0 4px}
+.m-compose-tools .m-chip{min-height:40px;padding:8px 14px;font-size:14px}
+.m-compose-row{gap:10px;padding-top:2px}
+.m-compose-row .m-attach{width:44px;min-width:44px;height:44px}
 .m-setup-sheet{max-height:90vh}.m-setup-sheet .psetup-row{min-height:44px}.m-setup-sheet .psetup-list{max-height:none}
 
 /* pairing scanner: while the camera runs the page is see-through and the window's spread shadow is a dark scrim, whatever the theme */

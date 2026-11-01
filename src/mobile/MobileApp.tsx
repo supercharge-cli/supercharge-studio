@@ -837,11 +837,8 @@ export default function MobileApp() {
                 onChange={(e) => { setDraft(e.target.value); const t = e.target; t.style.height = "auto"; t.style.height = `${Math.min(t.scrollHeight, 160)}px`; }}
                 onPaste={(e) => { const fs = [...(e.clipboardData?.files ?? [])]; if (fs.length) { e.preventDefault(); void addFiles(fs); } }}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!isBusy) void send(); } }} />
-              <div className="m-compose-row">
-                <input ref={fileInput} type="file" multiple hidden accept="*/*" data-testid="m-attach-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
-                <button className="icon m-attach" aria-label="Attach files" data-testid="m-attach" onClick={() => fileInput.current?.click()}><Icon name="plus" size={20} /></button>
-                <input ref={photoInput} type="file" multiple hidden accept="image/*" data-testid="m-photo-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
-                <button className="icon m-attach" aria-label="Add photo" data-testid="m-photo" onClick={() => photoInput.current?.click()}><Icon name="photo" size={19} /></button>
+              {(permissionOption || (sessionModes && sessionModes.availableModes.length > 1) || modelOption || thinkingOption) && (
+              <div className="m-compose-tools">
                 {permissionOption && (
                   <span className="m-think-anchor">
                     <button type="button" className="m-chip m-chip-accent" onClick={() => { haptic(); setPermPop((v) => !v); setThinkPop(false); setModePop(false); }}>{optionLabel(permissionOption)}</button>
@@ -866,8 +863,6 @@ export default function MobileApp() {
                     )}
                   </span>
                 )}
-                <div className="spacer" />
-                {open && (ctxBySession[open] || windowBySession[open]) && <ContextMeter used={ctxBySession[open]?.used ?? 0} max={ctxBySession[open]?.max} window={windowCtl} />}
                 {modelOption && <button className="m-chip" data-testid="m-model-chip" onClick={() => { haptic(); setModelSearch(""); setCustomOpen(false); setPicker("model"); }}>{optionLabel(modelOption)}</button>}
                 {thinkingOption && (
                   <span className="m-think-anchor">
@@ -882,7 +877,16 @@ export default function MobileApp() {
                     )}
                   </span>
                 )}
+              </div>
+              )}
+              <div className="m-compose-row">
+                <input ref={fileInput} type="file" multiple hidden accept="*/*" data-testid="m-attach-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
+                <button className="icon m-attach" aria-label="Attach files" data-testid="m-attach" onClick={() => fileInput.current?.click()}><Icon name="plus" size={20} /></button>
+                <input ref={photoInput} type="file" multiple hidden accept="image/*" data-testid="m-photo-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
+                <button className="icon m-attach" aria-label="Add photo" data-testid="m-photo" onClick={() => photoInput.current?.click()}><Icon name="photo" size={19} /></button>
+                <div className="spacer" />
                 {uploading != null && <span className="muted small" data-testid="m-uploading">Uploading {Math.round(uploading * 100)}%</span>}
+                {open && (ctxBySession[open] || windowBySession[open]) && <ContextMeter used={ctxBySession[open]?.used ?? 0} max={ctxBySession[open]?.max} window={windowCtl} />}
                 {isBusy ? <button className="danger round" aria-label="Stop" onClick={() => { haptic(); client.current?.cancel(open); }}><Icon name="stop" /></button> : <button className="round" aria-label="Send" disabled={!canSend} onClick={() => void send()} data-testid="m-send"><Icon name="send" /></button>}
               </div>
             </div>

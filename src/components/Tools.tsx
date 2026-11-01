@@ -6,17 +6,21 @@ import type { McpServer } from "../lib/mcpServers";
 import type { Schedule } from "../lib/schedules";
 import { uid } from "../lib/store";
 import { Icon } from "./Icon";
+import { Plugins } from "./Plugins";
+import type { PluginRpc } from "../lib/plugins";
 
-export type ToolsTab = "prompts" | "running" | "rules" | "mcp" | "schedules";
+export type ToolsTab = "prompts" | "running" | "rules" | "mcp" | "schedules" | "plugins" | "connections";
 /** A chat that is working or has queued messages. */
 export type Run = { chatId: string; title: string; project: string; busy: boolean; queued: { id: string; text: string }[] };
 /** What the tools screen needs from the app. */
-export type ToolsApp = { cwd?: string; runs: Run[]; stop: (chatId: string) => void; open: (chatId: string) => void; unqueue: (chatId: string, id: string) => void };
+export type ToolsApp = { pluginRpc?: PluginRpc; pluginTarget?: string; cwd?: string; runs: Run[]; stop: (chatId: string) => void; open: (chatId: string) => void; unqueue: (chatId: string, id: string) => void };
 type Props = { data: AppData; update: (f: (d: AppData) => AppData) => void; tab?: ToolsTab; onClose: () => void; app: ToolsApp };
 const TABS: { id: ToolsTab; label: string; icon: string }[] = [
   { id: "prompts", label: "Prompts", icon: "edit" },
   { id: "running", label: "Running", icon: "bolt" },
   { id: "rules", label: "Rules & memory", icon: "file" },
+  { id: "plugins", label: "Plugins", icon: "plug" },
+  { id: "connections", label: "Connections", icon: "server" },
   { id: "mcp", label: "MCP servers", icon: "server" },
   { id: "schedules", label: "Scheduled runs", icon: "refresh" },
 ];
@@ -142,7 +146,7 @@ function Schedules({ data, update }: Props) {
   );
 }
 
-const BODY: Record<ToolsTab, (p: Props) => any> = { schedules: Schedules, prompts: Prompts, running: Running, rules: Rules, mcp: Mcp };
+const BODY: Record<ToolsTab, (p: Props) => any> = { plugins: ({ app }) => <Plugins rpc={app.pluginRpc} target={app.pluginTarget ?? "Agent"} />, connections: ({ app }) => <Plugins rpc={app.pluginRpc} target={app.pluginTarget ?? "Agent"} connections />, schedules: Schedules, prompts: Prompts, running: Running, rules: Rules, mcp: Mcp };
 
 /** Full-screen Studio tools: prompts, rules, MCP servers, schedules, running tasks, checkpoints. */
 export function ToolsScreen(p: Props) {
@@ -155,7 +159,7 @@ export function ToolsScreen(p: Props) {
         {TABS.map((t) => <button key={t.id} className={tab === t.id ? "on" : ""} data-testid={`tools-${t.id}`} onClick={() => setTab(t.id)}><Icon name={t.icon} /> {t.label}</button>)}
       </nav>
       <div className="screen-main">
-        <header className="screen-head"><h2>{TABS.find((t) => t.id === tab)!.label}</h2><div className="spacer" /><button className="ghost icon" aria-label="Close" data-testid="tools-close" onClick={p.onClose}><Icon name="x" /></button></header>
+        <header className="screen-head"><h2>{TABS.find((t) => t.id === tab)!.label}</h2>{(tab === "plugins" || tab === "connections") && <span className="muted small">{p.app.pluginTarget}</span>}<div className="spacer" /><button className="ghost icon" aria-label="Close" data-testid="tools-close" onClick={p.onClose}><Icon name="x" /></button></header>
         <div className="screen-body section-anim" key={tab}><B {...p} /></div>
       </div>
     </div>

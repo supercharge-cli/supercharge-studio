@@ -1,6 +1,6 @@
 [package]
 name = "supercharge-studio"
-version = "1.0.27"
+version = "1.0.30"
 description = "Supercharge Studio — desktop ACP client for Supercharge"
 license = "Apache-2.0"
 edition = "2021"
@@ -77,3 +77,6 @@ objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKSnapshotConfigura
 webview2-com = "0.39"
 windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_System_Com_StructuredStorage"] }
 windows-core = "0.62"
+
+# Studio is an independent repository even when checked out inside Supercharge.
+[workspace]
