@@ -82,8 +82,8 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-thinking{flex-wrap:wrap}.m-thinking input[type=range]{flex:1 0 100%;accent-color:var(--acc)}
 .m-compose-tools{display:flex;gap:6px;overflow-x:auto;padding:2px 4px 0;scrollbar-width:none}
 .m-compose-tools::-webkit-scrollbar{display:none}
-.m-compose-tools .m-think-anchor,.m-compose-tools .m-chip{flex:none;max-width:none}
-.m-compose-tools .m-chip{display:inline-flex;overflow:visible;text-overflow:clip}
+.m-compose-tools .m-think-anchor,.m-compose-tools .m-chip{flex:none;max-width:100%;min-width:0}
+.m-compose-tools .m-chip{display:block;overflow:hidden;text-overflow:ellipsis}
 .m-compose-row{display:flex;align-items:center;gap:6px}
 .m-attach{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--hover);color:var(--fg)}
 .m-model-chip{background:none;color:var(--muted);font-size:12.5px;padding:6px 8px;border-radius:14px;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

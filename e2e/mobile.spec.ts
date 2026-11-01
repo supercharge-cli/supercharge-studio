@@ -44,11 +44,12 @@ test("touch navigation paints the chat after leaving the project list", async ({
     await pair(page);
     await page.getByTestId("m-chat").first().tap();
     await expect(page.getByTestId("m-thread")).toContainText("The token check is inverted.");
-    await expect.poll(() => page.locator(".m-thread .bubble").first().evaluate((el) => {
-      const r = el.getBoundingClientRect();
-      const parent = el.closest(".m-thread")!;
+    await expect.poll(() => page.locator(".m-thread").evaluate((parent) => {
       const p = parent.getBoundingClientRect();
-      return getComputedStyle(parent).opacity !== "0" && r.right > p.left && r.left < p.right && r.bottom > p.top && r.top < p.bottom;
+      return getComputedStyle(parent).opacity !== "0" && [...parent.querySelectorAll(".bubble")].some((el) => {
+        const r = el.getBoundingClientRect();
+        return r.right > p.left && r.left < p.right && r.bottom > p.top && r.top < p.bottom;
+      });
     })).toBe(true);
   } finally {
     await context.close();

@@ -35,3 +35,6 @@ lto = true
 opt-level = "z"
 panic = "abort"
 strip = true
+
+# Keep the server independently buildable in nested checkouts.
+[workspace]
