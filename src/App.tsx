@@ -1522,6 +1522,8 @@ export default function App() {
         <SettingsScreen
           key={settingsSection ?? "s"}
           initial={settingsSection}
+          pluginRpc={pluginRpc}
+          pluginTarget={toolsApp.pluginTarget}
           value={{ ...data.settings, secret: secretRef.current || data.settings.secret }}
           configOptions={configOptions}
           desktop={isDesktop()}

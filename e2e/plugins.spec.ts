@@ -5,8 +5,9 @@ test("plugin installation, account connection, health and removal use the select
   await page.addInitScript(() => localStorage.setItem("supercharge-studio/v1", JSON.stringify({ settings: { bind: "127.0.0.1:2456", secret: "e2e", transport: "ws", autoStart: false, alwaysApprove: false }, groups: [{ id: "g", name: "Personal", projects: [{ id: "p", name: "demo", cwd: "/tmp", chats: [] }] }], activeProjectId: "p" })));
   await page.goto("/");
   await expect(page.locator(".status")).toHaveText("open");
-  await page.locator(".composer textarea").fill("/plugin");
-  await page.locator(".composer textarea").press("Enter");
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByTestId("tab-plugins").click();
+  await expect(page.getByRole("region", { name: "Settings" })).toContainText("Target:");
   await expect(page.getByRole("heading", { name: "Available plugins" })).toBeVisible();
   await expect(page.getByLabel("Catalog URL", { exact: true })).toHaveValue("https://www.superchargeai.in/api/plugins/v1");
   await page.getByLabel("Catalog URL", { exact: true }).fill("https://catalog.example/api/plugins/v1");
@@ -22,7 +23,7 @@ test("plugin installation, account connection, health and removal use the select
   await installed.getByRole("button", { name: "Enable", exact: true }).click();
   await page.getByRole("button", { name: "Enable reviewed plugin" }).click();
   await expect(installed).toHaveCount(0);
-  await page.getByTestId("tools-connections").click();
+  await page.getByRole("button", { name: "Connections", exact: true }).click();
   await expect(page.getByText("ready · 1 tool")).toBeVisible();
   await page.getByLabel("Access token", { exact: true }).fill("fixture-secret-never-persist");
   await page.getByRole("button", { name: "Save and select account" }).click();
@@ -38,7 +39,7 @@ test("plugin installation, account connection, health and removal use the select
   await page.screenshot({ path: "/tmp/supercharge-plugin-connections.png", fullPage: true });
   await page.getByRole("button", { name: "Disconnect", exact: true }).click();
   await expect(page.getByText("github · default", { exact: true })).toHaveCount(0);
-  await page.getByTestId("tools-plugins").click();
+  await page.getByRole("button", { name: "Plugins", exact: true }).last().click();
   await page.getByRole("button", { name: "Disable", exact: true }).click();
   await page.getByRole("button", { name: "Uninstall", exact: true }).click();
   await expect(page.getByText("No plugins found on this agent.")).toBeVisible();

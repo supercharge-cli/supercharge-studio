@@ -5,6 +5,8 @@ import type { ApiFormat, Provider, Settings as S } from "../lib/store";
 import { parseAgentUrl, uid } from "../lib/store";
 import type { ConfigOption } from "../acp/types";
 import { Icon } from "./Icon";
+import { Plugins } from "./Plugins";
+import type { PluginRpc } from "../lib/plugins";
 import { themeList } from "../lib/themes";
 import ProviderSetup from "./ProviderSetup";
 import { agentInfo, agentLog, providerDiscoverModels, type AgentInfo, type DiscoveredModel } from "../lib/desktop";
@@ -25,6 +27,8 @@ type Props = {
   /** Agent connection: its `_supercharge/setup/*` methods win over the desktop shell's. */
   acp?: { hasExtension(m: string): boolean; ext<T = any>(m: string, p?: unknown): Promise<T> } | null;
   openUrl?: (url: string) => void;
+  pluginRpc?: PluginRpc;
+  pluginTarget: string;
   onSetupSaved?: (s: SetupStatus) => void;
   /** The open chat's agent session, switched to the saved model right away when the agent can. */
   sessionId?: () => string | undefined;
@@ -35,6 +39,7 @@ type Props = {
 const SECTIONS = [
   { id: "connection", label: "Connection", icon: "plug" },
   { id: "providers", label: "Providers", icon: "server" },
+  { id: "plugins", label: "Plugins", icon: "plug" },
   { id: "appearance", label: "Appearance", icon: "sun" },
   { id: "agent", label: "Agent", icon: "bolt" },
   { id: "devices", label: "Devices", icon: "phone" },
@@ -112,6 +117,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
   const [s, set] = useState<S>({ ...value, providers: value.providers ?? [] });
   const [tab, setTab] = useState<Section>(props.initial ?? "connection");
   const [editing, setEditing] = useState<string | null>(null);
+  const [pluginView, setPluginView] = useState<"catalog" | "connections">("catalog");
   const [busy, setBusy] = useState("");
   const [providerError, setProviderError] = useState("");
   const [setup] = useState(() => pickSetup(props.acp));
@@ -224,6 +230,16 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
           </div>
         )}
 
+        {tab === "plugins" && (
+          <div className="stack">
+            <div className="row" role="group" aria-label="Plugin settings">
+              <button className={pluginView === "catalog" ? "" : "secondary"} aria-pressed={pluginView === "catalog"} onClick={() => setPluginView("catalog")}>Plugins</button>
+              <button className={pluginView === "connections" ? "" : "secondary"} aria-pressed={pluginView === "connections"} onClick={() => setPluginView("connections")}>Connections</button>
+            </div>
+            <Plugins rpc={props.pluginRpc} target={props.pluginTarget} connections={pluginView === "connections"} />
+          </div>
+        )}
+
         {tab === "appearance" && (
           <div className="stack">
             <label>Chat text size · {s.fontSize ?? 14}px<input type="range" min={12} max={20} step={1} data-testid="font-size" value={s.fontSize ?? 14} onChange={(e) => set({ ...s, fontSize: +e.target.value })} /></label>
@@ -254,7 +270,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
 
         {tab === "devices" && <div className="stack">{props.devices ?? <p className="muted">Pairing needs the desktop app.</p>}</div>}
         </div>
-        {tab !== "devices" && (
+        {tab !== "devices" && tab !== "plugins" && (
           <footer className="screen-foot">
             <button className="secondary" onClick={onClose}>Cancel</button>
             <button onClick={() => onSave(s)} data-testid="settings-save">Save & reconnect</button>
