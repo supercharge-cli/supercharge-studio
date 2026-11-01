@@ -1258,6 +1258,7 @@ export default function App() {
     { name: "settings", detail: "Open settings", icon: "settings", run: () => openSettings() },
     { name: "usage", detail: "Token usage and costs", icon: "chart", run: () => setView("usage") },
     { name: "rules", detail: "Edit AGENTS.md and rules files", icon: "file", run: () => openTools("rules") },
+    { name: "plugin", detail: "Browse and manage plugins", icon: "plug", run: () => openTools("plugins") },
     { name: "plugins", detail: "Install and manage plugins", icon: "plug", run: () => openTools("plugins") },
     { name: "connections", detail: "Connect plugin accounts", icon: "server", run: () => openTools("connections") },
     { name: "mcp", detail: "Manage MCP servers", icon: "server", run: () => openTools("mcp") },

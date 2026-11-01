@@ -5,7 +5,7 @@ test("plugin installation, account connection, health and removal use the select
   await page.addInitScript(() => localStorage.setItem("supercharge-studio/v1", JSON.stringify({ settings: { bind: "127.0.0.1:2456", secret: "e2e", transport: "ws", autoStart: false, alwaysApprove: false }, groups: [{ id: "g", name: "Personal", projects: [{ id: "p", name: "demo", cwd: "/tmp", chats: [] }] }], activeProjectId: "p" })));
   await page.goto("/");
   await expect(page.locator(".status")).toHaveText("open");
-  await page.locator(".composer textarea").fill("/plugins");
+  await page.locator(".composer textarea").fill("/plugin");
   await page.locator(".composer textarea").press("Enter");
   await expect(page.getByRole("heading", { name: "Available plugins" })).toBeVisible();
   await expect(page.getByLabel("Catalog URL", { exact: true })).toHaveValue("https://www.superchargeai.in/api/plugins/v1");
