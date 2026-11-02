@@ -1,5 +1,15 @@
 import { expect, test } from "@playwright/test";
 
+test("catalog appears while tool health is still loading", async ({ page }) => {
+  await page.route(/^https:\/\/api\.github\.com\//, (route) => route.fulfill({ status: 404, body: "{}" }));
+  await page.addInitScript(() => localStorage.setItem("supercharge-studio/v1", JSON.stringify({ settings: { bind: "127.0.0.1:2457", secret: "e2e", transport: "ws", autoStart: false }, groups: [{ id: "g", name: "Personal", projects: [{ id: "p", name: "demo", cwd: "/tmp", chats: [] }] }], activeProjectId: "p" })));
+  await page.goto("/");
+  await expect(page.locator(".status")).toHaveText("open");
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByTestId("tab-plugins").click();
+  await expect(page.getByTestId("catalog-plugin-github")).toBeVisible({ timeout: 3000 });
+});
+
 test("plugin installation, account connection, health and removal use the selected agent", async ({ page }) => {
   await page.route(/^https:\/\/api\.github\.com\//, (route) => route.fulfill({ status: 404, body: "{}" }));
   await page.addInitScript(() => localStorage.setItem("supercharge-studio/v1", JSON.stringify({ settings: { bind: "127.0.0.1:2456", secret: "e2e", transport: "ws", autoStart: false, alwaysApprove: false }, groups: [{ id: "g", name: "Personal", projects: [{ id: "p", name: "demo", cwd: "/tmp", chats: [] }] }], activeProjectId: "p" })));

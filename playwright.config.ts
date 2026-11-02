@@ -5,6 +5,7 @@ export default defineConfig({
   use: { baseURL: "http://127.0.0.1:5174", screenshot: "only-on-failure" },
   webServer: [
     { command: "npx vite-node scripts/fake-agent.ts -- --port 2456 --secret e2e", port: 2456, reuseExistingServer: false, env: { FAKE_AGENT_PLUGINS: "1" } },
+    { command: "npx vite-node scripts/fake-agent.ts -- --port 2457 --secret e2e", port: 2457, reuseExistingServer: false, env: { FAKE_AGENT_PLUGINS: "1", FAKE_AGENT_MCP_LIST_DELAY_MS: "5000" } },
     { command: "npx vite-node scripts/fake-agent.ts -- --port 2421 --secret e2e", port: 2421, reuseExistingServer: false },
     // One agent shared by several clients (headless server e2e).
     { command: "npx vite-node scripts/fake-agent.ts -- --port 2451 --secret e2e", port: 2451, reuseExistingServer: false, env: { FAKE_AGENT_SHARED: "1" } },

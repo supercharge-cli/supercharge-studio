@@ -121,7 +121,11 @@ wss.on("connection", (ws: WebSocket) => {
     if (m.id != null && !m.method) return pending.get(m.id)?.(m), pending.delete(m.id);
     const reply = (result: any) => send({ id: m.id, result });
     const pluginReply = pluginFixture?.(m.method, m.params ?? {});
-    if (pluginReply !== undefined) return reply(pluginReply);
+    if (pluginReply !== undefined) {
+      const delay = m.method === "_supercharge/mcp/list" ? Number(process.env.FAKE_AGENT_MCP_LIST_DELAY_MS || 0) : 0;
+      if (delay) return void setTimeout(() => reply(pluginReply), delay);
+      return reply(pluginReply);
+    }
     switch (m.method) {
       case "initialize": {
         // FAKE_AGENT_INIT_DELAY_MS: a slow handshake (a real CLI loading a large provider model list).

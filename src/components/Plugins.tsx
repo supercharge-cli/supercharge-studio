@@ -37,21 +37,34 @@ export function Plugins({ rpc, target, connections = false }: Props) {
   const refresh = async () => {
     if (!rpc) return;
     const generationAtStart = generation.current;
-    let cfg = await rpc("plugins/catalog_config");
-    if (generation.current !== generationAtStart) return;
-    setCatalogStatus(cfg);
-    let catalogError = "";
-    if (cfg.url?.replace(/\/$/, "") !== CATALOG_URL) {
-      if (cfg.environmentOverride) catalogError = "This agent overrides the Supercharge catalog. Remove its catalog URL environment override to use the catalog here.";
-      else cfg = await rpc("plugins/catalog_configure", { url: CATALOG_URL });
-    }
-    const [p, c, a, s] = await Promise.all([rpc("plugins/list"), catalogError ? Promise.resolve({ plugins: [], error: catalogError }) : rpc("plugins/catalog").catch((e) => ({ plugins: [], error: e.message })), rpc("connections/list"), rpc("mcp/list")]);
-    if (generation.current !== generationAtStart) return;
-    setPlugins(p.plugins ?? []); setCatalog(c.plugins ?? []); setAccounts(a.accounts ?? []); setServers(s.servers ?? []); setCatalogStatus(cfg); setError(c.error ?? "");
+    const catalogRequest = (async () => {
+      try {
+        let cfg = await rpc("plugins/catalog_config");
+        if (generation.current !== generationAtStart) return;
+        setCatalogStatus(cfg);
+        if (cfg.url?.replace(/\/$/, "") !== CATALOG_URL) {
+          if (cfg.environmentOverride) throw new Error("This agent overrides the Supercharge catalog. Remove its catalog URL environment override to use the catalog here.");
+          cfg = await rpc("plugins/catalog_configure", { url: CATALOG_URL });
+        }
+        const result = await rpc("plugins/catalog");
+        if (generation.current !== generationAtStart) return;
+        setCatalog(result.plugins ?? []); setCatalogStatus(cfg); setError("");
+      } catch (e: any) {
+        if (generation.current === generationAtStart) setError(String(e.message ?? e));
+      } finally {
+        if (generation.current === generationAtStart) setLoading(false);
+      }
+    })();
+    await Promise.all([
+      catalogRequest,
+      rpc("plugins/list").then((r) => { if (generation.current === generationAtStart) setPlugins(r.plugins ?? []); }),
+      rpc("connections/list").then((r) => { if (generation.current === generationAtStart) setAccounts(r.accounts ?? []); }),
+      rpc("mcp/list").then((r) => { if (generation.current === generationAtStart) setServers(r.servers ?? []); }),
+    ]);
   };
   useLayoutEffect(() => {
     const current = ++generation.current; setPlugins([]); setCatalog([]); setAccounts([]); setServers([]); setSecret(""); setCatalogToken(""); setConsent(""); setFlow(""); setError(""); setDetails(null); setLoading(true);
-    void refresh().catch((e) => { if (generation.current === current) setError(String(e.message ?? e)); }).finally(() => { if (generation.current === current) setLoading(false); });
+    void refresh().catch((e) => { if (generation.current === current) setError(String(e.message ?? e)); });
     return () => { generation.current++; };
   }, [rpc, target]);
   useEffect(() => {
@@ -83,7 +96,7 @@ export function Plugins({ rpc, target, connections = false }: Props) {
   return <section className="plugins-page" aria-label={connections ? "Plugin connections" : "Plugins"}>
     <div className="plugins-toolbar">
       <div><span className="plugins-target-label">AGENT TARGET</span><p className="plugins-target">{target}</p></div>
-      <button className="secondary compact" disabled={busy} onClick={() => void run(refresh)}><Icon name="refresh" size={14} /> Refresh</button>
+      <button className="secondary compact" disabled={busy} onClick={() => void run(async () => {})}><Icon name="refresh" size={14} /> Refresh</button>
     </div>
     {error && <p role="alert" className="error-text">{error}</p>}
     {notice && <p role="status">{notice}</p>}
