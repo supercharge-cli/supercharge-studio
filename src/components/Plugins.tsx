@@ -40,11 +40,12 @@ export function Plugins({ rpc, target, connections = false }: Props) {
     let cfg = await rpc("plugins/catalog_config");
     if (generation.current !== generationAtStart) return;
     setCatalogStatus(cfg);
+    let catalogError = "";
     if (cfg.url?.replace(/\/$/, "") !== CATALOG_URL) {
-      if (cfg.environmentOverride) throw new Error("This agent overrides the Supercharge catalog. Remove its catalog URL environment override to use the catalog here.");
-      cfg = await rpc("plugins/catalog_configure", { url: CATALOG_URL });
+      if (cfg.environmentOverride) catalogError = "This agent overrides the Supercharge catalog. Remove its catalog URL environment override to use the catalog here.";
+      else cfg = await rpc("plugins/catalog_configure", { url: CATALOG_URL });
     }
-    const [p, c, a, s] = await Promise.all([rpc("plugins/list"), rpc("plugins/catalog").catch((e) => ({ plugins: [], error: e.message })), rpc("connections/list"), rpc("mcp/list")]);
+    const [p, c, a, s] = await Promise.all([rpc("plugins/list"), catalogError ? Promise.resolve({ plugins: [], error: catalogError }) : rpc("plugins/catalog").catch((e) => ({ plugins: [], error: e.message })), rpc("connections/list"), rpc("mcp/list")]);
     if (generation.current !== generationAtStart) return;
     setPlugins(p.plugins ?? []); setCatalog(c.plugins ?? []); setAccounts(a.accounts ?? []); setServers(s.servers ?? []); setCatalogStatus(cfg); setError(c.error ?? "");
   };
