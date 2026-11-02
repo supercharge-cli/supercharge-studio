@@ -1,0 +1,1 @@
+Brand marks: Simple Icons v16.36.0 (CC0 1.0, see LICENSE-simple-icons.md); Slack, Microsoft Learn, and Context7 favicons fetched from their respective official sites. Trademarks belong to their owners.

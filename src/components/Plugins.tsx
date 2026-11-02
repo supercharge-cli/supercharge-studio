@@ -1,12 +1,31 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Account, CatalogPlugin, Plugin, PluginRpc } from "../lib/plugins";
+import { Icon } from "./Icon";
+import "./plugins.css";
+
+const CATALOG_URL = "https://www.superchargeai.in/api/plugins/v1";
+const BRANDS: Record<string, { name: string; logo: string }> = Object.fromEntries([
+  ["atlassian", "Atlassian", "atlassian.svg"], ["cloudflare", "Cloudflare", "cloudflare.svg"],
+  ["cloudflare-agents", "Cloudflare Agents", "cloudflare.svg"], ["cloudflare-docs", "Cloudflare Docs", "cloudflare.svg"],
+  ["context7", "Context7", "context7.png"], ["github", "GitHub", "github.svg"], ["gitlab", "GitLab", "gitlab.svg"],
+  ["hubspot", "HubSpot", "hubspot.svg"], ["intercom", "Intercom", "intercom.svg"], ["linear", "Linear", "linear.svg"],
+  ["microsoft-learn", "Microsoft Learn", "microsoft-learn.ico"], ["notion", "Notion", "notion.svg"],
+  ["sentry", "Sentry", "sentry.svg"], ["slack", "Slack", "slack.ico"], ["stripe", "Stripe", "stripe.svg"],
+  ["supabase", "Supabase", "supabase.svg"],
+].map(([id, name, logo]) => [id, { name, logo }]));
+function brandName(name: string) { return BRANDS[name]?.name ?? name.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" "); }
+function PluginLogo({ name }: { name: string }) {
+  const logo = BRANDS[name]?.logo;
+  return <span className="plugin-logo" aria-hidden="true">{logo ? <img src={`/plugin-logos/${logo}`} alt="" /> : <Icon name="plug" size={21} />}</span>;
+}
 
 type Props = { rpc?: PluginRpc; target: string; connections?: boolean };
 export function Plugins({ rpc, target, connections = false }: Props) {
   const [plugins, setPlugins] = useState<Plugin[]>([]), [catalog, setCatalog] = useState<CatalogPlugin[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]), [servers, setServers] = useState<any[]>([]);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
-  const [catalogURL, setCatalogURL] = useState(""), [catalogToken, setCatalogToken] = useState("");
+  const [catalogToken, setCatalogToken] = useState(""), [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
   const [catalogStatus, setCatalogStatus] = useState<{ hasToken?: boolean; environmentOverride?: boolean }>({});
   const [details, setDetails] = useState<any>(null);
   const [source, setSource] = useState(""), [review, setReview] = useState<CatalogPlugin | null>(null);
@@ -18,13 +37,20 @@ export function Plugins({ rpc, target, connections = false }: Props) {
   const refresh = async () => {
     if (!rpc) return;
     const generationAtStart = generation.current;
-    const [p, c, a, s, cfg] = await Promise.all([rpc("plugins/list"), rpc("plugins/catalog").catch((e) => ({ plugins: [], error: e.message })), rpc("connections/list"), rpc("mcp/list"), rpc("plugins/catalog_config")]);
+    let cfg = await rpc("plugins/catalog_config");
     if (generation.current !== generationAtStart) return;
-    setPlugins(p.plugins ?? []); setCatalog(c.plugins ?? []); setAccounts(a.accounts ?? []); setServers(s.servers ?? []); setCatalogURL(cfg.url ?? "https://www.superchargeai.in/api/plugins/v1"); setCatalogStatus(cfg); if (c.error) setError(c.error);
+    setCatalogStatus(cfg);
+    if (cfg.url?.replace(/\/$/, "") !== CATALOG_URL) {
+      if (cfg.environmentOverride) throw new Error("This agent overrides the Supercharge catalog. Remove its catalog URL environment override to use the catalog here.");
+      cfg = await rpc("plugins/catalog_configure", { url: CATALOG_URL });
+    }
+    const [p, c, a, s] = await Promise.all([rpc("plugins/list"), rpc("plugins/catalog").catch((e) => ({ plugins: [], error: e.message })), rpc("connections/list"), rpc("mcp/list")]);
+    if (generation.current !== generationAtStart) return;
+    setPlugins(p.plugins ?? []); setCatalog(c.plugins ?? []); setAccounts(a.accounts ?? []); setServers(s.servers ?? []); setCatalogStatus(cfg); setError(c.error ?? "");
   };
   useLayoutEffect(() => {
-    generation.current++; setPlugins([]); setAccounts([]); setServers([]); setSecret(""); setCatalogToken(""); setConsent(""); setFlow(""); setError(""); setDetails(null);
-    void refresh().catch((e) => setError(String(e.message ?? e)));
+    const current = ++generation.current; setPlugins([]); setCatalog([]); setAccounts([]); setServers([]); setSecret(""); setCatalogToken(""); setConsent(""); setFlow(""); setError(""); setDetails(null); setLoading(true);
+    void refresh().catch((e) => { if (generation.current === current) setError(String(e.message ?? e)); }).finally(() => { if (generation.current === current) setLoading(false); });
     return () => { generation.current++; };
   }, [rpc, target]);
   useEffect(() => {
@@ -52,21 +78,39 @@ export function Plugins({ rpc, target, connections = false }: Props) {
     if (r.requiresReload) await rpc!("plugins/action", { action: { type: "reload" } });
   };
   if (!rpc) return <p className="muted">Connect to an updated Supercharge agent and select a project to manage plugins.</p>;
-  return <section aria-label={connections ? "Plugin connections" : "Plugins"}>
-    <p className="muted small">Target: <strong>{target}</strong>. Changes and credentials stay on this agent.</p>
+  const filtered = catalog.filter((p) => `${brandName(p.name)} ${p.name} ${p.description}`.toLowerCase().includes(query.trim().toLowerCase()));
+  return <section className="plugins-page" aria-label={connections ? "Plugin connections" : "Plugins"}>
+    <div className="plugins-toolbar">
+      <div><span className="plugins-target-label">AGENT TARGET</span><p className="plugins-target">{target}</p></div>
+      <button className="secondary compact" disabled={busy} onClick={() => void run(refresh)}><Icon name="refresh" size={14} /> Refresh</button>
+    </div>
     {error && <p role="alert" className="error-text">{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    <button className="secondary compact" disabled={busy} onClick={() => void run(refresh)}>Refresh</button>
     {!connections && <>
-      <h3>Plugin catalog API</h3><label>Catalog URL<input placeholder="https://www.superchargeai.in/api/plugins/v1" value={catalogURL} disabled={catalogStatus.environmentOverride} onChange={(e) => setCatalogURL(e.target.value)} /></label><label>Private catalog read token<input type="password" autoComplete="off" placeholder={catalogStatus.hasToken ? "Saved on agent · leave blank to keep" : "Optional for public plugins"} value={catalogToken} disabled={catalogStatus.environmentOverride} onChange={(e) => setCatalogToken(e.target.value)} /></label><p className="muted small">{catalogStatus.environmentOverride ? "Configured by the agent environment. Change that override on the agent host." : "The endpoint and read token are saved on the selected agent. Use a catalog read token, not your website administrator key."}</p><div className="row"><button disabled={busy || !catalogURL || catalogStatus.environmentOverride} className="secondary" onClick={() => void run(async () => { const token = catalogToken; setCatalogToken(""); await rpc!("plugins/catalog_configure", { url: catalogURL, token: token || undefined }); setNotice("Catalog settings saved on this agent."); })}>Connect catalog</button><button disabled={busy || catalogStatus.environmentOverride} className="secondary" onClick={() => void run(async () => { await rpc!("plugins/catalog_configure", { clear: true }); })}>Use built-in catalog</button></div>
-      <h3>Available plugins</h3>
-      {catalog.map((p) => <div className="card" key={p.name}><strong>{p.name} · {p.version}</strong><p>{p.description}</p><p className="muted small">{p.endpoint} · {p.authentication === "none" ? "No account required" : "Connect your account after installation"}</p><button disabled={busy} className="secondary" onClick={() => setReview(p)}>Review installation</button></div>)}
+      <div className="plugins-intro"><div><h3>Discover plugins</h3><p>Give your agent new tools and skills from the Supercharge catalog.</p></div><span className="plugins-count">{catalog.length} available</span></div>
+      <label className="plugins-search"><Icon name="search" size={17} /><input aria-label="Search plugins" placeholder="Search plugins…" value={query} onChange={(e) => setQuery(e.target.value)} /></label>
       {review && <div className="card" role="region" aria-label="Review plugin installation"><h3>Install {review.name}</h3><p>This package adds workflow instructions and tools from {review.endpoint}. Installation does not sign you in.</p><p>Review the endpoint and enable only tools you trust.</p><button disabled={busy} onClick={() => void run(async () => { const installed = plugins.find((p) => p.name === review.name); await action(installed ? { type: "update", plugin_id: installed.id } : { type: "install", source: review.source }); setReview(null); })}>Install package</button> <button className="secondary" onClick={() => setReview(null)}>Cancel</button></div>}
       {details && <div className="card" role="region" aria-label="Review plugin activation"><h3>Enable {details.plugin.name}</h3><p>Skills: {(details.plugin.skillNames ?? []).join(", ") || "None"}. Hooks: {details.hooks}.</p>{details.servers.map((s: any) => <p key={s.name}>{s.name}: {s.endpoint ?? `${s.command} ${(s.arguments ?? []).join(" ")}`} · {s.permission}</p>)}<p>Enabled plugins can run these tools and hooks under the agent's permission policy.</p><button disabled={busy} onClick={() => void run(async () => { await action({ type: "enable", plugin_id: details.plugin.id }); setDetails(null); })}>Enable reviewed plugin</button> <button className="secondary" onClick={() => setDetails(null)}>Cancel</button></div>}
-      <h3>Install from source</h3><label>Git URL or path on this agent<input value={source} onChange={(e) => setSource(e.target.value)} /></label><p className="muted small">Only install packages you have reviewed. Plugins may contain executable tools and hooks.</p><button disabled={busy || !source.trim()} onClick={() => void run(async () => { await action({ type: "install", source: source.trim() }); setSource(""); })}>Install reviewed source</button>
-      <h3>Installed plugins</h3>
+      <div className="plugins-list-head"><h4>Available plugins</h4><span>Review before installing</span></div>
+      {loading ? <p className="muted">Loading plugins…</p> : !filtered.length ? <div className="plugins-empty">{query ? "No plugins match your search." : "No plugins available. Check your catalog access below and refresh."}</div> :
+      <div className="plugins-grid">{filtered.map((p) => {
+        const installed = plugins.find((item) => item.name === p.name);
+        return <article className="plugin-tile" key={p.name} data-testid={`catalog-plugin-${p.name}`}>
+          <div className="plugin-tile-head"><PluginLogo name={p.name} /><span className={`plugin-badge${installed?.enabled ? " is-enabled" : ""}`}>{installed ? (installed.enabled ? "Enabled" : "Installed") : (p.authentication === "none" ? "No sign-in" : "Account required")}</span></div>
+          <div className="plugin-tile-copy"><h4>{brandName(p.name)}</h4><p>{p.description}</p></div>
+          <div className="plugin-tile-bottom"><span>v{p.version}</span><button disabled={busy} className="secondary compact" onClick={() => setReview(p)}>{installed ? "Review update" : "Review installation"}</button></div>
+        </article>;
+      })}</div>}
+      <details className="plugins-access"><summary><span>Catalog access</span><span className="muted small">{catalogStatus.hasToken ? "Token saved" : "Private catalog token"}</span></summary>
+        <div className="plugins-access-body"><p className="muted small">Catalog: <strong>{CATALOG_URL}</strong>. Access is configured on the selected agent.</p>
+        <label>Private catalog read token<input type="password" autoComplete="off" placeholder={catalogStatus.hasToken ? "Saved on agent · leave blank to keep" : "Enter your catalog read token"} value={catalogToken} disabled={catalogStatus.environmentOverride} onChange={(e) => setCatalogToken(e.target.value)} /></label>
+        <p className="muted small">Use a catalog read token, not your website administrator password. {catalogStatus.environmentOverride ? "The agent environment controls this setting." : "The token stays on this agent."}</p>
+        <button disabled={busy || !catalogToken.trim() || catalogStatus.environmentOverride} className="secondary" onClick={() => void run(async () => { const token = catalogToken; setCatalogToken(""); await rpc!("plugins/catalog_configure", { url: CATALOG_URL, token }); setNotice("Catalog access saved on this agent."); })}>Save catalog access</button></div>
+      </details>
+      <details className="plugins-access"><summary><span>Install from source</span><span className="muted small">Git or local path</span></summary><div className="plugins-access-body"><label>Git URL or path on this agent<input value={source} onChange={(e) => setSource(e.target.value)} /></label><p className="muted small">Only install packages you have reviewed. Plugins may contain executable tools and hooks.</p><button disabled={busy || !source.trim()} onClick={() => void run(async () => { await action({ type: "install", source: source.trim() }); setSource(""); })}>Install reviewed source</button></div></details>
+      <div className="plugins-list-head installed-head"><h4>Installed plugins</h4><span>{plugins.length} installed</span></div>
       {!plugins.length && <p className="muted">No plugins found on this agent.</p>}
-      {plugins.map((p) => <div className="card" key={p.id}><strong>{p.name} {p.version}</strong><p>{p.description}</p><p className="muted small">{p.enabled ? "Enabled" : "Disabled"} · {p.trusted ? "Trusted" : "Awaiting trust"} · {p.mcpServerCount} tool servers · {(p.skillNames ?? []).join(", ")}</p><div className="row"><button disabled={busy} className="secondary" onClick={() => void run(async () => { if (p.enabled) await action({ type: "disable", plugin_id: p.id }); else setDetails(await rpc!("plugins/details", { id: p.id })); })}>{p.enabled ? "Disable" : "Enable"}</button><button disabled={busy} className="secondary" onClick={() => void run(() => action({ type: "update", plugin_id: p.id }))}>Update</button><button disabled={busy} className="secondary" onClick={() => void run(() => action({ type: "uninstall", plugin_id: p.id, confirmed: false }))}>Uninstall</button></div></div>)}
+      {plugins.map((p) => <div className="card" key={p.id}><div className="plugin-installed-title"><PluginLogo name={p.name} /><strong>{brandName(p.name)} {p.version}</strong></div><p>{p.description}</p><p className="muted small">{p.enabled ? "Enabled" : "Disabled"} · {p.trusted ? "Trusted" : "Awaiting trust"} · {p.mcpServerCount} tool servers · {(p.skillNames ?? []).join(", ")}</p><div className="row"><button disabled={busy} className="secondary" onClick={() => void run(async () => { if (p.enabled) await action({ type: "disable", plugin_id: p.id }); else setDetails(await rpc!("plugins/details", { id: p.id })); })}>{p.enabled ? "Disable" : "Enable"}</button><button disabled={busy} className="secondary" onClick={() => void run(() => action({ type: "update", plugin_id: p.id }))}>Update</button><button disabled={busy} className="secondary" onClick={() => void run(() => action({ type: "uninstall", plugin_id: p.id, confirmed: false }))}>Uninstall</button></div></div>)}
     </>}
     {connections && <>
       <h3>Configure an account</h3>

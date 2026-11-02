@@ -8,7 +8,7 @@ export function fakePlugins() {
     switch (method) {
       case "_supercharge/plugins/catalog_config": return ok(catalogConfig);
       case "_supercharge/plugins/catalog_configure": catalogConfig = p.clear ? { url: null, hasToken: false } : { url: p.url, hasToken: !!p.token }; return ok(catalogConfig);
-      case "_supercharge/plugins/catalog": return ok({ plugins: [{ name: "github", version: "1.0.0", source: "starter:github", endpoint: "https://api.githubcopilot.com/mcp/", authentication: "oauth_or_bearer", description: "GitHub repository tools and release briefs" }, { name: "microsoft-learn", version: "1.0.0", source: "starter:microsoft-learn", endpoint: "https://learn.microsoft.com/api/mcp", authentication: "none", description: "Research official Microsoft documentation" }] });
+      case "_supercharge/plugins/catalog": if (catalogConfig.url !== "https://www.superchargeai.in/api/plugins/v1") return { error: "Catalog URL not configured" }; return ok({ plugins: [{ name: "github", version: "1.0.0", source: "starter:github", endpoint: "https://api.githubcopilot.com/mcp/", authentication: "oauth_or_bearer", description: "GitHub repository tools and release briefs" }, { name: "microsoft-learn", version: "1.0.0", source: "starter:microsoft-learn", endpoint: "https://learn.microsoft.com/api/mcp", authentication: "none", description: "Research official Microsoft documentation" }] });
       case "_supercharge/plugins/details": return ok({ plugin: plugins.find((plugin) => plugin.id === p.id), servers: [{ name: "github", endpoint: "https://api.githubcopilot.com/mcp/", permission: "remote_service_access" }], hooks: 0 });
       case "_supercharge/plugins/list": return ok({ plugins });
       case "_supercharge/plugins/action": {
