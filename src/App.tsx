@@ -1101,7 +1101,7 @@ export default function App() {
     update((d) => ({ ...d, settings: { ...d.settings, lastModel: value, ...(!listed && { customModels: rememberCustom(d.settings.customModels, value, name) }) } }));
     if (m) setFallbackModel((all) => ({ ...all, [sid]: { ...m, currentValue: value, options: mergeCustom(m.options ?? [], listed ? [] : [{ id: value, name }], value) } }));
     try {
-      if (m?.source === "session" && listed) await c.request("session/set_model", { sessionId: sid, modelId: value });
+      if (m?.source === "session" && listed) { const eff = reasoningOption(optionsRef.current[sid])?.currentValue ?? dataRef.current.settings.lastEffort; await c.request("session/set_model", { sessionId: sid, modelId: value, ...(eff ? { _meta: { reasoningEffort: eff === "off" ? "none" : eff } } : {}) }); }
       else {
         const { pickSetup, saveSetupModel, saveCustomModel } = await setupLib();
         const api = pickSetup(c);
