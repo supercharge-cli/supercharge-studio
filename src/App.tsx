@@ -11,7 +11,7 @@ const CliSetup = lazy(() => import("./screens").then((m) => ({ default: m.CliSet
 import type { Command } from "./components/CommandPalette";
 const CommandPalette = lazy(() => import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })));
 import { ComposerMenu } from "./components/ComposerMenu";
-import { effortToApply, optionFor, reasoningOption, shownModel, updateSessionOptions } from "./lib/sessionOptions";
+import { effortToApply, optionFor, reasoningOption, setModelRequest, shownModel, updateSessionOptions } from "./lib/sessionOptions";
 import { providerCatalogKey } from "./lib/catalog";
 import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./lib/composer";
 import { resolveTheme, themeList } from "./lib/themes";
@@ -1101,7 +1101,7 @@ export default function App() {
     update((d) => ({ ...d, settings: { ...d.settings, lastModel: value, ...(!listed && { customModels: rememberCustom(d.settings.customModels, value, name) }) } }));
     if (m) setFallbackModel((all) => ({ ...all, [sid]: { ...m, currentValue: value, options: mergeCustom(m.options ?? [], listed ? [] : [{ id: value, name }], value) } }));
     try {
-      if (m?.source === "session" && listed) { const eff = reasoningOption(optionsRef.current[sid])?.currentValue ?? dataRef.current.settings.lastEffort; await c.request("session/set_model", { sessionId: sid, modelId: value, ...(eff ? { _meta: { reasoningEffort: eff === "off" ? "none" : eff } } : {}) }); }
+      if (m?.source === "session" && listed) { const req = setModelRequest(sid, value, optionsRef.current[sid], dataRef.current.settings.lastEffort); await c.request(req.method, req.params); }
       else {
         const { pickSetup, saveSetupModel, saveCustomModel } = await setupLib();
         const api = pickSetup(c);

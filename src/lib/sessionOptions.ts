@@ -50,6 +50,15 @@ export function reasoningOption(options: ConfigOption[] | undefined): ConfigOpti
   };
 }
 
+/**
+ * `session/set_model` params. `_meta.reasoningEffort` comes from the chat's current
+ * reasoning option, else `lastEffort`. `off` is sent as `none`. Omit `_meta` when neither is set.
+ */
+export function setModelRequest(sessionId: string, modelId: string, options: ConfigOption[] | undefined, lastEffort: string | undefined): { method: "session/set_model"; params: { sessionId: string; modelId: string; _meta?: { reasoningEffort: string } } } {
+  const eff = reasoningOption(options)?.currentValue ?? lastEffort;
+  return { method: "session/set_model", params: { sessionId, modelId, ...(eff ? { _meta: { reasoningEffort: eff === "off" ? "none" : eff } } : {}) } };
+}
+
 /** Wire value to send so a session matches the level the user last picked, or undefined when nothing should change. */
 export function effortToApply(options: ConfigOption[] | undefined, last: string | undefined): string | undefined {
   const r = reasoningOption(options);
