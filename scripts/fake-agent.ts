@@ -260,6 +260,10 @@ wss.on("connection", (ws: WebSocket) => {
             await sleep(30);
           }
         }
+        if (/plan review/.test(text)) {
+          const r = await call("_supercharge/exit_plan_mode", { sessionId: sid, planContent: "# Release plan\n\n## Goal\n\nShip a **safe** release.\n\n- Check tests\n- Review changes" });
+          say(sid, `Plan outcome: ${r.result?.outcome}${r.result?.feedback ? `: ${r.result.feedback}` : ""}`);
+        }
         if (/tool/.test(text)) {
           update(sid, { sessionUpdate: "tool_call", toolCallId: "t1", title: "Run ls -la", kind: "execute", status: "pending" });
           await sleep(50);

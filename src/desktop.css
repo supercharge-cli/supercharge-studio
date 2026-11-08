@@ -29,6 +29,23 @@
 .urlbar input{border:0;padding:7px 0;background:none}
 .webslot{flex:1;position:relative;background:#fff}.webslot iframe{border:0;width:100%;height:100%}
 .plan-panel{overflow:auto;padding:16px;flex:1}.plan-panel ol{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:4px}.plan-step{display:flex;gap:10px;align-items:flex-start;padding:10px 7px;border-radius:9px;font-size:13px;overflow-wrap:anywhere}.plan-step.in_progress{background:var(--hover)}.plan-step.completed{color:var(--muted)}.plan-mark{display:grid;place-items:center;flex:none;width:22px;height:22px;border:1px solid var(--line);border-radius:7px;color:var(--muted);font-size:11px}.plan-step.completed .plan-mark{color:var(--ok);border-color:var(--ok)}.plan-step>div{display:flex;flex-direction:column;gap:3px;min-width:0}.plan-step small{font-size:11px;color:var(--muted);text-transform:capitalize}
+.plan-pending-dot{width:7px;height:7px;border-radius:50%;background:var(--plan-accent);margin-left:1px}
+.plan-review{display:flex;flex:1;min-height:0;flex-direction:column}
+.plan-review-scroll{flex:1;min-height:0;overflow:auto;padding:24px 24px 32px}
+.plan-review-intro{padding-bottom:20px;border-bottom:1px solid var(--line)}
+.plan-review-intro h2{margin:10px 0 4px;font-size:20px;line-height:1.25;letter-spacing:-.02em}
+.plan-review-intro p{margin:0;color:var(--muted);font-size:13px}
+.plan-review-status{display:inline-flex;align-items:center;gap:7px;color:var(--plan-accent);font-size:11px;font-weight:650;letter-spacing:.035em;text-transform:uppercase}
+.plan-review-status span{width:7px;height:7px;background:currentColor;border-radius:50%}
+.plan-document{padding:20px 0;color:var(--fg);font-size:13.5px;line-height:1.65;overflow-wrap:anywhere}
+.plan-document .md-h:first-child{margin-top:0}.plan-document .md-h{line-height:1.35}.plan-document .md-codewrap,.plan-document .md-tablewrap{max-width:100%;overflow:auto}
+.plan-review-empty{color:var(--muted)}
+.plan-review-actions{flex:none;padding:14px 20px 18px;border-top:1px solid var(--line);background:var(--panel)}
+.plan-review-buttons{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.plan-review-buttons button{justify-content:center}
+.plan-feedback{display:flex;flex-direction:column;gap:7px;margin-bottom:12px;color:var(--fg);font-size:12px;font-weight:600}
+.plan-feedback textarea{resize:vertical;min-height:74px;max-height:180px;font-weight:400}.plan-feedback textarea:focus{border-color:var(--plan-accent)}
+.plan-review-buttons .plan-abandon{margin-left:auto}
+@media(max-width:720px){.app.with-panel{grid-template-columns:auto 1fr}.app.with-panel .rpanel{position:fixed;z-index:20;inset:0 0 0 auto;width:min(100%,480px)}.plan-review-scroll{padding:20px}}
 /* command palette */
 .palette-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);backdrop-filter:blur(2px);display:flex;justify-content:center;align-items:flex-start;padding-top:12vh;z-index:50;animation:fade .12s ease both}
 .palette{width:min(620px,92vw);background:var(--raise);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;animation:pop .16s var(--ease) both}

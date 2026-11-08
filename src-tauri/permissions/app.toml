@@ -11,4 +11,5 @@ commands.allow = [
   "term_open", "term_write", "term_resize", "term_close", "pick_folder",
   "update_download", "update_restart",
   "telemetry_get", "telemetry_set", "telemetry_js_error", "telemetry_event",
+  "setup_status", "setup_models", "setup_save", "setup_device_start", "setup_device_poll", "setup_device_cancel", "setup_open",
 ]

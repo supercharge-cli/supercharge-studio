@@ -6,6 +6,7 @@ const COMMANDS: &[&str] = &[
     "fs_list", "fs_read_text",
     "background_get", "background_set", "upload_chunk", "upload_rewrite", "gateway_firewall_allow",
     "telemetry_get", "telemetry_set", "telemetry_js_error", "telemetry_event",
+    "setup_status", "setup_models", "setup_save", "setup_device_start", "setup_device_poll", "setup_device_cancel", "setup_open",
 ];
 
 fn main() {

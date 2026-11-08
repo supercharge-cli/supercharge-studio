@@ -129,6 +129,48 @@ test("streams a reply with thought and plan", async ({ page }) => {
   await expect(page.getByTestId("chat-title").first()).toHaveText("stream please");
 });
 
+test("reviews a rendered plan in the sidebar and sends requested changes", async ({ page }) => {
+  await boot(page);
+  await ask(page, "plan review");
+  const review = page.getByTestId("plan-approval");
+  await expect(review).toBeVisible();
+  await expect(review.locator(".md-h1")).toHaveText("Release plan");
+  await expect(review.locator("strong")).toHaveText("safe");
+  await expect(page.locator(".modal-bg")).toHaveCount(0);
+  await expect(page.locator(".composer textarea")).toBeVisible();
+  await page.screenshot({ path: "/tmp/supercharge-plan-review.png" });
+  await page.setViewportSize({ width: 680, height: 800 });
+  await expect(page.getByTestId("plan-approve")).toBeInViewport();
+  await page.screenshot({ path: "/tmp/supercharge-plan-review-narrow.png" });
+  await page.getByTestId("plan-revise").click();
+  await expect(page.getByTestId("plan-revise")).toBeDisabled();
+  await page.getByTestId("plan-feedback").fill("Add a rollback step");
+  await page.getByTestId("plan-revise").click();
+  await expect(page.locator(".bubble.agent").last()).toContainText("Plan outcome: cancelled: Add a rollback step");
+  await expect(review).toHaveCount(0);
+});
+
+test("plan approval stays with its chat and returns the chosen outcome", async ({ page }) => {
+  await boot(page);
+  await ask(page, "plan review");
+  await expect(page.getByTestId("plan-approval")).toBeVisible();
+  await page.getByTestId("new-chat").first().click();
+  await ask(page, "other chat");
+  await expect(page.getByTestId("plan-approval")).toHaveCount(0);
+  await page.getByTestId("chat").filter({ hasText: "plan review" }).click();
+  await expect(page.getByTestId("plan-approval")).toBeVisible();
+  await page.getByTestId("plan-approve").click();
+  await expect(page.locator(".bubble.agent").last()).toContainText("Plan outcome: approved");
+});
+
+test("a plan can be abandoned from the sidebar", async ({ page }) => {
+  await boot(page);
+  await ask(page, "plan review");
+  await expect(page.getByTestId("plan-approval")).toBeVisible();
+  await page.getByTestId("plan-abandon").click();
+  await expect(page.locator(".bubble.agent").last()).toContainText("Plan outcome: abandoned");
+});
+
 test("renders tool cards in chat without a tools tab", async ({ page }) => {
   await boot(page);
   await ask(page, "tool run");
@@ -148,11 +190,14 @@ test("mode chip above the composer changes only the selected chat", async ({ pag
   await expect(page.getByTestId("mode-menu")).toContainText("Plan");
   await page.getByTestId("mode-plan").click();
   await expect(page.getByTestId("mode-trigger")).toContainText("Plan");
+  await expect(page.getByTestId("mode-trigger")).toHaveAttribute("data-mode", "plan");
+  await expect(page.locator(".composer")).toHaveClass(/is-planning/);
   await page.getByTestId("mode-trigger").click();
   await page.getByTestId("mode-permission-ask").click();
   await expect(page.getByTestId("mode-trigger")).toContainText("Ask");
   await page.getByTestId("new-chat").first().click();
   await expect(page.getByTestId("mode-trigger")).toContainText("Agent");
+  await expect(page.locator(".composer")).not.toHaveClass(/is-planning/);
   await ask(page, "second chat");
   await expect(page.getByTestId("mode-trigger")).toContainText("Agent");
   await page.getByTestId("chat").filter({ hasText: "first chat" }).click();

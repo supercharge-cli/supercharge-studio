@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-setup-device-start"
+description = "Enables the setup_device_start command without any pre-configured scope."
+commands.allow = ["setup_device_start"]
+
+[[permission]]
+identifier = "deny-setup-device-start"
+description = "Denies the setup_device_start command without any pre-configured scope."
+commands.deny = ["setup_device_start"]

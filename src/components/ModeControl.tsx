@@ -28,7 +28,7 @@ export function ModeControl({ modes, currentMode, permission, onMode, onPermissi
     try { await action(); setOpen(false); } catch { /* Keep the menu open; the caller reports the error. */ } finally { setPending(false); }
   };
   return <div className="mode-anchor" ref={anchor} onKeyDown={(e) => { if (e.key === "Escape") { setOpen(false); e.stopPropagation(); } }}>
-    <button className="mode-trigger" data-testid="mode-trigger" type="button" aria-label={`Chat mode: ${modeLabel}${permissionLabel ? `, permissions: ${permissionLabel}` : ""}`} aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((x) => !x)}>
+    <button className="mode-trigger" data-mode={modeId ?? "default"} data-testid="mode-trigger" type="button" aria-label={`Chat mode: ${modeLabel}${permissionLabel ? `, permissions: ${permissionLabel}` : ""}`} aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((x) => !x)}>
       {modeLabel}{permissionLabel && <> · {permissionLabel}</>} <Icon name="chevronDown" size={12} />
     </button>
     {open && <div className="mode-menu" data-testid="mode-menu" role="dialog" aria-label="Chat mode">

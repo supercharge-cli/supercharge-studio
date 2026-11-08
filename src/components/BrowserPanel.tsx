@@ -2,7 +2,8 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "re
 import { browser } from "../browser/bridge";
 import { isDesktop, listen } from "../lib/desktop";
 import { browserVisible, scanDocument, useOverlayCount } from "../browser/visibility";
-import type { PlanEntry } from "../acp/types";
+import type { PlanApprovalResult, PlanEntry } from "../acp/types";
+import { PlanApproval } from "./PlanApproval";
 import { FilesPane } from "./FilesPane";
 import { Icon } from "./Icon";
 // Computer / dev / design mode UI loads when first used.
@@ -20,7 +21,7 @@ import { git, gitAvailable } from "../lib/git";
 type PanelTab = "browser" | "plan" | "terminal" | "files" | "changes";
 
 /** Right panel: browser, plan, project files, and one or more local terminals. */
-export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: PlanEntry[]; sessionId?: string; cwd?: string; focus?: { tab: PanelTab; n: number } | null; onClose: () => void }) {
+export function BrowserPanel({ plan, approval, sessionId, cwd, focus, onClose }: { plan: PlanEntry[]; approval?: { plan: string; onAnswer: (result: PlanApprovalResult) => void } | null; sessionId?: string; cwd?: string; focus?: { tab: PanelTab; n: number } | null; onClose: () => void }) {
   const slot = useRef<HTMLDivElement>(null);
   const [url, setUrl] = useState(browser.url === "about:blank" ? "https://superchargeai.in" : browser.url);
   const [tab, setTab] = useState<PanelTab>(focus?.tab ?? "browser");
@@ -185,7 +186,7 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
     <aside className="rpanel" ref={aside}>
       <div className="tabs">
         <button className={tab === "browser" ? "on" : ""} onClick={() => { setPicker(false); setTab("browser"); }}><Icon name="globe" size={14} /> Browser</button>
-        <button data-testid="plan-tab" className={tab === "plan" ? "on" : ""} onClick={() => { setPicker(false); setTab("plan"); }}><Icon name="file" size={14} /> Plan{plan.length ? ` (${plan.length})` : ""}</button>
+        <button data-testid="plan-tab" className={tab === "plan" ? "on" : ""} onClick={() => { setPicker(false); setTab("plan"); }}><Icon name="file" size={14} /> Plan{approval ? <span className="plan-pending-dot" aria-label="Review pending" /> : plan.length ? ` (${plan.length})` : ""}</button>
         {gitAvailable() && <button data-testid="changes-tab" className={tab === "changes" ? "on" : ""} onClick={() => { setPicker(false); setTab("changes"); }}><Icon name="code" size={14} /> Changes{nChanges ? <span className="tab-badge" data-testid="changes-badge">{nChanges}</span> : null}</button>}
         {isDesktop() && <button data-testid="files-tab" className={tab === "files" ? "on" : ""} onClick={() => { setPicker(false); setTab("files"); }}><Icon name="folder" size={14} /> File tree</button>}
         {isDesktop() && terms.map((t) => (
@@ -253,7 +254,7 @@ export function BrowserPanel({ plan, sessionId, cwd, focus, onClose }: { plan: P
           <Suspense fallback={null}>{dev && <DevDrawer />}</Suspense>
         </>
       ) : (
-        <div className="plan-panel" data-testid="plan-panel">
+        approval ? <PlanApproval key={`${sessionId}-${approval.plan}`} plan={approval.plan} onAnswer={approval.onAnswer} /> : <div className="plan-panel" data-testid="plan-panel">
           {plan.length === 0 ? <div className="empty small"><Icon name="file" size={22} /><p>The agent's plan for this chat will appear here.</p></div> :
             <ol>{plan.map((entry, index) => <li key={`${index}-${entry.content}`} className={`plan-step ${entry.status}`}><span className="plan-mark">{entry.status === "completed" ? <Icon name="check" size={13} /> : index + 1}</span><div><span>{entry.content}</span><small>{(entry.status ?? "pending").replaceAll("_", " ")}</small></div></li>)}</ol>}
         </div>

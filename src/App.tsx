@@ -34,7 +34,6 @@ import { Icon } from "./components/Icon";
 import { Markdown } from "./components/Markdown";
 import { PermissionModal } from "./components/Permission";
 import { LogoMark } from "./components/LogoMark";
-const PlanApprovalModal = lazy(() => import("./screens").then((m) => ({ default: m.PlanApprovalModal })));
 import { Sidebar } from "./components/Sidebar";
 import { ToolCard } from "./components/ToolCard";
 import { VirtualList } from "./components/VirtualList";
@@ -107,7 +106,6 @@ export default function App() {
   const [permQueue, setPermQueue] = useState<PermState[]>([]);
   const perm = permQueue[0] ?? null;
   const [planQueue, setPlanQueue] = useState<PlanAsk[]>([]);
-  const planAsk = planQueue[0] ?? null;
   const [pairReq, setPairReq] = useState<{ pairingId: string; name: string } | null>(null);
   const [devicesOnline, setDevicesOnline] = useState(0);
   const [optionsBySession, setOptionsBySession] = useState<Record<string, ConfigOption[]>>({});
@@ -170,7 +168,6 @@ export default function App() {
   useBrowserOverlay(palette);
   useBrowserOverlay(!!pairReq);
   useBrowserOverlay(!!perm);
-  useBrowserOverlay(!!planAsk);
   useEffect(() => {
     if (!isDesktop()) return;
     void cliStatus(true).then((st) => {
@@ -462,8 +459,6 @@ export default function App() {
       onPlanApproval: (req) =>
         new Promise((resolve) => {
           notifyEv("permission", { sessionId: (req as any).sessionId }, "A plan is waiting for your approval");
-          setPanel(true);
-          setPanelPick({ tab: "plan", n: Date.now() });
           setPlanQueue((pending) => [...pending, { req, resolve }]);
         }),
       onPermissionRequest: (req) =>
@@ -659,6 +654,12 @@ export default function App() {
 
   const active = findProject(data, data.activeProjectId);
   const activeChat = active?.project.chats.find((c) => c.id === data.activeChatId);
+  const planAsk = planQueue.find((item) => item.req.sessionId === activeChat?.sessionId) ?? null;
+  useEffect(() => {
+    if (!planAsk) return;
+    setPanel(true);
+    setPanelPick({ tab: "plan", n: Date.now() });
+  }, [planAsk, activeChat?.sessionId]);
   const configOptions = activeChat?.sessionId ? optionsBySession[activeChat.sessionId] ?? [] : [];
   const sess = (activeChat && sessions[activeChat.id]) || emptySession();
 
@@ -1727,7 +1728,7 @@ export default function App() {
                 {attErr && <span className="error-text small" data-testid="attach-error">{attErr}</span>}
               </div>
             )}
-            <div className="composer">
+            <div className={`composer${(sess.modeId ?? sessionModes?.currentModeId) === "plan" ? " is-planning" : ""}`}>
               <input ref={fileInput} type="file" multiple hidden accept="*/*" data-testid="attach-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
               <button className="icon attach" data-testid="attach" aria-label="Attach files" title="Attach files (or drop / paste them)" disabled={conn !== "open" || !active} onClick={() => fileInput.current?.click()}><Icon name="clip" /></button>
               <textarea
@@ -1766,7 +1767,7 @@ export default function App() {
           </div>
         </main>
       )}
-      {view === "chat" && panel && <Suspense fallback={null}><BrowserPanel plan={sess.plan} sessionId={activeChat?.sessionId} cwd={active?.project.cwd} focus={panelPick} onClose={() => setPanel(false)} /></Suspense>}
+      {view === "chat" && panel && <Suspense fallback={null}><BrowserPanel plan={sess.plan} approval={planAsk && { plan: planAsk.req.planContent ?? "", onAnswer: (result) => { planAsk.resolve(result); setPlanQueue((pending) => pending.filter((item) => item !== planAsk)); } }} sessionId={activeChat?.sessionId} cwd={active?.project.cwd} focus={panelPick} onClose={() => setPanel(false)} /></Suspense>}
       {palette && <Suspense fallback={null}><CommandPalette commands={paletteCommands} onClose={() => setPalette(false)} searchChats={searchChats} onHit={openHit} /></Suspense>}
       {pairReq && (
         <div className="modal-bg">
@@ -1781,15 +1782,6 @@ export default function App() {
         </div>
       )}
       {perm && <PermissionModal req={perm.req} onAnswer={(o) => perm.resolve(o)} />}
-      {planAsk && (<Suspense fallback={null}>
-        <PlanApprovalModal
-          plan={planAsk.req.planContent ?? ""}
-          onAnswer={(r) => {
-            planAsk.resolve(r);
-            setPlanQueue((pending) => pending.slice(1));
-          }}
-        />
-      </Suspense>)}
     </div>
     </>
   );

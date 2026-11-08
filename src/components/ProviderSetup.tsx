@@ -5,7 +5,7 @@ import { Icon } from "./Icon";
 import "./provider-setup.css";
 
 type Step = "provider" | "url" | "format" | "key" | "device" | "busy" | "error" | "model" | "custom" | "done";
-const TITLE: Record<Step, string> = { provider: "choose provider", url: "base URL", format: "API format", key: "API key", device: "Nous Portal login", busy: "working", error: "error", model: "choose model", custom: "custom model id", done: "saved" };
+const TITLE: Record<Step, string> = { provider: "Choose a provider", url: "Base URL", format: "API format", key: "API key", device: "Nous Portal", busy: "Working", error: "Could not continue", model: "Choose a model", custom: "Custom model", done: "Saved" };
 
 /**
  * The CLI's `/setup` wizard: provider → (base URL) → API format → API key → model, or the
@@ -93,14 +93,14 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
     <div className="psetup" data-testid="provider-setup">
       <div className="psetup-head">
         {back[step] && step !== "busy" && <button className="icon" aria-label="Back" data-testid="setup-back" onClick={() => { gen.current++; if (step === "device") void api.deviceCancel().catch(() => {}); go(back[step]!); }}><Icon name="arrowLeft" size={15} /></button>}
-        <b>Provider setup · {TITLE[step]}</b>
+        <h3>{TITLE[step]}</h3>
         <span className="spacer" />
         {onClose && <button className="icon" aria-label="Close" onClick={onClose}><Icon name="x" size={15} /></button>}
       </div>
-      {current && step === "provider" && <p className="muted small" data-testid="setup-current">Current: {current}</p>}
+      {current && step === "provider" && <p className="psetup-current" data-testid="setup-current">Using {current}</p>}
 
       {step === "provider" && <>
-        <input autoFocus data-testid="setup-filter" placeholder="type to filter providers" value={filter} onChange={(e) => { setFilter(e.target.value); setSel(0); }} onKeyDown={listKeys(providers.length, () => providers[sel] && choose(providers[sel]))} />
+        <input autoFocus data-testid="setup-filter" placeholder="Search providers" value={filter} onChange={(e) => { setFilter(e.target.value); setSel(0); }} onKeyDown={listKeys(providers.length, () => providers[sel] && choose(providers[sel]))} />
         <div className="psetup-list" role="listbox" aria-label="Providers">
           {providers.map((p, i) => (
             <button key={p.id} role="option" aria-selected={i === sel} className={`psetup-row ${i === sel ? "on" : ""} ${p.id === "pollinations" ? "rec" : ""}`} data-testid={`setup-p-${p.id}`} onMouseEnter={() => setSel(i)} onClick={() => choose(p)}>
@@ -164,7 +164,7 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
       </div>}
 
       {step === "model" && <>
-        <input autoFocus data-testid="setup-model-filter" placeholder="type to filter models" value={filter} onChange={(e) => { setFilter(e.target.value); setSel(0); }} onKeyDown={listKeys(shownModels.length, () => shownModels[sel] && pickModel(shownModels[sel]))} />
+        <input autoFocus data-testid="setup-model-filter" placeholder="Search models" value={filter} onChange={(e) => { setFilter(e.target.value); setSel(0); }} onKeyDown={listKeys(shownModels.length, () => shownModels[sel] && pickModel(shownModels[sel]))} />
         <div className="psetup-list" role="listbox" aria-label="Models">
           {shownModels.map((m, i) => (
             <button key={m.id} role="option" aria-selected={i === sel} className={`psetup-row ${i === sel ? "on" : ""}`} data-testid="setup-model" onMouseEnter={() => setSel(i)} onClick={() => pickModel(m)}>

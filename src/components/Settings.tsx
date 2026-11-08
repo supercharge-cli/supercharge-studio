@@ -177,20 +177,30 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
         )}
 
         {tab === "providers" && (
-          <div className="stack">
+          <div className="stack prov-page">
             {setup ? (
-              <div className="card" data-testid="setup-card"><Suspense fallback={<p className="muted">Loading…</p>}><ProviderSetup api={setup} sessionId={props.sessionId} open={props.openUrl ?? ((u) => window.open(u, "_blank"))} onSaved={(st) => { set({ ...s, activeProviderId: undefined }); props.onSetupSaved?.(st); }} /></Suspense></div>
+              <div data-testid="setup-card"><Suspense fallback={<p className="muted">Loading…</p>}><ProviderSetup api={setup} sessionId={props.sessionId} open={props.openUrl ?? ((u) => window.open(u, "_blank"))} onSaved={(st) => { set({ ...s, activeProviderId: undefined }); props.onSetupSaved?.(st); }} /></Suspense></div>
             ) : <p className="muted">Provider setup needs the desktop app.</p>}
-            <h4 className="set-sub">Studio providers</h4>
-            <p className="muted">Providers are written to the Supercharge agent config; the active one becomes the default model. Keys stay in secure storage.</p>
+            <div className="prov-saved">
+            <div className="row between prov-saved-head">
+              <div>
+                <h4 className="set-sub">Saved in Studio</h4>
+                <p className="muted small">The active provider is written to the agent config and becomes the default model. Keys stay in secure storage.</p>
+              </div>
+              <button className="secondary" data-testid="prov-add" onClick={() => {
+                const np: Provider = { id: uid(), name: "New provider", baseUrl: "", format: "responses", models: [] };
+                setProviders([...providers, np]);
+                setEditing(np.id);
+              }}><Icon name="plus" /> Add provider</button>
+            </div>
             {providerError && <p className="danger-text" role="alert">{providerError}</p>}
-            {providers.length === 0 && <div className="empty-card">No providers yet. Add one to use your own API key.</div>}
+            {providers.length === 0 && <div className="empty-card">No saved providers. Add one, or pick a provider above.</div>}
             {providers.map((p) => (
               <div key={p.id}>
                 <div className={`prov-row ${s.activeProviderId === p.id ? "active" : ""}`} data-testid="provider-row">
                   <div className="prov-main">
                     <strong>{p.name || "Untitled"}{p.cli && <small className="muted" data-testid="prov-cli"> · Imported from CLI</small>}</strong>
-                    <span className="muted">{p.models.join(", ") || "no models"} · {FORMATS.find((f) => f.v === p.format)?.label}</span>
+                    <span className="muted">{p.models.length ? `${p.models.length} model${p.models.length === 1 ? "" : "s"} · ${p.models[0]}${p.models.length > 1 ? ` +${p.models.length - 1}` : ""}` : "No models yet"} · {FORMATS.find((f) => f.v === p.format)?.label}</span>
                   </div>
                   {s.activeProviderId === p.id ? (
                     <span className="pill ok"><Icon name="check" size={12} /> Active</span>
@@ -220,11 +230,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
                 )}
               </div>
             ))}
-            <button className="secondary" data-testid="prov-add" onClick={() => {
-              const np: Provider = { id: uid(), name: "New provider", baseUrl: "", format: "responses", models: [] };
-              setProviders([...providers, np]);
-              setEditing(np.id);
-            }}><Icon name="plus" /> Add provider</button>
+            </div>
             <label className="check"><input type="checkbox" data-testid="cli-import" checked={s.cliImport !== false} onChange={(e) => set({ ...s, cliImport: e.target.checked })} /> Import the provider the Supercharge CLI is set up with</label>
             {props.onCliImport && <button className="secondary" data-testid="cli-reimport" onClick={async () => { const p = await props.onCliImport!().catch(() => null); set({ ...s, cliRemoved: [], providers: (p && mergeCli(providers, p)) || providers }); setProviderError(p ? "" : "The CLI has no provider to import."); }}>Re-import from CLI</button>}
           </div>
