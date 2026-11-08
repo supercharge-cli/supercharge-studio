@@ -294,7 +294,7 @@ test("slash menu and settings", async ({ page }) => {
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-providers").click();
-  await expect(page.getByTestId("provider-row")).toContainText("no models");
+  await expect(page.getByTestId("provider-row")).toContainText("No models yet");
   await page.getByRole("button", { name: "Cancel" }).click();
 });
 
