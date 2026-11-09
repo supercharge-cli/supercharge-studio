@@ -4,7 +4,7 @@
 
 [package]
 name = "supercharge-studio-mobile"
-version = "1.0.35"
+version = "1.0.37"
 description = "Supercharge Studio mobile companion"
 license = "Apache-2.0"
 edition = "2021"
