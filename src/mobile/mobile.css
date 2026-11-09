@@ -5,11 +5,12 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-app{height:100dvh;display:flex;flex-direction:column;background:var(--bg);padding-top:env(safe-area-inset-top);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
 
 /* header */
-.m-top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;min-height:54px;padding:6px 10px;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);backdrop-filter:saturate(1.5) blur(14px);background:color-mix(in srgb,var(--bg) 82%,transparent)}
+.m-top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:4px;min-height:54px;min-width:0;padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);backdrop-filter:saturate(1.5) blur(14px);background:color-mix(in srgb,var(--bg) 82%,transparent)}
 .m-top .icon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center}
 .m-head-title{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:none;color:var(--fg);padding:4px 6px;border-radius:10px;text-align:left}
 .m-head-title:not(.static):active{background:var(--hover)}
-.m-title{max-width:100%;font-weight:600;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-title{max-width:100%;font-weight:600;font-size:16px;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;word-break:break-word}
+.m-sheet-title{margin:0 2px 4px;font-size:15px;font-weight:600;line-height:1.35;word-break:break-word}
 .m-sub{display:flex;align-items:center;gap:3px;font-size:12px;color:var(--muted);max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .m-dot{display:grid;place-items:center;width:18px;height:18px}.m-dot i{width:8px;height:8px;border-radius:50%;background:var(--bad);box-shadow:0 0 0 3px color-mix(in srgb,var(--bad) 20%,transparent)}
 .m-dot.ok i{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 20%,transparent)}
@@ -33,7 +34,7 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-proj-head{display:flex;align-items:center;gap:8px;padding:4px 6px 6px;font-size:13px;color:var(--muted)}.m-proj-head b{color:var(--fg);font-weight:600}
 .m-chat{width:100%;display:flex;align-items:center;gap:10px;min-height:38px;background:none;color:var(--fg);padding:7px 8px;border:0;border-radius:8px;font-weight:450;text-align:left;animation:rowIn .28s var(--spring-soft) both}
 .m-more{background:none;color:var(--muted);padding:2px 8px 8px;font-size:13px;text-align:left}
-.m-chat-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-chat-title{flex:1;min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;word-break:break-word}
 .m-chat:active{background:var(--hover);transform:scale(.99)}
 .m-chat>svg:last-child{color:var(--muted);opacity:.5}
 .m-busy{width:8px;height:8px;border-radius:50%;background:var(--acc);animation:blink 1s infinite}
@@ -48,9 +49,10 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-ptr.spin svg{animation:spin .8s linear infinite}
 
 /* thread */
-.m-view{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--bg);animation:slideIn .32s var(--spring-soft) both}
-.m-thread{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain}
-.m-thread .thread{padding:16px 14px 8px;gap:14px}
+.m-view{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;background:var(--bg);animation:slideIn .32s var(--spring-soft) both}
+.m-thread{flex:1;min-width:0;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain}
+.m-thread .thread{padding:16px 14px 8px;gap:14px;min-width:0;max-width:100%}
+.m-thread pre,.m-thread img,.m-thread .md-code,.m-thread .toolcard{max-width:100%}
 .m-thread .bubble{font-size:15.5px;line-height:1.55;content-visibility:auto;contain-intrinsic-size:auto 56px}
 .m-thread .bubble.user{max-width:84%;padding:10px 15px;border-radius:20px 20px 6px 20px;animation:bubbleIn .26s var(--spring) both}
 .m-thread .bubble.agent{max-width:100%;padding:0 2px;animation:fadeIn .2s ease both}
@@ -63,8 +65,8 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-plan{border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:12px;font-size:13px}.m-plan ol{padding-left:22px;margin:8px 0 0}.m-plan li{margin:5px 0}.m-plan li.completed{color:var(--muted);text-decoration:line-through}.m-plan small{color:var(--muted);margin-left:5px}
 
 /* composer */
-.m-composer{padding:6px 10px calc(8px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--bg) 70%,transparent)}
-.m-compose-box{display:flex;flex-direction:column;gap:4px;padding:8px 8px 6px;border-radius:24px;background:var(--panel);border:1px solid var(--line);box-shadow:0 6px 24px -14px rgba(0,0,0,.5);transition:border-color .15s}
+.m-composer{min-width:0;max-width:100%;padding:6px 10px calc(8px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--bg) 70%,transparent)}
+.m-compose-box{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%;padding:8px 8px 6px;border-radius:24px;background:var(--panel);border:1px solid var(--line);box-shadow:0 6px 24px -14px rgba(0,0,0,.5);transition:border-color .15s}
 .m-compose-box:focus-within{border-color:color-mix(in srgb,var(--fg) 28%,var(--line))}
 .m-compose-box textarea:focus,.m-compose-box textarea:focus-visible{outline:none;box-shadow:none;border:0}
 .m-compose-box textarea{resize:none;max-height:160px;min-height:24px;font-size:16px;line-height:1.4;border:0;background:none;padding:6px 8px;outline:none;box-shadow:none}
@@ -103,7 +105,9 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-grabber{width:38px;height:5px;border-radius:3px;background:var(--line);margin:2px auto 6px;flex:none}
 .m-sheet h3{margin:0 0 4px;font-size:17px}.m-sheet pre{background:var(--code);padding:8px;border-radius:10px;overflow:auto;max-height:30vh}
 .m-row{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:12px 14px;border-radius:14px;background:var(--panel);color:var(--fg);text-align:left;border:1px solid var(--line)}
-.m-row>span:first-child{flex:1}.m-row b{font-weight:500;color:var(--muted);max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-row>span:first-child{flex:1}.m-row>b{font-weight:500;color:var(--muted);max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-row-mode .mode-menu b,.m-row-mode .mode-menu small{max-width:none;overflow:visible;text-overflow:clip;white-space:normal}
+.m-row-mode .mode-trigger{max-width:100%;white-space:normal;text-align:right;height:auto}
 .m-row:active{background:var(--hover)}
 .m-row-mode{flex-wrap:wrap;align-items:flex-start}
 .m-row-mode .mode-anchor{flex:1 0 100%;margin-left:0;display:flex;flex-wrap:wrap;justify-content:flex-end}
@@ -202,8 +206,10 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-compose-meta .m-chip{max-width:none;padding:8px 12px;font-size:14px}
 .m-compose-tools{gap:8px;padding:2px 0 4px}
 .m-compose-tools .m-chip{min-height:40px;padding:8px 14px;font-size:14px}
-.m-compose-row{gap:10px;padding-top:2px}
-.m-compose-row .m-attach{width:44px;min-width:44px;height:44px}
+.m-compose-box{overflow:hidden}
+.m-compose-row{gap:8px;padding-top:2px;width:100%;max-width:100%}
+.m-compose-row .round{margin-left:auto;width:40px;height:40px;min-width:40px;min-height:40px;flex:none}
+.m-compose-row .m-attach{width:40px;min-width:40px;height:40px}
 .m-setup-sheet{max-height:90vh}.m-setup-sheet .psetup-row{min-height:44px}.m-setup-sheet .psetup-list{max-height:none}
 
 /* pairing scanner: while the camera runs the page is see-through and the window's spread shadow is a dark scrim, whatever the theme */

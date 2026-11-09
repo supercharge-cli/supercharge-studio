@@ -39,10 +39,27 @@ export const CUSTOM: SetupProvider = P("custom", "Custom / paste a base URL", ""
 
 export const FORMATS: [Fmt, string, string][] = [["chat_completions", "Chat Completions", "/chat/completions"], ["messages", "Messages", "/messages"], ["responses", "Responses", "/responses"]];
 
+/** The CLI's `setup/status` catalog, in the CLI's order. Null when this agent did not send one. */
+export function providersFromStatus(status?: SetupStatusFull | null): SetupProvider[] | null {
+  const rows = status?.providers?.filter((p) => p?.id);
+  if (!rows?.length) return null;
+  return rows.map((p) => ({
+    id: p.id,
+    name: p.name || p.id,
+    description: p.description || "",
+    baseUrl: p.baseUrl || "",
+    defaultModel: p.defaultModel || "",
+    format: asFmt(p.format),
+    device: p.auth === "oauth_device" || p.auth === "device",
+    keyOptional: /key optional/i.test(p.description || "") || p.auth === "none",
+  }));
+}
+
 /** Type-to-filter, as in the CLI: id, name or description; Custom matches "custom", "openai", "base url". */
-export function filterProviders(query: string, extra?: SetupProvider | null): SetupProvider[] {
+export function filterProviders(query: string, extra?: SetupProvider | null, catalog?: SetupProvider[] | null): SetupProvider[] {
   const q = query.trim().toLowerCase();
-  const rows = PROVIDERS.filter((p) => !q || p.id.includes(q) || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
+  const source = catalog?.length ? catalog : PROVIDERS;
+  const rows = source.filter((p) => !q || p.id.includes(q) || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
   if (extra && (!q || extra.id.includes(q) || extra.name.toLowerCase().includes(q) || extra.description.toLowerCase().includes(q))) rows.push(extra);
   if (!q || "custom".includes(q) || "openai".includes(q) || "base url".includes(q)) rows.push(CUSTOM);
   return rows;
@@ -61,7 +78,7 @@ export function filterModels(models: SetupModel[], query: string): SetupModel[] 
 export type SetupStatus = { providerId?: string | null; baseUrl?: string | null; format?: string | null; model?: string | null; hasKey: boolean; nousSignedIn: boolean };
 
 /** One entry of the CLI's own provider catalog, sent in `setup/status` `providers`. */
-export type CliProvider = { id: string; name?: string; description?: string; baseUrl?: string; defaultModel?: string; format?: string };
+export type CliProvider = { id: string; name?: string; description?: string; baseUrl?: string; defaultModel?: string; format?: string; auth?: string };
 export type SetupStatusFull = SetupStatus & { providers?: CliProvider[] };
 
 /**
@@ -86,7 +103,7 @@ export function normalizeStatus(raw: any): SetupStatusFull {
 /** A CLI-connected provider the app's list does not know, pulled from the status (catalog first). */
 export function unlistedProvider(status: SetupStatusFull | null | undefined): SetupProvider | null {
   const id = status?.providerId?.trim();
-  if (!id || id === CUSTOM.id || PROVIDERS.some((p) => p.id === id)) return null;
+  if (!id || id === CUSTOM.id || PROVIDERS.some((p) => p.id === id) || status!.providers?.some((p) => p?.id === id)) return null;
   const from = status!.providers?.find((p) => p?.id === id);
   return {
     id,
@@ -220,7 +237,7 @@ export async function saveCustomModel(api: SetupApi, modelId: string, extra: { m
  */
 export async function readCli(api: SetupApi, list?: () => Promise<any>): Promise<Provider | null> {
   const s: any = await api.status().catch(() => null);
-  const pid: string = s?.providerId || "", known = PROVIDERS.find((p) => p.id === pid);
+  const pid: string = s?.providerId || "", known = providersFromStatus(s)?.find((p) => p.id === pid) ?? PROVIDERS.find((p) => p.id === pid);
   const base: string = s?.baseUrl || known?.baseUrl || "";
   if (s?.configured === false || !(pid || base)) return null;
   const format = asFmt(s.format ?? known?.format);

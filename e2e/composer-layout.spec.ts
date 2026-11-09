@@ -40,15 +40,10 @@ for (const [w, h] of [[320, 700], [360, 800], [412, 915]]) {
     await page.setViewportSize({ width: w, height: h });
     await mobile(page);
     await inside(page, ".m-compose-row", '[data-testid="m-send"]');
-    for (const id of ["m-mode-chip", "m-model-chip"]) {
-      const chip = page.getByTestId(id);
-      await chip.scrollIntoViewIfNeeded();
-      await expect.poll(async () => {
-        const box = (await page.locator(".m-compose-tools").boundingBox())!;
-        const item = (await chip.boundingBox())!;
-        return item.x >= box.x - 0.5 && item.x + item.width <= box.x + box.width + 0.5;
-      }).toBe(true);
-    }
+    await expect(page.locator(".m-compose-tools")).toHaveCount(0);
+    await page.getByTestId("m-chat-settings").click();
+    await expect(page.getByTestId("m-settings-sheet")).toContainText("test-model-with-a-really-long-name-1m");
+    await page.getByTestId("m-sheet-close").click();
     // Row must not scroll sideways or push past the viewport.
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(w);
     if (SHOT) await page.locator(".m-composer").screenshot({ path: `${SHOT}-mobile-${w}.png` });

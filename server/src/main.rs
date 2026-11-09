@@ -39,7 +39,7 @@ use tokio_tungstenite::WebSocketStream;
 
 const PAIR_TTL: u64 = 120;
 /// Requests a phone may send to the agent. Everything else is refused.
-const ALLOWED: &[&str] = &["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "session/set_config_option", "session/set_mode"];
+const ALLOWED: &[&str] = &["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "session/set_config_option", "session/set_mode", "_supercharge/agents/list", "_supercharge/agents/create"];
 
 // ---------- config ----------
 

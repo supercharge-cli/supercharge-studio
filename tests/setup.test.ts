@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CUSTOM, CUSTOM_MODEL, FORMATS, PROVIDERS, filterModels, filterProviders, keyReusable, normBase, normalizeStatus, pickSetup, pollDevice, rpcSetup, switchedLive, unlistedProvider, type SetupApi } from "../src/lib/setup";
+import { CUSTOM, CUSTOM_MODEL, FORMATS, PROVIDERS, filterModels, filterProviders, keyReusable, normBase, normalizeStatus, pickSetup, pollDevice, providersFromStatus, rpcSetup, switchedLive, unlistedProvider, type SetupApi } from "../src/lib/setup";
 import { GatewayHub, type HubHost } from "../src/gateway/hub";
 
 describe("provider setup catalog", () => {
@@ -32,9 +32,9 @@ describe("provider setup catalog", () => {
 
 describe("unlisted CLI providers", () => {
   const cliProvider = { id: "agentrouter", name: "AgentRouter", description: "Aggregator", baseUrl: "https://api.agentrouter.org/v1", defaultModel: "gpt-5.6-sol", format: "responses" };
-  it("pulls a saved provider the app does not list, from the CLI catalog", () => {
+  it("does not duplicate a provider the CLI catalog already lists", () => {
     const status = normalizeStatus({ providerId: "agentrouter", baseUrl: "https://api.agentrouter.org/v1", format: "responses", modelId: "gpt-5.6-sol", hasApiKey: true, providers: [cliProvider] });
-    expect(unlistedProvider(status)).toEqual({ id: "agentrouter", name: "AgentRouter", description: "Aggregator", baseUrl: "https://api.agentrouter.org/v1", defaultModel: "gpt-5.6-sol", format: "responses" });
+    expect(unlistedProvider(status)).toBeNull();
   });
   it("falls back to the saved status when the catalog lacks it, and names a bare id", () => {
     const status = normalizeStatus({ providerId: "my_gateway", baseUrl: "http://127.0.0.1:8080/v1", model: "m1" });
@@ -53,11 +53,28 @@ describe("unlisted CLI providers", () => {
     expect(normalizeStatus({ model: "m2", hasKey: true, nousSignedIn: false })).toMatchObject({ model: "m2", hasKey: true, nousSignedIn: false });
   });
   it("shows the extra provider in filtered lists before Custom", () => {
-    const extra = unlistedProvider(normalizeStatus({ providerId: "agentrouter", providers: [cliProvider] }));
+    const extra = unlistedProvider(normalizeStatus({ providerId: "agentrouter", baseUrl: "https://api.agentrouter.org/v1", format: "responses", model: "gpt-5.6-sol" }));
     expect(filterProviders("", extra).map((p) => p.id)).toEqual([...PROVIDERS.map((p) => p.id), "agentrouter", CUSTOM.id]);
     expect(filterProviders("agentrouter", extra).map((p) => p.id)).toEqual(["agentrouter"]);
     expect(filterProviders("agentrouter", null)).toEqual([]);
     expect(filterProviders("custom", extra).map((p) => p.id)).toEqual([CUSTOM.id]);
+  });
+  it("replaces the built-in list with the CLI catalog", () => {
+    const status = normalizeStatus({
+      providers: [
+        { id: "codex", name: "ChatGPT (Codex)", description: "ChatGPT plan via Codex browser sign-in", baseUrl: "https://chatgpt.com/backend-api/codex", defaultModel: "gpt-6.1-terra", format: "responses", auth: "api_key" },
+        { id: "mistral-auth", name: "Mistral Auth", description: "Browser sign-in", baseUrl: "https://api.mistral.ai/v1", defaultModel: "large-model-latest", format: "openai", auth: "api_key" },
+        { id: "nous", name: "Nous Research", description: "Nous Portal OAuth", baseUrl: "https://inference-api.nousresearch.com/v1", defaultModel: "Hermes-4.3-36B", format: "openai", auth: "oauth_device" },
+        { id: "ollama", name: "Ollama (local)", description: "Local server, key optional", baseUrl: "http://127.0.0.1:11434/v1", defaultModel: "llama3.3", format: "openai", auth: "api_key" },
+      ],
+    });
+    const catalog = providersFromStatus(status);
+    expect(catalog?.map((p) => p.id)).toEqual(["codex", "mistral-auth", "nous", "ollama"]);
+    expect(catalog?.find((p) => p.id === "nous")).toMatchObject({ device: true, format: "chat_completions" });
+    expect(catalog?.find((p) => p.id === "codex")?.format).toBe("responses");
+    expect(catalog?.find((p) => p.id === "ollama")?.keyOptional).toBe(true);
+    expect(filterProviders("", null, catalog).map((p) => p.id)).toEqual(["codex", "mistral-auth", "nous", "ollama", CUSTOM.id]);
+    expect(unlistedProvider(normalizeStatus({ providerId: "codex", providers: status.providers }))).toBeNull();
   });
 });
 

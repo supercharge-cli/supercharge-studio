@@ -44,7 +44,7 @@ export interface HubHost {
 type Msg = { jsonrpc?: "2.0"; id?: number | string; method?: string; params?: any; result?: any; error?: any };
 type Send = (deviceId: string, msg: Msg) => void;
 
-const ALLOWED = new Set(["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "session/set_config_option", "session/set_mode", "_supercharge/focus", "_supercharge/upload", "_supercharge/ping", "_supercharge/session/context_window", "_supercharge/setup"]);
+const ALLOWED = new Set(["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "session/set_config_option", "session/set_mode", "_supercharge/focus", "_supercharge/upload", "_supercharge/ping", "_supercharge/session/context_window", "_supercharge/setup", "_supercharge/agents/list", "_supercharge/agents/create"]);
 const SETUP_OPS = new Set(["status", "models", "save", "device_start", "device_poll", "device_cancel"]);
 const MAX_REPLAY = 3000;
 

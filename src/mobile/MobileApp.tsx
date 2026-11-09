@@ -178,14 +178,13 @@ export default function MobileApp() {
   const [newSheet, setNewSheet] = useState(false);
   const [projectQuery, setProjectQuery] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [thinkPop, setThinkPop] = useState(false);
-  const [permPop, setPermPop] = useState(false);
+
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [historyView, setHistoryView] = useState<HistoryView>(() => (localStorage.getItem(HISTORY_KEY) === "projects" ? "projects" : "chats"));
   const [drawer, setDrawer] = useState(false);
-  const [modePop, setModePop] = useState(false);
+
   const [atBottom, setAtBottom] = useState(true);
   const stuck = useRef(true);
   const lastTop = useRef(0);
@@ -830,55 +829,10 @@ export default function MobileApp() {
                   {attErr && <span className="error-text small" data-testid="m-attach-error">{attErr}</span>}
                 </div>
               )}
-              <div className="m-compose-meta">
-                <button type="button" className="m-chip" onClick={() => { haptic(); setNewSheet(true); }}><Icon name="folder" size={13} /> {list.find((s) => s.sessionId === open)?._meta?.project || "Project"}</button>
-              </div>
               <textarea ref={inputRef} rows={1} value={draft} placeholder="Message Supercharge…" data-testid="m-input"
                 onChange={(e) => { setDraft(e.target.value); const t = e.target; t.style.height = "auto"; t.style.height = `${Math.min(t.scrollHeight, 160)}px`; }}
                 onPaste={(e) => { const fs = [...(e.clipboardData?.files ?? [])]; if (fs.length) { e.preventDefault(); void addFiles(fs); } }}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!isBusy) void send(); } }} />
-              {(permissionOption || (sessionModes && sessionModes.availableModes.length > 1) || modelOption || thinkingOption) && (
-              <div className="m-compose-tools">
-                {permissionOption && (
-                  <span className="m-think-anchor">
-                    <button type="button" className="m-chip m-chip-accent" onClick={() => { haptic(); setPermPop((v) => !v); setThinkPop(false); setModePop(false); }}>{optionLabel(permissionOption)}</button>
-                    {permPop && (
-                      <div className="m-think-pop m-pop-start" role="dialog" aria-label="Access">
-                        {permissionOption.options!.map((v) => (
-                          <button key={v.value} type="button" className="m-pop-item" aria-pressed={v.value === permissionOption.currentValue} onClick={() => { setPermPop(false); void chooseOption(permissionOption.id, v.value); }}>{v.name ?? v.value}</button>
-                        ))}
-                      </div>
-                    )}
-                  </span>
-                )}
-                {sessionModes && sessionModes.availableModes.length > 1 && (
-                  <span className="m-think-anchor">
-                    <button type="button" className="m-chip" data-testid="m-mode-chip" onClick={() => { haptic(); setModePop((v) => !v); setPermPop(false); setThinkPop(false); }}>{sessionModes.availableModes.find((x) => x.id === (sess.modeId ?? sessionModes.currentModeId))?.name ?? "Mode"}</button>
-                    {modePop && (
-                      <div className="m-think-pop m-pop-start" role="dialog" aria-label="Mode">
-                        {sessionModes.availableModes.map((m) => (
-                          <button key={m.id} type="button" className="m-pop-item" aria-pressed={m.id === (sess.modeId ?? sessionModes.currentModeId)} onClick={() => { setModePop(false); void client.current?.setMode(open!, m.id).then(() => rememberModes(open!, { ...sessionModes, currentModeId: m.id })).catch((e: any) => setToast(`Could not change work mode: ${e?.message ?? e}`)); }}>{m.name}</button>
-                        ))}
-                      </div>
-                    )}
-                  </span>
-                )}
-                {modelOption && <button className="m-chip" data-testid="m-model-chip" onClick={() => { haptic(); setModelSearch(""); setCustomOpen(false); setPicker("model"); }}>{optionLabel(modelOption)}</button>}
-                {thinkingOption && (
-                  <span className="m-think-anchor">
-                    <button type="button" className="m-chip" data-testid="m-think-chip" onClick={() => { haptic(); setThinkPop((v) => !v); setPermPop(false); setModePop(false); }}>{optionLabel(thinkingOption)}</button>
-                    {thinkPop && (
-                      <div className="m-think-pop" role="dialog" aria-label="Thinking">
-                        <b>{optionLabel(thinkingOption)}</b>
-                        <input type="range" aria-label="Thinking level" min={0} max={Math.max(0, (thinkingOption.options?.length ?? 1) - 1)} step={1} disabled={settingOption}
-                          value={Math.max(0, thinkingOption.options!.findIndex((v) => sameEffort(v.value, thinkingOption.currentValue)))}
-                          onChange={(e) => { const choice = thinkingOption.options![Number(e.target.value)]; if (choice) void chooseOption(thinkingOption.id, choice.value); }} />
-                      </div>
-                    )}
-                  </span>
-                )}
-              </div>
-              )}
               <div className="m-compose-row">
                 <input ref={fileInput} type="file" multiple hidden accept="*/*" data-testid="m-attach-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
                 <button className="icon m-attach" aria-label="Attach files" data-testid="m-attach" onClick={() => fileInput.current?.click()}><Icon name="plus" size={20} /></button>
@@ -898,6 +852,7 @@ export default function MobileApp() {
           <div className="m-sheet m-settings-sheet" role="dialog" aria-label="Chat settings" data-testid="m-settings-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="m-grabber" aria-hidden />
             <div className="m-picker-head"><h3>Chat settings</h3><button className="icon" aria-label="Close" data-testid="m-sheet-close" onClick={() => setSheet(false)}><Icon name="x" size={16} /></button></div>
+            <p className="m-sheet-title">{title}</p>
             {modelOption && <button className="m-row" data-testid="m-model" aria-label={`Model: ${optionLabel(modelOption)}`} onClick={() => { setModelSearch(""); setCustomOpen(false); setPicker("model"); }}><span>Model</span><b>{optionLabel(modelOption)}</b><Icon name="chevronRight" size={14} /></button>}
             {thinkingOption && (
               <label className="m-row m-thinking">

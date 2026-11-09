@@ -1124,6 +1124,34 @@ export default function App() {
   })();
   const permissionOption = optionFor(configOptions, "permission_mode");
   const sessionModes = activeChat?.sessionId ? modesBySession[activeChat.sessionId] : undefined;
+  const mergeCustomModes = (sid: string, agents: { id: string; name: string; description?: string }[]) => {
+    const current = modesBySession[sid];
+    if (!current) return;
+    const builtins = current.availableModes.filter((m) => m.id === "default" || m.id === "plan" || m.id === "ask");
+    const custom = agents.filter((a) => a.id && !builtins.some((m) => m.id === a.id)).map((a) => ({ id: a.id, name: a.name, description: a.description }));
+    const kept = current.availableModes.filter((m) => m.id !== "default" && m.id !== "plan" && m.id !== "ask" && !custom.some((a) => a.id === m.id));
+    rememberModes(sid, { ...current, availableModes: [...builtins, ...kept, ...custom] });
+  };
+  const refreshAgents = async () => {
+    const sid = activeChat?.sessionId;
+    const c = clientRef.current;
+    if (!sid || !c?.hasExtension("_supercharge/agents/list")) return;
+    const listed = await c.ext<{ agents?: { id: string; name: string; description?: string }[] }>("_supercharge/agents/list", { sessionId: sid });
+    mergeCustomModes(sid, listed.agents ?? []);
+  };
+  const createAgent = async (draft: { name: string; description: string; instructions: string; scope: "user" | "project" }) => {
+    const sid = activeChat?.sessionId;
+    const c = clientRef.current;
+    if (!sid || !c) throw new Error("No chat");
+    if (!c.hasExtension("_supercharge/agents/create")) throw new Error("Update the CLI to save custom agents.");
+    const created = await c.ext<{ id: string; name: string; description?: string }>("_supercharge/agents/create", { sessionId: sid, ...draft });
+    await c.setMode(sid, created.id);
+    const base = modesBySession[sid];
+    const mode = { id: created.id, name: created.name, description: created.description };
+    if (base) rememberModes(sid, { ...base, currentModeId: created.id, availableModes: [...base.availableModes.filter((m) => m.id !== created.id), mode] });
+    enqueue(activeChat!.id, { sessionUpdate: "current_mode_update", currentModeId: created.id });
+    hub.update(sid, { sessionUpdate: "current_mode_update", currentModeId: created.id });
+  };
   const changeMode = async (mode: string) => {
     const sid = activeChat?.sessionId;
     if (!sid || !sessionModes?.availableModes.some((m) => m.id === mode)) return;
@@ -1670,11 +1698,10 @@ export default function App() {
                           ["Find a bug", "Look for a bug in the current project and tell me what is wrong."],
                           ["Review changes", "Review the uncommitted changes and summarize them."],
                         ].map(([label, text]) => (
-                          <button key={label} type="button" onClick={() => setDraftCaret(text)}>{label}</button>
+                          <button key={label} type="button" title="Put this in the message box" onClick={() => setDraftCaret(text)}>{label}</button>
                         ))}
                       </div>
                     )}
-                    {conn !== "open" && <p className="muted">Agent status: {status || conn}</p>}
                   </div>
                 )}
 
@@ -1715,7 +1742,7 @@ export default function App() {
                 <span className="muted small">{isBusy ? "Sent when the agent finishes" : "Sending…"}</span>
               </div>
             )}
-            {activeChat?.sessionId && <Suspense fallback={null}><ModelControls key={activeChat.sessionId} options={pickerOptions} window={windowCtl} context={ctxBySession[activeChat.sessionId] ? { used: ctxBySession[activeChat.sessionId].used, max: ctxBySession[activeChat.sessionId].max ?? ctxMax.current[modelOption?.currentValue ?? ""] } : windowCtl ? { used: 0, max: ctxMax.current[modelOption?.currentValue ?? ""] } : undefined} onCustom={(id, name) => update((d) => ({ ...d, settings: { ...d.settings, lastModel: id, customModels: rememberCustom(d.settings.customModels, id, name) } }))} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)}><ModeControl modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} /></ModelControls></Suspense>}
+            {activeChat?.sessionId && <Suspense fallback={null}><ModelControls key={activeChat.sessionId} options={pickerOptions} window={windowCtl} context={ctxBySession[activeChat.sessionId] ? { used: ctxBySession[activeChat.sessionId].used, max: ctxBySession[activeChat.sessionId].max ?? ctxMax.current[modelOption?.currentValue ?? ""] } : windowCtl ? { used: 0, max: ctxMax.current[modelOption?.currentValue ?? ""] } : undefined} onCustom={(id, name) => update((d) => ({ ...d, settings: { ...d.settings, lastModel: id, customModels: rememberCustom(d.settings.customModels, id, name) } }))} onSelect={(id, value) => changeOption(activeChat.sessionId!, id, value)}><ModeControl modes={sessionModes} currentMode={sess.modeId} permission={permissionOption} onMode={changeMode} onPermission={changePermission} onCreateAgent={createAgent} onRefreshAgents={refreshAgents} /></ModelControls></Suspense>}
             {(atts.length > 0 || attErr) && (
               <div className="att-row" data-testid="attachments">
                 {atts.map((a) => (
@@ -1728,7 +1755,7 @@ export default function App() {
                 {attErr && <span className="error-text small" data-testid="attach-error">{attErr}</span>}
               </div>
             )}
-            <div className={`composer${(sess.modeId ?? sessionModes?.currentModeId) === "plan" ? " is-planning" : ""}`}>
+            <div className={`composer${(sess.modeId ?? sessionModes?.currentModeId) === "plan" ? " is-planning" : ""}${isBusy ? " is-busy" : ""}`}>
               <input ref={fileInput} type="file" multiple hidden accept="*/*" data-testid="attach-input" onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ""; }} />
               <button className="icon attach" data-testid="attach" aria-label="Attach files" title="Attach files (or drop / paste them)" disabled={conn !== "open" || !active} onClick={() => fileInput.current?.click()}><Icon name="clip" /></button>
               <textarea
@@ -1736,7 +1763,7 @@ export default function App() {
                 ref={composerRef}
                 value={draft}
                 rows={1}
-                placeholder={conn === "open" ? (active ? `Message Supercharge…` : "Select a project") : "Agent not connected"}
+                placeholder={conn !== "open" ? "Agent not connected" : !active ? "Select a project" : isBusy ? (data.settings.steerByDefault ? "Steer this turn…" : "Queue a follow-up…") : "Message Supercharge…"}
                 onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
                 onChange={(e) => {
                   setDraft(e.target.value);
@@ -1763,6 +1790,15 @@ export default function App() {
                 <button className="round" aria-label="Send" title="Send (Enter)" onClick={() => void send()} disabled={conn !== "open" || !active || (!draft.trim() && !atts.length)}><Icon name="send" /><span className="sr">Send</span></button>
               )}
             </div>
+            <p className="hint" data-testid="composer-hint">
+              {conn !== "open"
+                ? "The agent is not connected. Retry from the bar above, or open Settings."
+                : !active
+                  ? "Open a project in the sidebar, then write here."
+                  : isBusy
+                    ? (data.settings.steerByDefault ? "Enter steers the turn that is running. Shift+Enter adds a line." : "Enter waits until this turn finishes, then sends. Shift+Enter adds a line.")
+                    : "Enter sends. Shift+Enter adds a line. @ mentions a file."}
+            </p>
 
           </div>
         </main>

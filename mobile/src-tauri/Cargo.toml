@@ -1,3 +1,7 @@
+# This crate lives under the Supercharge CLI checkout. An empty workspace
+# keeps Cargo from treating the parent CLI workspace as this package's workspace.
+[workspace]
+
 [package]
 name = "supercharge-studio-mobile"
 version = "1.0.35"
