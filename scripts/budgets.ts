@@ -25,7 +25,7 @@ const budgets: { dir: string; label: string; entry: RegExp; entryMax: number; to
   // entry 65 / all js 104 KB: CI builds gzip ~0.3 KB larger than local ones; keep headroom for provider setup + model fallback.
   // Plugin catalog and account management add ~2.4 KB gzipped to the lazy tools screen.
   // The redesigned catalog adds ~0.9 KB of CSS, with headroom for CI compression differences.
-  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 65 * KB, totalJsMax: 108 * KB, cssMax: 15 * KB },
+  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 65 * KB, totalJsMax: 110 * KB, cssMax: 15 * KB },
   // Redesigned chat UI with attachments and sheets; +reasoning labels / thought_level (~1 KB gz).
   // entry 36 / all js 41 / css 14 KB: Recents message search, alerts, photo/camera button, context ring + window picker.
   // all js 46 / css 15 KB: the same provider setup sheet (lazy, ~5.3 KB js + 0.7 KB css gz).

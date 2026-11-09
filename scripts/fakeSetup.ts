@@ -6,12 +6,12 @@ export function fakeSetup(preset?: Record<string, unknown>) {
   const catalog = [{ id: "agentrouter", name: "AgentRouter", description: "Aggregator via AgentRouter", baseUrl: "https://api.agentrouter.org/v1", defaultModel: "gpt-5.6-sol", format: "responses" }];
   const saved: any = seeded
     ? { providerId: "agentrouter", baseUrl: "https://api.agentrouter.org/v1", format: "responses", modelId: "gpt-5.6-sol", hasApiKey: true, nousSignedIn: false, providers: catalog }
-    : { providerId: null, baseUrl: null, format: null, model: null, hasKey: false, nousSignedIn: false, providers: catalog, ...preset };
+    : { providerId: null, baseUrl: null, format: null, model: null, hasKey: false, nousSignedIn: false, ...preset };
   let polls = 0;
   const saves: any[] = [];
   const run = async (op: string, p: any = {}): Promise<any> => {
     switch (op) {
-      case "status": return { ...saved, ...(seeded ? {} : { providers: catalog }) };
+      case "status": return { ...saved };
       case "models":
         if (p.providerId === "nous" && !saved.nousSignedIn) throw new Error("Nous Portal is not signed in. Sign in with Nous Research first.");
         if (p.apiKey === "bad") throw new Error("provider returned HTTP 401: invalid API key");

@@ -41,6 +41,8 @@ test("touch navigation paints the chat after leaving the project list", async ({
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   try {
     const page = await context.newPage();
+    // This page is not the fixture page, so the suite's GitHub stub does not apply to it.
+    await page.route(/^https:\/\/api\.github\.com\//, (route) => route.fulfill({ status: 404, body: "{}" }));
     await pair(page);
     await page.getByTestId("m-chat").first().tap();
     await expect(page.getByTestId("m-thread")).toContainText("The token check is inverted.");
