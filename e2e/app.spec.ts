@@ -59,7 +59,7 @@ test("new gateway settings use the public relay in pairing and support local-onl
   await page.getByTestId("gw-reach-public").first().click();
   await expect(page.getByTestId("gw-reach").first()).toHaveAttribute("data-reach", "public");
   await expect.poll(() => page.evaluate(() => (window as any).__gatewayCalls.filter((c: any) => c.cmd === "gateway_relay_set").at(-1)?.args)).toMatchObject({ relayUrl: "wss://relay.superchargeai.in", hostId: gateway.hostId });
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("supercharge-studio/v1")!).settings.gateway.relayUrl)).toBe("wss://relay.superchargeai.in");
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("supercharge-studio/v1")!).settings.gateway.relayUrl)).toBe(""); // official relay is used, not stored as a custom URL
 });
 
 test("chat model control opens a searchable per-session picker", async ({ page }) => {

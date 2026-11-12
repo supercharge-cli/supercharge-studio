@@ -157,8 +157,10 @@ test("desktop: the model picker stays in the composer after a provider setup sav
   await expect(page.locator(".status")).toHaveText("open");
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-providers").click();
+  await expect(page.getByTestId("provider-setup")).toBeVisible();
+  // Pick the row once the catalog has loaded (Enter before it arrives selects nothing).
   await page.getByTestId("setup-filter").fill("groq");
-  await page.getByTestId("setup-filter").press("Enter");
+  await page.getByTestId("setup-p-groq").click();
   await page.getByTestId("setup-f-chat_completions").click();
   await page.getByTestId("setup-key").fill("gsk-good");
   await page.getByTestId("setup-fetch").click();

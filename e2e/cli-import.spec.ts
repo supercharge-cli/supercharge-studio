@@ -90,7 +90,7 @@ test.describe("phone", () => {
     expect(await page.evaluate(() => localStorage.getItem("supercharge-mobile/cli-providers"))).not.toMatch(/apiKey|sk-/);
     await page.getByTestId("m-setup").click();
     const box = page.getByTestId("m-cli-providers");
-    await expect(box.getByTestId("m-cli-provider")).toContainText("OpenRouter");
+    await expect(box.getByTestId("m-cli-provider")).toContainText("openrouter.ai"); // no catalog name from the CLI: the provider host
     await expect(box.getByTestId("m-cli-provider")).toContainText("Imported from CLI");
     await expect(box.getByTestId("m-cli-import")).toBeChecked();
     await page.waitForTimeout(450);
