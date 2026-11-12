@@ -164,7 +164,7 @@ export class GatewayHub {
         case "initialize":
           return this.reply(deviceId, id, {
             protocolVersion: 1,
-            agentCapabilities: { loadSession: true, sessionCapabilities: { list: {} }, promptCapabilities: { image: true, embeddedContext: true }, _meta: { supercharge: { upload: !!this.host.upload, setup: !!this.host.setup, setupAuth: !!this.host.setup && !!this.host.setupAuth?.() } } },
+            agentCapabilities: { loadSession: true, sessionCapabilities: { list: {} }, promptCapabilities: { image: true, embeddedContext: true }, _meta: { supercharge: { upload: !!this.host.upload, setup: !!this.host.setup, setupAuth: !!this.host.setupAuth?.() } } },
             agentInfo: { name: "supercharge-studio-gateway", title: "Supercharge Studio" },
             authMethods: [],
             _meta: { supercharge: { gateway: { version: 1, projects: this.host.projects() } } },

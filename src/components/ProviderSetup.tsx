@@ -37,7 +37,7 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
     void api.status().then((st: SetupStatusFull) => {
       setStatus(st);
       // A sign-in already running (e.g. after a reconnect): keep waiting for it instead of starting another.
-      const l = st.authLogin, p = l?.status === "pending" && api.authPoll && [...providerCatalog(st), unlistedProvider(st)].find((x) => x?.id === l.providerId);
+      const l = st.authLogin, p = l?.status === "pending" && api.authPoll && providerCatalog(st).find((x) => x.id === l.providerId);
       if (p && l) { setProv(p); setFmt(p.format); setUrl(p.baseUrl); void signIn(p, l); }
     }, () => {});
     return () => { gen.current++; cancelLogin(); };

@@ -95,7 +95,7 @@ function ProviderEditor({ p, desktop, cliSetup, onChange, onKey, onRemove }: { p
       <label>Base URL<input data-testid="prov-url" placeholder="https://api.example.com/v1" value={p.baseUrl} onChange={(e) => onChange({ ...p, baseUrl: e.target.value })} /></label>
       <div className="provider-models">
         <div className="row between"><strong>Available models</strong><button className="secondary" data-testid="prov-discover" disabled={!(desktop || cliSetup) || !p.baseUrl.trim() || loading} onClick={() => void discover()}>{loading ? "Finding models…" : "Refresh models"}</button></div>
-        <p className="muted">{cliSetup ? "Choose the models you want available in chats. The Supercharge CLI lists them with its own saved key or login." : "Choose the models you want available in chats. The desktop app checks /models with and without your saved key."}</p>
+        <p className="muted">Choose the models you want available in chats. {cliSetup ? "The Supercharge CLI lists them with its own saved key or login." : "The desktop app checks /models with and without your saved key."}</p>
         {!desktop && !cliSetup && <p className="muted">Model discovery requires the desktop app.</p>}
         {error && <p className="danger-text" role="alert">{error}</p>}
         {discovered?.length === 0 && <p className="muted" role="status">The provider returned no models. Your saved selection is unchanged.</p>}

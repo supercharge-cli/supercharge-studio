@@ -14,45 +14,21 @@ export type Fmt = "chat_completions" | "messages" | "responses";
  * `signedIn`: the CLI's sign-in state (null for key-only providers).
  */
 export type SetupProvider = { id: string; name: string; description: string; baseUrl: string; defaultModel: string; format: Fmt; keyOptional?: boolean; device?: boolean; browser?: boolean; noKey?: boolean; signedIn?: boolean | null };
-const P = (id: string, name: string, description: string, baseUrl: string, defaultModel: string, format: Fmt = "chat_completions", x: Partial<SetupProvider> = {}): SetupProvider => ({ id, name, description, baseUrl, defaultModel, format, ...x });
-
-/** Fallback list, in the CLI's order: used only when the CLI does not send its own catalog (agent down, older CLI). */
-export const PROVIDERS: SetupProvider[] = [
-  P("pollinations", "Pollinations", "Recommended — large free/cheap model list", "https://gen.pollinations.ai/v1", "openai"),
-  P("openai", "OpenAI", "api.openai.com", "https://api.openai.com/v1", "gpt-5.4"),
-  P("anthropic", "Anthropic", "Claude via the Anthropic Messages API", "https://api.anthropic.com/v1", "claude-sonnet-4-6", "messages"),
-  P("openrouter", "OpenRouter", "Pay-per-use multi-provider aggregator", "https://openrouter.ai/api/v1", "anthropic/claude-sonnet-4-6"),
-  P("deepseek", "DeepSeek", "V4 / chat / reasoner", "https://api.deepseek.com/v1", "deepseek-chat"),
-  P("google", "Google AI Studio", "Gemini via OpenAI-compatible endpoint", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-pro"),
-  P("groq", "Groq", "Fast Llama inference", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
-  P("zai", "Z.AI / GLM", "Zhipu GLM direct API", "https://api.z.ai/api/paas/v4", "glm-5.1"),
-  P("kimi-coding", "Kimi Coding", "Moonshot OpenAI-compatible", "https://api.moonshot.ai/v1", "kimi-k2.6"),
-  P("kimi", "Moonshot (Kimi Anthropic)", "Kimi via Anthropic-compatible endpoint", "https://api.moonshot.ai/anthropic", "kimi-k2.6", "messages"),
-  P("qwen", "Qwen Cloud", "DashScope OpenAI-compatible", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "qwen3.6-plus"),
-  P("mistral", "Mistral AI", "Mistral / Codestral", "https://api.mistral.ai/v1", "mistral-large-latest"),
-  P("together", "Together AI", "Open models inference", "https://api.together.xyz/v1", "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
-  P("fireworks", "Fireworks AI", "OpenAI-compatible hosted models", "https://api.fireworks.ai/inference/v1", "accounts/fireworks/models/llama-v3p3-70b-instruct"),
-  P("grok", "xAI (Grok)", "Grok direct API", "https://api.x.ai/v1", "grok-4-0709"),
-  P("routingrun", "Routing.run", "Open-source model routing", "https://api.routing.run/v1", "route/glm-5.1"),
-  P("zenllm", "ZenLLM", "200+ model aggregator", "https://api.zenllm.org/v1", "zhipu/glm-5.1"),
-  P("nous", "Nous Research", "Nous Portal OAuth — free-tier models", "https://inference-api.nousresearch.com/v1", "Hermes-4.3-36B", "chat_completions", { device: true }),
-  P("ollama", "Ollama (local)", "Local OpenAI-compatible server, key optional", "http://127.0.0.1:11434/v1", "llama3.3", "chat_completions", { keyOptional: true }),
-  P("lmstudio", "LM Studio", "Local desktop server, key optional", "http://127.0.0.1:1234/v1", "local-model", "chat_completions", { keyOptional: true }),
-];
-export const CUSTOM: SetupProvider = P("custom", "Custom / paste a base URL", "", "", "", "chat_completions", { keyOptional: true });
+/** Custom endpoint: the one row the app adds itself. The provider list comes from the CLI (`setup/status`). */
+export const CUSTOM: SetupProvider = { id: "custom", name: "Custom / paste a base URL", description: "", baseUrl: "", defaultModel: "", format: "chat_completions", keyOptional: true };
 
 export const FORMATS: [Fmt, string, string][] = [["chat_completions", "Chat Completions", "/chat/completions"], ["messages", "Messages", "/messages"], ["responses", "Responses", "/responses"]];
 
 /** The CLI's `setup/status` catalog, in the CLI's order. Null when this agent did not send one. */
 export function providersFromStatus(status?: SetupStatusFull | null): SetupProvider[] | null {
   const c = providerCatalog(status);
-  return c === PROVIDERS ? null : c;
+  return c.length ? c : null;
 }
 
 /** Type-to-filter, as in the CLI: id, name or description; Custom matches "custom", "openai", "base url". */
 export function filterProviders(query: string, extra?: SetupProvider | null, catalog?: SetupProvider[] | null): SetupProvider[] {
   const q = query.trim().toLowerCase();
-  const rows = (catalog?.length ? catalog : PROVIDERS).filter((p) => !q || p.id.includes(q) || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
+  const rows = (catalog ?? []).filter((p) => !q || p.id.includes(q) || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
   if (extra && (!q || extra.id.includes(q) || extra.name.toLowerCase().includes(q) || extra.description.toLowerCase().includes(q))) rows.push(extra);
   if (!q || "custom".includes(q) || "openai".includes(q) || "base url".includes(q)) rows.push(CUSTOM);
   return rows;
@@ -77,7 +53,7 @@ export type AuthStatus = "pending" | "done" | "denied" | "expired" | "error";
 export type AuthLogin = { loginId: string; providerId: string; kind: AuthKind; status: AuthStatus; interval: number; message?: string };
 
 /** One entry of the CLI's own provider catalog, sent in `setup/status` `providers`. */
-export type CliProvider = { id: string; name?: string; description?: string; baseUrl?: string; defaultModel?: string; format?: string; curated?: boolean; auth?: string; authMethods?: string[]; signedIn?: boolean | null };
+export type CliProvider = { id: string; name?: string; description?: string; baseUrl?: string; defaultModel?: string; format?: string; curated?: boolean; auth?: string; authMethods?: string[]; keyOptional?: boolean; signedIn?: boolean | null };
 export type SetupStatusFull = SetupStatus & { providers?: CliProvider[] };
 
 /**
@@ -102,23 +78,22 @@ export function normalizeStatus(raw: any): SetupStatusFull {
 
 /**
  * The provider list to offer: the CLI's own catalog from `setup/status` `providers` (its order,
- * names, URLs, default models; `oauth_device` = device login), else the built-in fallback.
+ * names, URLs, default models; `oauth_device` = device login). Empty without one: only Custom is offered.
  */
 export function providerCatalog(status: SetupStatusFull | null | undefined): SetupProvider[] {
   const rows = (status?.providers ?? []).filter((p) => p?.id && p.id !== CUSTOM.id);
-  if (!rows.length) return PROVIDERS;
   return rows.map((p) => {
-    const known = PROVIDERS.find((k) => k.id === p.id);
     const m = Array.isArray(p.authMethods) ? p.authMethods : null;
     return {
       id: p.id,
-      name: p.name || known?.name || p.id,
-      description: p.description ?? known?.description ?? "",
-      baseUrl: p.baseUrl ?? known?.baseUrl ?? "",
-      defaultModel: p.defaultModel ?? known?.defaultModel ?? "",
-      format: p.format ? asFmt(p.format) : known?.format ?? "chat_completions",
-      ...(known?.keyOptional ? { keyOptional: true } : {}),
-      ...((m ? m.includes("device") : p.auth === "oauth_device" || (!p.auth && known?.device)) ? { device: true } : {}),
+      name: p.name || p.id,
+      description: p.description ?? "",
+      baseUrl: p.baseUrl ?? "",
+      defaultModel: p.defaultModel ?? "",
+      format: asFmt(p.format),
+      // Local servers: the CLI reports keyOptional / authMethods "none"; the key field stays, not required.
+      ...(p.keyOptional || m?.includes("none") ? { keyOptional: true } : {}),
+      ...((m ? m.includes("device") : p.auth === "oauth_device") ? { device: true } : {}),
       ...(m?.includes("browser") ? { browser: true } : {}),
       ...(m && !m.includes("api_key") ? { noKey: true } : {}),
       ...(typeof p.signedIn === "boolean" ? { signedIn: p.signedIn } : {}),
@@ -133,8 +108,8 @@ export function unlistedProvider(status: SetupStatusFull | null | undefined, cat
   const from = status!.providers?.find((p) => p?.id === id);
   return {
     id,
-    name: from?.name || id.split(/[-_]/).map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" "),
-    description: from?.description || "Connected in the CLI — not in this app's list",
+    name: from?.name || id,
+    description: from?.description || "Connected in the CLI",
     baseUrl: from?.baseUrl ?? status!.baseUrl ?? "",
     defaultModel: from?.defaultModel ?? status!.model ?? "",
     format: asFmt(from?.format ?? status!.format),
@@ -181,7 +156,6 @@ export interface SetupApi {
   authCancel?(loginId: string): Promise<{ cancelled: boolean }>;
 }
 
-export const SETUP_OPS = ["status", "models", "save", "device_start", "device_poll", "device_cancel", "auth_start", "auth_poll", "auth_cancel"] as const;
 
 /** Desktop shell backend. */
 export const desktopSetup: SetupApi = {
@@ -226,7 +200,7 @@ export function pickSetup(client?: ExtClient | null): SetupApi | null {
  * List a Studio provider's models through the CLI (`_supercharge/setup/models`), not by HTTP from
  * the app. No key is sent: the CLI uses its own saved key or login for that provider/base URL.
  */
-export function listProviderModels(api: SetupApi, p: Pick<Provider, "baseUrl" | "format" | "cli">, catalog: SetupProvider[] = PROVIDERS): Promise<SetupModel[]> {
+export function listProviderModels(api: SetupApi, p: Pick<Provider, "baseUrl" | "format" | "cli">, catalog: SetupProvider[] = []): Promise<SetupModel[]> {
   const base = p.baseUrl.trim();
   const id = p.cli?.split("|")[0] || catalog.find((c) => normBase(c.baseUrl) === normBase(base))?.id || CUSTOM.id;
   return api.models(id, base, undefined, asFmt(p.format));
@@ -264,7 +238,7 @@ export async function waitAuth(api: Pick<SetupApi, "authPoll">, s: Pick<AuthStar
  */
 export async function cliSignIn(api: SetupApi, providerId: string, h: { cancelled: () => boolean; shown: (d: DeviceStart, loginId?: string) => void; resume?: AuthLogin; wait?: (ms: number) => Promise<unknown> }): Promise<void> {
   if (api.authStart && api.authPoll) {
-    const s = h.resume ? { ...h.resume, url: "", expiresIn: 900 } : await api.authStart(providerId);
+    const s: AuthStart = h.resume ? { ...h.resume, url: "", expiresIn: 900 } : await api.authStart(providerId);
     if (h.cancelled()) throw new Error("cancelled");
     h.shown({ userCode: s.userCode ?? "", verificationUri: s.url, expiresIn: s.expiresIn, interval: s.interval }, s.loginId);
     await waitAuth(api, s, h.cancelled, h.wait as any);

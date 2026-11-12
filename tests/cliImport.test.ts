@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { applyCli, mergeCli, readCli, type SetupApi } from "../src/lib/setup";
 import type { Provider } from "../src/lib/store";
+import { CLI_CATALOG } from "../scripts/cliCatalog";
 
 const api = (status: any, models: any[] = [{ id: "m1", name: "M1" }]) => {
   const save = vi.fn(async (_: any) => ({ ok: true }));
   return { save, a: { status: async () => status, models: vi.fn(async () => models), save } as unknown as SetupApi };
 };
-const cliStatus = { configured: true, providerId: "openrouter", baseUrl: "https://openrouter.ai/api/v1/", format: "openai", hasApiKey: true, modelId: "m0", apiKey: "sk-secret", configPath: "~/.supercharge/config.toml" };
+const cliStatus = { configured: true, providerId: "openrouter", baseUrl: "https://openrouter.ai/api/v1/", format: "openai", hasApiKey: true, modelId: "m0", apiKey: "sk-secret", configPath: "~/.supercharge/config.toml", providers: CLI_CATALOG };
 
 describe("CLI provider import", () => {
   it("imports references only (CLI shape: modelId / hasApiKey), never a key", async () => {

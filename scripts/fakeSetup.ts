@@ -1,8 +1,5 @@
-import { PROVIDERS } from "../src/lib/setup";
+import { CLI_CATALOG } from "./cliCatalog";
 
-/** The CLI's own catalog in its `setup/status` shape: formats openai/anthropic/responses, auth kind. */
-const CLI_FORMAT = { chat_completions: "openai", messages: "anthropic", responses: "responses" } as const;
-const CLI_CATALOG = PROVIDERS.map((p) => ({ id: p.id, name: p.name, description: p.description, baseUrl: p.baseUrl, defaultModel: p.defaultModel, format: CLI_FORMAT[p.format], curated: true, auth: p.device ? "oauth_device" : "api_key", authMethods: p.device ? ["device"] : ["api_key"] }));
 const DEVICE_URL = "https://portal.nousresearch.com/oauth/device?user_code=WDJB-MJHT";
 
 /**
