@@ -17,8 +17,12 @@ export type Provider = { id: string; name: string; baseUrl: string; format: ApiF
 export type Theme = string;
 
 export type GatewayPrefs = { enabled: boolean; mode: "lan" | "tunnel"; port: number; publicUrl: string; relayUrl?: string; hostId?: string; reach?: Reach };
-export const defaultGatewayPrefs: GatewayPrefs = { enabled: false, mode: "lan", port: 2420, publicUrl: "", relayUrl: DEFAULT_RELAY, reach: "public" };
-const gatewayPrefs = (saved?: GatewayPrefs): GatewayPrefs => ensureHostId({ ...defaultGatewayPrefs, ...saved, reach: saved ? reachOf(saved) : "public" });
+export const defaultGatewayPrefs: GatewayPrefs = { enabled: false, mode: "lan", port: 2420, publicUrl: "", relayUrl: "", reach: "public" };
+/** The custom relay field holds only an override; a stored copy of the official URL reads as empty. */
+const gatewayPrefs = (saved?: GatewayPrefs): GatewayPrefs => {
+  const g = ensureHostId({ ...defaultGatewayPrefs, ...saved, reach: saved ? reachOf(saved) : "public" });
+  return g.relayUrl?.trim().replace(/\/+$/, "") === DEFAULT_RELAY ? { ...g, relayUrl: "" } : g;
+};
 
 export type Settings = {
   /** Model last picked in the composer; new chats start with it when the agent offers it. */

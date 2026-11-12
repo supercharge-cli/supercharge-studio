@@ -12,7 +12,7 @@ describe("app smoke selectors", () => {
   });
   it("aria labels it relies on exist in the source", () => {
     const devices = readFileSync("src/components/Devices.tsx", "utf8");
-    for (const l of ["Mobile gateway", "Relay URL"]) expect(devices).toContain(`aria-label="${l}"`);
+    for (const l of ["Mobile gateway", "Custom public URL"]) expect(devices).toContain(`aria-label="${l}"`);
     expect(readFileSync("src/App.tsx", "utf8")).toContain('aria-label="Pair device"');
   });
   it("titles and labels it relies on exist in the source", () => {

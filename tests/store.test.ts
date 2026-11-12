@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_RELAY, effectiveRelay } from "../src/lib/reach";
 import { defaultGatewayPrefs, load, parseAgentUrl, mergeCliSessions, migrate, projectsByCwd, relTime, ensureFolderProject, applyTree as tree2, CLI_GROUP } from "../src/lib/store";
 
 describe("gateway defaults", () => {
@@ -12,7 +13,8 @@ describe("gateway defaults", () => {
     try {
       saved.set("supercharge-studio/v1", JSON.stringify({ settings: { gateway: { enabled: true, mode: "lan", port: 2422, publicUrl: "" } }, groups: [] }));
       const first = load().settings.gateway!;
-      expect(first.relayUrl).toBe("wss://relay.superchargeai.in");
+      expect(first).toMatchObject({ relayUrl: "", reach: "public" });
+      expect(effectiveRelay(first)).toBe(DEFAULT_RELAY);
       expect(first.hostId).toMatch(/^[0-9a-f]{24}$/);
       expect(load().settings.gateway!.hostId).toBe(first.hostId);
       expect(defaultGatewayPrefs.enabled).toBe(false);
@@ -21,9 +23,22 @@ describe("gateway defaults", () => {
       expect(load().settings.gateway).toMatchObject({ relayUrl: "", reach: "local" });
       expect(load().settings.gateway!.hostId).toBeUndefined();
       saved.set("supercharge-studio/v1", JSON.stringify({ settings: { gateway: { enabled: true, mode: "lan", port: 2422, publicUrl: "", relayUrl: "wss://other.example", hostId: "existing-id" } }, groups: [] }));
-      expect(load().settings.gateway).toMatchObject({ relayUrl: "wss://other.example", hostId: "existing-id" });
+      expect(load().settings.gateway).toMatchObject({ relayUrl: "wss://other.example", hostId: "existing-id", reach: "public" });
+      // A stored copy of the official URL is not a custom override: the field reads empty and Public stays on.
+      for (const relayUrl of [DEFAULT_RELAY, ` ${DEFAULT_RELAY}/ `]) {
+        saved.set("supercharge-studio/v1", JSON.stringify({ settings: { gateway: { enabled: true, mode: "lan", port: 2422, publicUrl: "", relayUrl } }, groups: [] }));
+        const g = load().settings.gateway!;
+        expect(g).toMatchObject({ relayUrl: "", reach: "public" });
+        expect(effectiveRelay(g)).toBe(DEFAULT_RELAY);
+      }
+      saved.set("supercharge-studio/v1", JSON.stringify({ settings: { gateway: { enabled: true, mode: "lan", port: 2422, publicUrl: "", relayUrl: DEFAULT_RELAY, reach: "local" } }, groups: [] }));
+      expect(load().settings.gateway).toMatchObject({ relayUrl: "", reach: "local" });
+      // Fresh install: Public, empty custom field, official relay.
       saved.delete("supercharge-studio/v1");
-      expect(load().settings.gateway).toMatchObject({ relayUrl: "wss://relay.superchargeai.in", enabled: false });
+      const fresh = load().settings.gateway!;
+      expect(fresh).toMatchObject({ relayUrl: "", reach: "public", enabled: false, publicUrl: "" });
+      expect(effectiveRelay(fresh)).toBe(DEFAULT_RELAY);
+      expect(defaultGatewayPrefs).toMatchObject({ relayUrl: "", reach: "public" });
     } finally {
       if (previous === undefined) delete (globalThis as { localStorage?: Storage }).localStorage;
       else Object.defineProperty(globalThis, "localStorage", { configurable: true, value: previous });

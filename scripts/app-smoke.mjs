@@ -40,7 +40,7 @@ const SEL = {
   addProject: 'button[title^="Add project"],button[title^="Open folder"]',
   agentLogButton: ".agent-log button",
   gwToggle: 'input[type="checkbox"][aria-label="Mobile gateway"]',
-  gwRelay: 'input[aria-label="Relay URL"]',
+  gwRelay: 'input[aria-label="Custom public URL"]',
   gwRelayStatus: ".relay-status",
   gwRelayReset: "//button[contains(normalize-space(),'new relay ID') or contains(normalize-space(),'New relay ID')]",
   gwDiag: ".gw-diag",

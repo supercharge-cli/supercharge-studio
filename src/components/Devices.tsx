@@ -110,17 +110,22 @@ export function DevicesSection({ prefs, onPrefs, desktop }: { prefs: GatewayPref
           </label>
           <label>Port<input type="number" value={prefs.port} disabled={!!st?.running} onChange={(e) => onPrefs({ ...prefs, port: Number(e.target.value) || 2420 })} /></label>
         </div>
-        <label>Public URL (optional, for tunnels)
+        <label>Tunnel URL (optional)
           <input placeholder="wss://my-tunnel.example.com/gw" value={prefs.publicUrl} onChange={(e) => onPrefs({ ...prefs, publicUrl: e.target.value })} />
         </label>
-        <label>Custom relay URL (Public mode, optional)
-          <input aria-label="Relay URL" data-testid="gw-relay" placeholder={DEFAULT_RELAY} value={prefs.relayUrl ?? ""} onBlur={() => st?.running && void gateway.relaySet(effectiveRelay(prefs), prefs.hostId).then(refresh).catch((e) => setErr(String(e)))} onChange={(e) => onPrefs({ ...prefs, relayUrl: e.target.value, hostId: prefs.hostId || newHostId() })} />
-          <span className="muted small">Leave empty to use the built-in relay. Phones try the direct address first, then the relay.</span>
-          {st?.running && /bound to another key/.test(st.relay ?? "") && (
-            <span className="small">This computer's relay ID is taken on that relay. <button className="ghost" data-testid="gw-relay-reset" onClick={() => { const hostId = newHostId(); onPrefs({ ...prefs, hostId }); void gateway.relaySet(effectiveRelay(prefs), hostId).then(refresh).catch((e) => setErr(String(e))); }}>Use a new relay ID</button> (then show a new pairing code).</span>
-          )}
-          {st?.running && relay && <span className={`relay-status ${st.relay === "online" ? "ok" : st.relay?.startsWith("retrying") ? "bad" : ""}`} data-testid="gw-relay-status"><i className="dot" /> Relay: {st.relay ?? "off"}</span>}
-        </label>
+        {reach === "public" && <>
+          <label>Public URL
+            <input readOnly className="mono" aria-label="Public URL" data-testid="gw-relay-official" value={DEFAULT_RELAY} />
+          </label>
+          <label>Custom public URL (optional)
+            <input aria-label="Custom public URL" data-testid="gw-relay" placeholder="wss://" value={prefs.relayUrl ?? ""} onBlur={() => st?.running && void gateway.relaySet(effectiveRelay(prefs), prefs.hostId).then(refresh).catch((e) => setErr(String(e)))} onChange={(e) => onPrefs({ ...prefs, relayUrl: e.target.value, hostId: prefs.hostId || newHostId() })} />
+            <span className="muted small">A ws:// or wss:// URL here overrides the Public URL. Leave empty to use it.</span>
+            {st?.running && /bound to another key/.test(st.relay ?? "") && (
+              <span className="small">This computer's relay ID is taken on that relay. <button className="ghost" data-testid="gw-relay-reset" onClick={() => { const hostId = newHostId(); onPrefs({ ...prefs, hostId }); void gateway.relaySet(effectiveRelay(prefs), hostId).then(refresh).catch((e) => setErr(String(e))); }}>Use a new relay ID</button> (then show a new pairing code).</span>
+            )}
+            {st?.running && relay && <span className={`relay-status ${st.relay === "online" ? "ok" : st.relay?.startsWith("retrying") ? "bad" : ""}`} data-testid="gw-relay-status"><i className="dot" /> Relay: {st.relay ?? "off"}</span>}
+          </label>
+        </>}
         {st?.running && prefs.mode === "lan" && (
           <div className="gw-diag" data-testid="gw-diag">
             {st.port_note && <span className="small warn-text" data-testid="gw-port-note">The preferred port was in use, so the gateway is on port <b>{st.port}</b> ({st.port_note}). Paired phones find it automatically; new pairing codes use it.</span>}

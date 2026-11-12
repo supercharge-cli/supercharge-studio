@@ -65,7 +65,7 @@ connect timeout, cancelled once the gateway answers), then the relay. Authentica
 failures never fall through. The handshake and AES-256-GCM channel are identical on both
 routes, so the relay sees only `hello`/`challenge`/`auth`/`ok` envelopes (nonces and
 MACs, no secrets) and opaque binary frames. The app shows a `relay` badge when that route
-is in use. Desktop: Settings → Devices → **Relay URL** adds the route to new pairing
+is in use. Desktop: Settings → Devices → Public (official relay, or a **Custom public URL**) adds the route to new pairing
 codes and picks a random 96-bit `hostId` (a routing id, not a secret).
 
 **Desktop dial-out (next step):** the desktop keeps one outbound control socket to the

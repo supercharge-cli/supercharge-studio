@@ -14,6 +14,12 @@ describe("Local / Public connection", () => {
     expect(effectiveRelay({ reach: "local", relayUrl: "wss://r.example" })).toBeUndefined();
     expect(effectiveRelay({ reach: "public", relayUrl: "wss://r.example/" })).toBe("wss://r.example");
     expect(effectiveRelay({ reach: "public", relayUrl: "junk" })).toBe(DEFAULT_RELAY);
+    expect(effectiveRelay({ reach: "public", relayUrl: " ws://10.0.0.2:9000// " })).toBe("ws://10.0.0.2:9000");
+  });
+  it("Public with an empty, blank or non-ws custom URL uses the official relay", () => {
+    expect(DEFAULT_RELAY).toBe("wss://relay.superchargeai.in");
+    for (const relayUrl of [undefined, "", "   ", "https://r.example", "http://r.example"]) expect(effectiveRelay({ reach: "public", relayUrl })).toBe(DEFAULT_RELAY);
+    expect(reachOf({ reach: "public", relayUrl: "" })).toBe("public");
   });
   it("Public gets a host id and a connect URL", () => {
     const p = ensureHostId({ reach: "public" as const });

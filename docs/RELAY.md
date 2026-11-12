@@ -36,7 +36,9 @@ Supercharge Studio has a built-in public relay, `wss://relay.superchargeai.in`. 
 
 - **Public** (default for new installs): the pairing code carries this computer's LAN addresses
   first (fast path on the same Wi-Fi) and the relay route last, so pairing works from any network.
-  Everything stays end-to-end encrypted. A custom relay URL replaces the built-in one.
+  Everything stays end-to-end encrypted. Public mode shows the official relay as a read-only
+  *Public URL*; an optional *Custom public URL* (`ws://` or `wss://`) overrides it. Empty or
+  invalid custom URLs use the official relay.
 - **Local**: LAN addresses only, no relay connection.
 
 Headless server: `--public` / `--local` (or `SCS_REACH=public|local`); `--relay URL` picks a custom
@@ -44,7 +46,7 @@ relay for Public mode.
 
 ## Use it (self-hosted relay)
 
-- **Desktop app**: Settings → Devices → *Relay URL* = `wss://relay.example.com`, then *Show
+- **Desktop app**: Settings → Devices → Public → *Custom public URL* = `wss://relay.example.com`, then *Show
   pairing code*. The status line should say *Relay: online*. Phones try the computer's direct
   addresses first and switch to the relay automatically when none answers (about 3 s per address).
 - **Headless server**: `supercharge-studio-server run --relay wss://relay.example.com`

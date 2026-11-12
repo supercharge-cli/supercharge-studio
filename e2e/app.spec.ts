@@ -28,7 +28,7 @@ async function ask(page: Page, text: string) {
 test("new gateway settings use the public relay in pairing and support local-only pairing", async ({ page }) => {
   await boot(page);
   const gateway = await page.evaluate(() => JSON.parse(localStorage.getItem("supercharge-studio/v1")!).settings.gateway);
-  expect(gateway).toMatchObject({ enabled: false, relayUrl: "wss://relay.superchargeai.in" });
+  expect(gateway).toMatchObject({ enabled: false, relayUrl: "", reach: "public" });
   expect(gateway.hostId).toMatch(/^[0-9a-f]{24}$/);
   await page.evaluate(() => {
     const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
@@ -45,7 +45,8 @@ test("new gateway settings use the public relay in pairing and support local-onl
   });
   await page.getByRole("button", { name: "Settings" }).click();
   await page.getByTestId("tab-devices").click();
-  await expect(page.getByTestId("gw-relay")).toHaveValue("wss://relay.superchargeai.in");
+  await expect(page.getByTestId("gw-relay-official")).toHaveValue("wss://relay.superchargeai.in");
+  await expect(page.getByTestId("gw-relay")).toHaveValue("");
   await page.getByTestId("gw-toggle").locator("..").click();
   await expect.poll(() => page.evaluate(() => (window as any).__gatewayCalls.find((c: any) => c.cmd === "gateway_relay_set")?.args)).toMatchObject({ relayUrl: "wss://relay.superchargeai.in", hostId: gateway.hostId });
   await page.getByTestId("gw-pair").click();

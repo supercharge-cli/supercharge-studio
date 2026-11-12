@@ -6,7 +6,7 @@ export type ReachPrefs = { reach?: Reach; relayUrl?: string; hostId?: string };
 /** Older installs had no `reach`: a configured relay URL meant "public". New installs default to public. */
 export const reachOf = (p: ReachPrefs): Reach => p.reach ?? (p.relayUrl === undefined ? "public" : p.relayUrl.trim() ? "public" : "local");
 
-/** The relay to connect to, or undefined in Local mode. A custom relay URL overrides the built-in one. */
+/** The relay to connect to, or undefined in Local mode. A valid custom ws(s):// URL overrides the official one; empty or invalid uses it. */
 export const effectiveRelay = (p: ReachPrefs): string | undefined => {
   if (reachOf(p) !== "public") return undefined;
   const u = p.relayUrl?.trim();
