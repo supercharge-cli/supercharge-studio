@@ -291,6 +291,7 @@ export default function MobileApp() {
         } else if (method === "_supercharge/handoff") setHandoff(String(p?.sessionId ?? ""));
         else if (method === "_supercharge/agent_event" && p?.sessionId && ["done", "error", "permission"].includes(p?.kind)) notifyRef.current(p.kind, String(p.sessionId), String(p.body ?? ""));
         else if (method === "_supercharge/sessions/changed") void refresh();
+        else if (method === "_supercharge/setup/auth_changed") void import("./extras").then((m) => m.emitAuthChanged(p));
         else if (method === "_supercharge/session/context_usage" && p?.sessionId && Number(p?.usedTokens) >= 0) setCtxBySession((all) => ({ ...all, [String(p.sessionId)]: { used: Number(p.usedTokens), max: Number(p.maxTokens) > 0 ? Number(p.maxTokens) : all[String(p.sessionId)]?.max } }));
       },
       onPermissionRequest: (req) => new Promise((resolve) => {

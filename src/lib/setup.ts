@@ -9,7 +9,11 @@ import type { ModelOpt } from "./modelFallback";
 import type { Provider } from "./store";
 
 export type Fmt = "chat_completions" | "messages" | "responses";
-export type SetupProvider = { id: string; name: string; description: string; baseUrl: string; defaultModel: string; format: Fmt; keyOptional?: boolean; device?: boolean };
+/**
+ * `device`/`browser`: the CLI signs in for this provider (`authMethods`); `noKey`: no API-key path.
+ * `signedIn`: the CLI's sign-in state (null for key-only providers).
+ */
+export type SetupProvider = { id: string; name: string; description: string; baseUrl: string; defaultModel: string; format: Fmt; keyOptional?: boolean; device?: boolean; browser?: boolean; noKey?: boolean; signedIn?: boolean | null };
 const P = (id: string, name: string, description: string, baseUrl: string, defaultModel: string, format: Fmt = "chat_completions", x: Partial<SetupProvider> = {}): SetupProvider => ({ id, name, description, baseUrl, defaultModel, format, ...x });
 
 /** Fallback list, in the CLI's order: used only when the CLI does not send its own catalog (agent down, older CLI). */
@@ -64,10 +68,16 @@ export function filterModels(models: SetupModel[], query: string): SetupModel[] 
   return rows;
 }
 
-export type SetupStatus = { providerId?: string | null; baseUrl?: string | null; format?: string | null; model?: string | null; hasKey: boolean; nousSignedIn: boolean };
+export type SetupStatus = { providerId?: string | null; baseUrl?: string | null; format?: string | null; model?: string | null; hasKey: boolean; nousSignedIn: boolean; authLogin?: AuthLogin | null };
+
+// ---- CLI sign-in (`_supercharge/setup/auth_*`). Credentials never cross ACP: only ids, URL, code, status. ----
+export type AuthKind = "device" | "browser";
+export type AuthStart = { loginId: string; providerId: string; kind: AuthKind; url: string; userCode?: string; expiresIn: number; interval: number };
+export type AuthStatus = "pending" | "done" | "denied" | "expired" | "error";
+export type AuthLogin = { loginId: string; providerId: string; kind: AuthKind; status: AuthStatus; interval: number; message?: string };
 
 /** One entry of the CLI's own provider catalog, sent in `setup/status` `providers`. */
-export type CliProvider = { id: string; name?: string; description?: string; baseUrl?: string; defaultModel?: string; format?: string; curated?: boolean; auth?: string };
+export type CliProvider = { id: string; name?: string; description?: string; baseUrl?: string; defaultModel?: string; format?: string; curated?: boolean; auth?: string; authMethods?: string[]; signedIn?: boolean | null };
 export type SetupStatusFull = SetupStatus & { providers?: CliProvider[] };
 
 /**
@@ -86,6 +96,7 @@ export function normalizeStatus(raw: any): SetupStatusFull {
     nousSignedIn: !!(r.nousSignedIn ?? r.oauth?.nous?.signedIn),
   };
   if (Array.isArray(r.providers)) status.providers = r.providers;
+  if (r.authLogin !== undefined) status.authLogin = r.authLogin;
   return status;
 }
 
@@ -98,6 +109,7 @@ export function providerCatalog(status: SetupStatusFull | null | undefined): Set
   if (!rows.length) return PROVIDERS;
   return rows.map((p) => {
     const known = PROVIDERS.find((k) => k.id === p.id);
+    const m = Array.isArray(p.authMethods) ? p.authMethods : null;
     return {
       id: p.id,
       name: p.name || known?.name || p.id,
@@ -106,7 +118,10 @@ export function providerCatalog(status: SetupStatusFull | null | undefined): Set
       defaultModel: p.defaultModel ?? known?.defaultModel ?? "",
       format: p.format ? asFmt(p.format) : known?.format ?? "chat_completions",
       ...(known?.keyOptional ? { keyOptional: true } : {}),
-      ...(p.auth === "oauth_device" || (!p.auth && known?.device) ? { device: true } : {}),
+      ...((m ? m.includes("device") : p.auth === "oauth_device" || (!p.auth && known?.device)) ? { device: true } : {}),
+      ...(m?.includes("browser") ? { browser: true } : {}),
+      ...(m && !m.includes("api_key") ? { noKey: true } : {}),
+      ...(typeof p.signedIn === "boolean" ? { signedIn: p.signedIn } : {}),
     };
   });
 }
@@ -149,6 +164,9 @@ export const keyReusable = (status: SetupStatus | null | undefined, baseUrl: str
 export const switchedLive = (r: unknown) => Array.isArray((r as SaveResult | null)?.switchedSessions);
 export type DeviceStart = { userCode: string; verificationUri: string; expiresIn: number; interval: number };
 
+/** Whether the CLI is signed in for a sign-in provider (its catalog; older CLIs: the device login flag). */
+export const isSignedIn = (status: SetupStatusFull | null | undefined, p: SetupProvider) => !!(p.signedIn ?? (p.device && status?.nousSignedIn));
+
 export interface SetupApi {
   status(): Promise<SetupStatus>;
   models(providerId: string, baseUrl: string, apiKey: string | undefined, format: Fmt): Promise<SetupModel[]>;
@@ -157,9 +175,13 @@ export interface SetupApi {
   /** One token check: "pending" | "slow_down" | "done". */
   devicePoll(): Promise<string>;
   deviceCancel(): Promise<void>;
+  /** Present only when the agent offers `_supercharge/setup/auth_start` (not on the desktop shell). */
+  authStart?(providerId: string, kind?: AuthKind): Promise<AuthStart>;
+  authPoll?(loginId: string): Promise<AuthLogin>;
+  authCancel?(loginId: string): Promise<{ cancelled: boolean }>;
 }
 
-export const SETUP_OPS = ["status", "models", "save", "device_start", "device_poll", "device_cancel"] as const;
+export const SETUP_OPS = ["status", "models", "save", "device_start", "device_poll", "device_cancel", "auth_start", "auth_poll", "auth_cancel"] as const;
 
 /** Desktop shell backend. */
 export const desktopSetup: SetupApi = {
@@ -172,8 +194,8 @@ export const desktopSetup: SetupApi = {
 };
 
 /** Backend over a JSON-RPC call: `_supercharge/setup/<op>` (agent) or the gateway's `_supercharge/setup`. */
-export function rpcSetup(call: (op: string, params: Record<string, unknown>) => Promise<any>): SetupApi {
-  return {
+export function rpcSetup(call: (op: string, params: Record<string, unknown>) => Promise<any>, auth = false): SetupApi {
+  const api: SetupApi = {
     status: () => call("status", {}).then(normalizeStatus),
     models: (providerId, baseUrl, apiKey, format) => call("models", { providerId, baseUrl, apiKey, format }).then((r) => r?.models ?? r ?? []),
     save: ({ sessionId, ...r }) =>
@@ -182,12 +204,18 @@ export function rpcSetup(call: (op: string, params: Record<string, unknown>) => 
     devicePoll: () => call("device_poll", {}).then((r) => (typeof r === "string" ? r : r?.status ?? "pending")),
     deviceCancel: () => call("device_cancel", {}).then(() => {}),
   };
+  if (auth) {
+    api.authStart = (providerId, kind) => call("auth_start", kind ? { providerId, kind } : { providerId });
+    api.authPoll = (loginId) => call("auth_poll", { loginId });
+    api.authCancel = (loginId) => call("auth_cancel", { loginId }).then((r) => ({ cancelled: !!r?.cancelled }));
+  }
+  return api;
 }
 
 type ExtClient = { hasExtension(m: string): boolean; ext<T = any>(m: string, p?: unknown): Promise<T> };
 /** The connected agent's `_supercharge/setup/*` over ACP, or null when it does not offer them. */
 export function agentSetup(client?: ExtClient | null): SetupApi | null {
-  return client?.hasExtension("_supercharge/setup/save") ? rpcSetup((op, p) => client.ext(`_supercharge/setup/${op}`, p)) : null;
+  return client?.hasExtension("_supercharge/setup/save") ? rpcSetup((op, p) => client.ext(`_supercharge/setup/${op}`, p), client.hasExtension("_supercharge/setup/auth_start")) : null;
 }
 /** Prefer the agent's own setup over ACP when it offers one, else the desktop shell. */
 export function pickSetup(client?: ExtClient | null): SetupApi | null {
@@ -204,18 +232,55 @@ export function listProviderModels(api: SetupApi, p: Pick<Provider, "baseUrl" | 
   return api.models(id, base, undefined, asFmt(p.format));
 }
 
-/** Poll a device login until approved, honoring the interval and slow_down. Resolves when done. */
-export async function pollDevice(api: SetupApi, interval: number, expiresIn: number, cancelled: () => boolean, wait = (ms: number) => new Promise((r) => setTimeout(r, ms))): Promise<void> {
-  let every = Math.min(Math.max(interval, 1), 5) * 1000;
-  const end = Date.now() + Math.max(expiresIn, 30) * 1000;
-  for (;;) {
-    await wait(every);
-    if (cancelled()) throw new Error("cancelled");
-    if (Date.now() > end) throw new Error("Timed out waiting for Nous Portal approval");
-    const r = await api.devicePoll();
-    if (r === "done") return;
-    if (r === "slow_down") every += 1000;
+/** `_supercharge/setup/auth_changed` listeners (the agent's notification when a login finishes). */
+const authListeners = new Set<(l: AuthLogin) => void>();
+export function onAuthChanged(cb: (l: AuthLogin) => void) { authListeners.add(cb); return () => void authListeners.delete(cb); }
+export function emitAuthChanged(l: unknown) { if ((l as AuthLogin)?.loginId) for (const cb of [...authListeners]) cb(l as AuthLogin); }
+
+/**
+ * Wait for a CLI sign-in: poll every `interval` (raised when the CLI raises it), finish early on
+ * `auth_changed`, give up after `expiresIn`. Resolves on `done`; rejects with the CLI's message otherwise.
+ */
+export async function waitAuth(api: Pick<SetupApi, "authPoll">, s: Pick<AuthStart, "loginId" | "interval" | "expiresIn">, cancelled: () => boolean, wait = (ms: number) => new Promise((r) => setTimeout(r, ms))): Promise<AuthLogin> {
+  let every = Math.max(s.interval, 1) * 1000, off = () => {};
+  const end = Date.now() + Math.max(s.expiresIn, 30) * 1000;
+  const pushed = new Promise<AuthLogin>((res) => { off = onAuthChanged((l) => l.loginId === s.loginId && l.status !== "pending" && res(l)); });
+  try {
+    for (;;) {
+      let l = await Promise.race([wait(every).then(() => null), pushed]);
+      if (cancelled()) throw new Error("cancelled");
+      if (!l && Date.now() > end) throw new Error("Sign-in expired");
+      l ??= await api.authPoll!(s.loginId);
+      if (l.status === "done") return l;
+      if (l.status !== "pending") throw new Error(l.message || `Sign-in ${l.status}`);
+      every = Math.max(every, l.interval * 1000);
+    }
+  } finally { off(); }
+}
+
+/**
+ * Sign in through the CLI: `auth_start` + wait (or `device_*` on CLIs without `auth_start`).
+ * `shown` gets the link (and code) to show and open; `resume` waits on a login already running.
+ */
+export async function cliSignIn(api: SetupApi, providerId: string, h: { cancelled: () => boolean; shown: (d: DeviceStart, loginId?: string) => void; resume?: AuthLogin; wait?: (ms: number) => Promise<unknown> }): Promise<void> {
+  if (api.authStart && api.authPoll) {
+    const s = h.resume ? { ...h.resume, url: "", expiresIn: 900 } : await api.authStart(providerId);
+    if (h.cancelled()) throw new Error("cancelled");
+    h.shown({ userCode: s.userCode ?? "", verificationUri: s.url, expiresIn: s.expiresIn, interval: s.interval }, s.loginId);
+    await waitAuth(api, s, h.cancelled, h.wait as any);
+    return;
   }
+  const d = await api.deviceStart();
+  if (h.cancelled()) throw new Error("cancelled");
+  h.shown(d);
+  await pollDevice(api, d.interval, d.expiresIn, h.cancelled, h.wait as any);
+}
+
+/** Poll a device login until approved, honoring the interval and slow_down. Resolves when done. */
+export async function pollDevice(api: SetupApi, interval: number, expiresIn: number, cancelled: () => boolean, wait?: (ms: number) => Promise<unknown>): Promise<void> {
+  // The older `device_*` steps on the same waiter: slow_down adds a second.
+  let iv = Math.min(Math.max(interval, 1), 5);
+  await waitAuth({ authPoll: async () => { const r = await api.devicePoll(); if (r === "slow_down") iv++; return { status: r === "done" ? r : "pending", interval: iv } as AuthLogin; } }, { loginId: "", interval: iv, expiresIn }, cancelled, wait as any);
 }
 
 // ---- Model saves (picker fallback and typed ids) ----

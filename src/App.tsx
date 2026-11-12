@@ -273,6 +273,7 @@ export default function App() {
           return runPrompt(f.project.id, f.chat.id, text, from, extra ?? []);
         },
         setup: (op, params) => setupFor(op, params),
+        setupAuth: () => !!clientRef.current?.hasExtension("_supercharge/setup/auth_start"),
         upload: isDesktop() ? (params) => invoke("upload_chunk", { params }) : undefined,
         resolveUploads: isDesktop() ? (blocks) => invoke<unknown[]>("upload_rewrite", { prompt: blocks, images: agentImages() }) : undefined,
         cancel: (sid) => void clientRef.current?.cancel(sid),
@@ -433,6 +434,8 @@ export default function App() {
         }
       },
       onNotification: (method, params: any) => {
+        // A CLI sign-in finished: wake the setup wizard here and on paired phones.
+        if (method === "_supercharge/setup/auth_changed") { void setupLib().then((m) => m.emitAuthChanged(params)); hubRef.current?.setupAuthChanged(params); return; }
         // Prefer the agent's context_usage notification over derived response_completed values.
         const ctxN = contextFromUsageNotification(method, params);
         if (ctxN) {
@@ -609,6 +612,12 @@ export default function App() {
       case "device_start": return api.deviceStart();
       case "device_poll": return api.devicePoll();
       case "device_cancel": await api.deviceCancel(); return {};
+      // Sign-in lives on the agent only (the CLI checks ids and kinds).
+      case "auth_start": case "auth_poll": case "auth_cancel": {
+        const f = op === "auth_start" ? api.authStart : op === "auth_poll" ? api.authPoll : api.authCancel;
+        if (!f) throw new Error("Sign-in needs a newer Supercharge CLI");
+        return f(str(op === "auth_start" ? "providerId" : "loginId"), params?.kind);
+      }
     }
     throw new Error("Unknown setup step");
   };

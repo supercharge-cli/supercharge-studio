@@ -1,15 +1,15 @@
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
-import { applyCli, mergeCli, readCli, rpcSetup, CUSTOM, CUSTOM_MODEL, FORMATS, filterModels, filterProviders, keyReusable, pollDevice, providerCatalog, unlistedProvider, type DeviceStart, type Fmt, type SetupApi, type SetupModel, type SetupProvider, type SetupStatus, type SetupStatusFull } from "../lib/setup";
+import { applyCli, mergeCli, readCli, rpcSetup, CUSTOM, CUSTOM_MODEL, FORMATS, filterModels, cliSignIn, filterProviders, isSignedIn, keyReusable, providerCatalog, unlistedProvider, type AuthLogin, type DeviceStart, type Fmt, type SetupApi, type SetupModel, type SetupProvider, type SetupStatus, type SetupStatusFull } from "../lib/setup";
 import type { Provider } from "../lib/store";
 import { Icon } from "./Icon";
 import "./provider-setup.css";
 
 type Step = "provider" | "url" | "format" | "key" | "device" | "busy" | "error" | "model" | "custom" | "done";
-const TITLE: Record<Step, string> = { provider: "Choose a provider", url: "Base URL", format: "API format", key: "API key", device: "Nous Portal", busy: "Working", error: "Could not continue", model: "Choose a model", custom: "Custom model", done: "Saved" };
+const TITLE: Record<Step, string> = { provider: "Choose a provider", url: "Base URL", format: "API format", key: "API key", device: "Sign in", busy: "Working", error: "Could not continue", model: "Choose a model", custom: "Custom model", done: "Saved" };
 
 /**
- * The CLI's `/setup` wizard: provider → (base URL) → API format → API key → model, or the
- * Nous Research device-code login. Saves to the Supercharge config the CLI reads.
+ * The CLI's `/setup` wizard: provider → (base URL) → API format → API key → model, or the CLI's
+ * sign-in (device code or browser; `auth_*`, older CLIs `device_*`). Saves to the config the CLI reads.
  */
 export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }: { api: SetupApi; open: (url: string) => void; onSaved?: (s: SetupStatusFull) => void; onClose?: () => void; sessionId?: () => string | undefined }) {
   const [step, setStep] = useState<Step>("provider");
@@ -30,13 +30,26 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
   const [device, setDevice] = useState<DeviceStart | null>(null);
   const [copied, setCopied] = useState("");
   const gen = useRef(0);
-  useEffect(() => { void api.status().then(setStatus, () => {}); return () => { gen.current++; void api.deviceCancel().catch(() => {}); }; }, [api]);
+  const login = useRef("");
+  /** Stop the sign-in in progress on the CLI (auth_cancel, or device_cancel on older CLIs). */
+  const cancelLogin = () => { const id = login.current; login.current = ""; void (id && api.authCancel ? api.authCancel(id) : api.deviceCancel()).catch(() => {}); };
+  useEffect(() => {
+    void api.status().then((st: SetupStatusFull) => {
+      setStatus(st);
+      // A sign-in already running (e.g. after a reconnect): keep waiting for it instead of starting another.
+      const l = st.authLogin, p = l?.status === "pending" && api.authPoll && [...providerCatalog(st), unlistedProvider(st)].find((x) => x?.id === l.providerId);
+      if (p && l) { setProv(p); setFmt(p.format); setUrl(p.baseUrl); void signIn(p, l); }
+    }, () => {});
+    return () => { gen.current++; cancelLogin(); };
+  }, [api]);
 
   const go = (s: Step) => { setStep(s); setSel(0); setFilter(""); };
   const fail = (e: any, back: Step) => { setErr({ msg: String(e?.message ?? e), back }); setStep("error"); };
   // Like the CLI: a blank key reuses the saved one only for the same base URL.
   const keepKey = keyReusable(status, url);
-  const apiKey = (p: SetupProvider, u = url) => (key.trim() && !p.device ? key.trim() : p.device || keyReusable(status, u) ? undefined : "");
+  const signs = (p: SetupProvider) => !!(p.device || p.browser);
+  // Sign-in providers never send a key: the CLI uses its own login.
+  const apiKey = (p: SetupProvider, u = url) => (signs(p) || p.noKey ? undefined : key.trim() ? key.trim() : keyReusable(status, u) ? undefined : "");
 
   async function fetchModels(back: Step, p = prov, u = url, f = fmt) {
     const g = ++gen.current;
@@ -51,28 +64,38 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
     const g = ++gen.current;
     setBusyText("Saving provider configuration…"); setStep("busy");
     try {
+      // Signed-in providers send no key, only the picked model (the CLI may have switched to its default).
       const s = await api.save({ providerId: prov.id, baseUrl: url, apiKey: apiKey(prov), format: fmt, modelId, modelName: modelName && modelName !== modelId ? modelName : undefined, sessionId: sessionId?.() || undefined });
       if (g !== gen.current) return;
       setStatus(s); setStep("done"); onSaved?.(s);
     } catch (e) { if (g === gen.current) fail(e, back); }
   }
-  async function deviceLogin(p: SetupProvider) {
+  /** Sign in through the CLI, then list models. `resume`: a login already in progress on the CLI. */
+  async function signIn(p: SetupProvider, resume?: AuthLogin) {
     const g = ++gen.current;
-    setDevice(null); setBusyText("Starting Nous Portal login…"); setStep("device");
+    setDevice(null); setBusyText("Waiting for sign-in…"); setStep("device");
     try {
-      const d = await api.deviceStart();
+      await cliSignIn(api, p.id, {
+        resume,
+        cancelled: () => g !== gen.current,
+        shown: (d, id) => {
+          login.current = id ?? "";
+          if (!d.verificationUri) return;
+          setDevice(d);
+          if (/^https:\/\//i.test(d.verificationUri)) open(d.verificationUri);
+        },
+      });
+      login.current = "";
       if (g !== gen.current) return;
-      setDevice(d); open(d.verificationUri);
-      await pollDevice(api, d.interval, d.expiresIn, () => g !== gen.current);
-      if (g !== gen.current) return;
-      setStatus((s) => s && { ...s, nousSignedIn: true });
+      const st = await api.status().catch(() => null);
+      if (st) setStatus(st);
       void fetchModels("provider", p, p.baseUrl, p.format);
-    } catch (e: any) { if (g === gen.current && e?.message !== "cancelled") fail(e, "provider"); }
+    } catch (e: any) { if (g === gen.current && e?.message !== "cancelled") { login.current = ""; fail(e, "provider"); } }
   }
   function choose(p: SetupProvider) {
     setProv(p); setFmt(p.format); setUrl(p.baseUrl); setKey(""); setReveal(false); setCustom(""); setCustomName("");
     if (p.id === CUSTOM.id) { setUrl(status?.providerId === "custom" ? status.baseUrl ?? "" : ""); return go("url"); }
-    if (p.device) return void (status?.nousSignedIn ? fetchModels("provider", p, p.baseUrl, p.format) : deviceLogin(p));
+    if (signs(p) && (api.authStart || p.device)) return void (isSignedIn(status, p) ? fetchModels("provider", p, p.baseUrl, p.format) : signIn(p));
     go("format"); setSel(FORMATS.findIndex(([f]) => f === p.format));
   }
 
@@ -86,7 +109,7 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
     else if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
     else if (e.key === "Enter") { e.preventDefault(); enter(); }
   };
-  const back: Partial<Record<Step, Step>> = { url: "provider", format: prov.id === CUSTOM.id ? "url" : "provider", key: "format", model: prov.device ? "provider" : "key", custom: customBack, error: err.back, device: "provider", done: "provider" };
+  const back: Partial<Record<Step, Step>> = { url: "provider", format: prov.id === CUSTOM.id ? "url" : "provider", key: "format", model: signs(prov) ? "provider" : "key", custom: customBack, error: err.back, device: "provider", done: "provider" };
   const copy = (t: string, what: string) => { void navigator.clipboard?.writeText(t).then(() => { setCopied(what); setTimeout(() => setCopied(""), 1500); }); };
   const fmtName = FORMATS.find(([f]) => f === fmt)?.[1];
   const current = status?.model ? `${[...catalog, extra].find((p) => p?.id === status.providerId)?.name ?? status.providerId ?? "Custom"} · ${status.model}` : "";
@@ -94,7 +117,7 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
   return (
     <div className="psetup" data-testid="provider-setup">
       <div className="psetup-head">
-        {back[step] && step !== "busy" && <button className="icon" aria-label="Back" data-testid="setup-back" onClick={() => { gen.current++; if (step === "device") void api.deviceCancel().catch(() => {}); go(back[step]!); }}><Icon name="arrowLeft" size={15} /></button>}
+        {back[step] && step !== "busy" && <button className="icon" aria-label="Back" data-testid="setup-back" onClick={() => { gen.current++; if (step === "device") cancelLogin(); go(back[step]!); }}><Icon name="arrowLeft" size={15} /></button>}
         <h3>{TITLE[step]}</h3>
         <span className="spacer" />
         {onClose && <button className="icon" aria-label="Close" onClick={onClose}><Icon name="x" size={15} /></button>}
@@ -126,12 +149,12 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
       </div>}
 
       {step === "key" && <form className="psetup-form" onSubmit={(e) => { e.preventDefault(); void fetchModels("key"); }}>
-        <label>API key (leave blank for local endpoints)
+        {!prov.noKey && <label>API key (leave blank for local endpoints)
           <span className="psetup-key">
             <input autoFocus data-testid="setup-key" type={reveal ? "text" : "password"} autoComplete="off" spellCheck={false} value={key} onChange={(e) => setKey(e.target.value)} placeholder={keepKey ? "Saved key, leave blank to keep it" : prov.keyOptional ? "Optional" : "Paste your API key"} />
             <button type="button" className="ghost" data-testid="setup-reveal" aria-pressed={reveal} onClick={() => setReveal(!reveal)}>{reveal ? "Hide" : "Show"}</button>
           </span>
-        </label>
+        </label>}
         <p className="muted small">{prov.name} · {fmtName} API · {url}</p>
         <div className="row">
           <button data-testid="setup-fetch">Fetch models</button>
@@ -144,15 +167,16 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
           <p>To continue:</p>
           <ol>
             <li>Open: <a href={device.verificationUri} target="_blank" rel="noreferrer" data-testid="setup-device-url" onClick={(e) => { e.preventDefault(); open(device.verificationUri); }}>{device.verificationUri}</a></li>
-            <li>If prompted, enter code:</li>
+            {device.userCode && <li>If prompted, enter code:</li>}
           </ol>
-          <div className="psetup-code"><code data-testid="setup-code">{device.userCode}</code><button className="secondary compact" data-testid="setup-copy-code" onClick={() => copy(device.userCode, "code")}>{copied === "code" ? "Copied" : "Copy code"}</button></div>
+          {device.userCode && <div className="psetup-code"><code data-testid="setup-code">{device.userCode}</code><button className="secondary compact" data-testid="setup-copy-code" onClick={() => copy(device.userCode, "code")}>{copied === "code" ? "Copied" : "Copy code"}</button></div>}
           <div className="row">
             <button className="secondary compact" data-testid="setup-open" onClick={() => open(device.verificationUri)}><Icon name="globe" size={14} /> Open link</button>
             <button className="ghost compact" data-testid="setup-copy-url" onClick={() => copy(device.verificationUri, "url")}>{copied === "url" ? "Copied" : "Copy link"}</button>
           </div>
           <p className="muted small psetup-wait"><i className="psetup-spin" /> Opened in your browser. Waiting for approval…</p>
         </> : <p className="muted small psetup-wait"><i className="psetup-spin" /> {busyText}</p>}
+        <button className="ghost compact" data-testid="setup-cancel-login" onClick={() => { gen.current++; cancelLogin(); go("provider"); }}>Cancel</button>
       </div>}
 
       {step === "busy" && <p className="muted psetup-wait" role="status"><i className="psetup-spin" /> {busyText}</p>}
@@ -160,7 +184,7 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
       {step === "error" && <div className="psetup-form">
         <p className="danger-text" role="alert" data-testid="setup-error">{err.msg}</p>
         <div className="row">
-          <button data-testid="setup-retry" onClick={() => (prov.device && err.back === "provider" ? void deviceLogin(prov) : err.back === "key" ? void fetchModels("key") : go(err.back))}>Retry</button>
+          <button data-testid="setup-retry" onClick={() => (signs(prov) && err.back === "provider" ? void signIn(prov) : err.back === "key" ? void fetchModels("key") : go(err.back))}>Retry</button>
           <button type="button" className="secondary" data-testid="setup-enter-model" onClick={() => { setCustom(custom || prov.defaultModel); setCustomName(""); setCustomBack(err.back === "key" ? "key" : "model"); go("custom"); }}>Enter model id…</button>
         </div>
       </div>}
@@ -175,6 +199,7 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
           ))}
         </div>
         <p className="muted small">{models.length} models from {prov.name}</p>
+        {signs(prov) && api.authStart && <button className="ghost compact" data-testid="setup-signin-again" onClick={() => void signIn(prov)}>Sign in again</button>}
       </>}
 
       {step === "custom" && <form className="psetup-form" onSubmit={(e) => { e.preventDefault(); const id = custom.trim(); if (id) void save(id, customName.trim() || undefined, "custom"); }}>
@@ -209,8 +234,9 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
 /** Phone copy of the CLI's provider references (never a key), the removals and the on/off toggle. */
 export { ModelCustomForm } from "./ModelCustomForm";
 export { saveCustomModel } from "../lib/setup";
-/** The paired computer's setup methods, through the gateway. */
-export const phoneSetup = (c: { ext: (m: string, p: Record<string, unknown>) => Promise<any> }) => rpcSetup((op, p) => c.ext("_supercharge/setup", { ...p, op }));
+/** The paired computer's setup methods, through the gateway; sign-in (`auth_*`) when its agent offers it. */
+export const phoneSetup = (c: { ext: (m: string, p: Record<string, unknown>) => Promise<any>; initResult?: any }) => rpcSetup((op, p) => c.ext("_supercharge/setup", { ...p, op }), !!c.initResult?.agentCapabilities?._meta?.supercharge?.setupAuth);
+export { emitAuthChanged } from "../lib/setup";
 const K = "supercharge-mobile/cli-";
 const get = (k: string, d: any) => { try { return JSON.parse(localStorage.getItem(K + k) ?? "") ?? d; } catch { return d; } };
 const put = (k: string, v: unknown) => { try { localStorage.setItem(K + k, JSON.stringify(v)); } catch { /* full or blocked */ } };

@@ -35,8 +35,10 @@ export interface HubHost {
   windowSupport?(sessionId: string): { via: "option" | "ext"; current?: number | "auto" | null } | null;
   /** Apply a context-window override; returns the session's config options and the resolved window. */
   setContextWindow?(sessionId: string, value: number | "auto"): Promise<{ configOptions?: ConfigOption[]; contextWindow?: number | null }>;
-  /** Provider setup on this computer (the CLI's /setup steps): status, models, save, device_start, device_poll, device_cancel. */
+  /** Provider setup on this computer (the CLI's /setup steps): status, models, save, device_*, auth_*. */
   setup?(op: string, params: any): Promise<unknown>;
+  /** True when the computer's agent offers the CLI's sign-in (`_supercharge/setup/auth_*`). */
+  setupAuth?(): boolean;
   /** Make sure a session's history is available (e.g. load it from the agent). */
   ensureLoaded?(sessionId: string): Promise<void>;
 }
@@ -45,7 +47,7 @@ type Msg = { jsonrpc?: "2.0"; id?: number | string; method?: string; params?: an
 type Send = (deviceId: string, msg: Msg) => void;
 
 const ALLOWED = new Set(["initialize", "session/list", "session/load", "session/new", "session/prompt", "session/cancel", "session/set_config_option", "session/set_mode", "_supercharge/focus", "_supercharge/upload", "_supercharge/ping", "_supercharge/session/context_window", "_supercharge/setup", "_supercharge/agents/list", "_supercharge/agents/create"]);
-const SETUP_OPS = new Set(["status", "models", "save", "device_start", "device_poll", "device_cancel"]);
+const SETUP_OPS = new Set(["status", "models", "save", "device_start", "device_poll", "device_cancel", "auth_start", "auth_poll", "auth_cancel"]);
 const MAX_REPLAY = 3000;
 
 export class GatewayHub {
@@ -86,6 +88,10 @@ export class GatewayHub {
   /** Agent alert (turn done / error / needs approval) for phones; they decide whether to show it. */
   agentEvent(sessionId: string, kind: "done" | "error" | "permission", body: string) {
     for (const d of this.devices) this.send(d, { jsonrpc: "2.0", method: "_supercharge/agent_event", params: { sessionId, kind, body } });
+  }
+  /** The agent's `_supercharge/setup/auth_changed` (a sign-in finished), for phones in provider setup. */
+  setupAuthChanged(login: unknown) {
+    for (const d of this.devices) this.send(d, { jsonrpc: "2.0", method: "_supercharge/setup/auth_changed", params: login });
   }
   /** Context usage for phones watching that session. */
   contextUsage(sessionId: string, usedTokens: number, maxTokens?: number) {
@@ -158,7 +164,7 @@ export class GatewayHub {
         case "initialize":
           return this.reply(deviceId, id, {
             protocolVersion: 1,
-            agentCapabilities: { loadSession: true, sessionCapabilities: { list: {} }, promptCapabilities: { image: true, embeddedContext: true }, _meta: { supercharge: { upload: !!this.host.upload, setup: !!this.host.setup } } },
+            agentCapabilities: { loadSession: true, sessionCapabilities: { list: {} }, promptCapabilities: { image: true, embeddedContext: true }, _meta: { supercharge: { upload: !!this.host.upload, setup: !!this.host.setup, setupAuth: !!this.host.setup && !!this.host.setupAuth?.() } } },
             agentInfo: { name: "supercharge-studio-gateway", title: "Supercharge Studio" },
             authMethods: [],
             _meta: { supercharge: { gateway: { version: 1, projects: this.host.projects() } } },

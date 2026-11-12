@@ -30,7 +30,7 @@ type Listed = { sessionId: string; cwd: string; title?: string; updatedAt?: stri
 type St = { n: number; listed: Listed[]; known: Set<string>; modelFixed?: boolean; loads: { sessionId: string; cwd: string; mcp: string[] }[] };
 const CLI = process.env.FAKE_AGENT_CLI === "1";
 // The CLI fake also offers the proposed ACP provider-setup extension (`_supercharge/setup/<op>`).
-const SETUP_METHODS = ["status", "models", "save", "device_start", "device_poll", "device_cancel"].map((op) => `_supercharge/setup/${op}`);
+const SETUP_METHODS = ["status", "models", "save", "device_start", "device_poll", "device_cancel", "auth_start", "auth_poll", "auth_cancel"].map((op) => `_supercharge/setup/${op}`);
 // FAKE_AGENT_PROVIDER=1: the CLI was already set up (OpenRouter, key saved in its config), in the CLI's
 // own status shape (`modelId`, `hasApiKey`, `configured`); sessions list that provider's models.
 const PRESET = process.env.FAKE_AGENT_PROVIDER === "1";
@@ -386,8 +386,8 @@ wss.on("connection", (ws: WebSocket) => {
       default:
         if (CLI && SETUP_METHODS.includes(m.method)) {
           const op = m.method.split("/").pop();
-          try { const r = await setupFake.run(op, m.params); if (op === "save") noModel = true; return reply(op === "models" ? { models: r } : op === "device_poll" ? { status: r } : r); }
-          catch (e: any) { return send({ id: m.id, error: { code: -32000, message: e.message } }); }
+          try { const r = await setupFake.run(op, m.params, (method, params) => send({ method, params })); if (op === "save") noModel = true; return reply(op === "models" ? { models: r } : op === "device_poll" ? { status: r } : r); }
+          catch (e: any) { return send({ id: m.id, error: { code: e.code ?? -32000, message: e.message } }); }
         }
         if (m.id != null) send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });
     }
