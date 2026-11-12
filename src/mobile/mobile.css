@@ -120,7 +120,7 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-project-list{display:flex;flex-direction:column;gap:8px;max-height:46vh;overflow:auto}
 .m-picker-options{overflow-y:auto;min-height:0}
 .m-picker-option{display:flex;align-items:center;gap:8px;width:100%;padding:13px 12px;text-align:left;border-radius:12px;color:var(--fg);background:none}
-.m-picker-option span:first-child{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-picker-option span:first-child{flex:1;min-width:0}
 .m-picker-option[aria-pressed=true]{background:var(--hover);color:var(--acc)}
 .m-custom-model{display:flex;flex-direction:column;gap:10px;padding:8px 4px 12px}.m-custom-model label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}.m-custom-model input{font-size:16px;border-radius:12px}.m-custom-model .row{display:flex;gap:8px;justify-content:flex-end}
 
@@ -206,7 +206,7 @@ button,a{-webkit-tap-highlight-color:transparent}
 .m-compose-meta .m-chip{max-width:none;padding:8px 12px;font-size:14px}
 .m-compose-tools{gap:8px;padding:2px 0 4px}
 .m-compose-tools .m-chip{min-height:40px;padding:8px 14px;font-size:14px}
-.m-compose-box{overflow:hidden}
+.m-compose-box{overflow:hidden}.m-compose-box:has(.ctx-pop){overflow:visible}
 .m-compose-row{gap:8px;padding-top:2px;width:100%;max-width:100%}
 .m-compose-row .round{margin-left:auto;width:40px;height:40px;min-width:40px;min-height:40px;flex:none}
 .m-compose-row .m-attach{width:40px;min-width:40px;height:40px}

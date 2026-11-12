@@ -11,6 +11,7 @@ import { applyUpdate, ChatItem, emptySession, SessionState } from "../acp/sessio
 import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionModes } from "../acp/types";
 import { ModeControl } from "../components/ModeControl";
 import { Icon } from "../components/Icon";
+import { OptText } from "../components/OptText";
 import { Thought, ThoughtLive } from "../components/Thought";
 import { follows, pinToEnd } from "../lib/follow";
 import { Markdown } from "../components/Markdown";
@@ -32,6 +33,7 @@ const loadCustoms = (): CustomModel[] => { try { const j = JSON.parse(localStora
 const storeCustoms = (list: CustomModel[]) => { try { localStorage.setItem(CK, JSON.stringify(list)); } catch {} };
 /** Provider setup on the paired computer (same steps as the CLI's /setup), loaded on first open. */
 const Pair = lazy(() => import("./extras").then((m) => ({ default: m.Pair })));
+const UpdateSheet = lazy(() => import("./extras").then((m) => ({ default: m.UpdateSheet })));
 const PhoneSetup = lazy(() => import("./extras").then((m) => ({
   default: function PhoneSetup({ client, onClose, sessionId }: { client: AcpClient; onClose: () => void; sessionId: () => string | undefined }) {
     const api = useMemo(() => m.phoneSetup(client), [client]);
@@ -558,6 +560,7 @@ export default function MobileApp() {
   }
 
   const sess = (open && state[open]) || emptySession();
+  useEffect(() => { document.documentElement.toggleAttribute("data-lean", sess.agent == "lean"); }, [sess.agent]);
   // Stick to the bottom while streaming unless the reader has scrolled up.
   useEffect(() => {
     const el = scroller.current;
@@ -610,6 +613,7 @@ export default function MobileApp() {
   const permissionOption = sessionOptions.find((o) => o.id === "permission_mode" && o.options?.length);
   const sessionModes = open ? modesBySession[open] : undefined;
   const activeOption = picker === "model" ? modelOption : sessionOptions.find((o) => o.id === picker);
+  const shownChoices = (activeOption?.options ?? []).filter((v) => picker != "model" || `${v.name} ${v.value}`.toLowerCase().includes(modelSearch.trim().toLowerCase()));
   const windowSup = open ? windowBySession[open] : null;
   const windowCtl: WindowCtl | undefined = open && windowSup ? {
     option: windowSup.via === "option" ? windowOption(sessionOptions) : undefined, ext: windowSup.via === "ext", current: windowSup.current,
@@ -674,17 +678,7 @@ export default function MobileApp() {
 
   return (
     <div className="m-app">
-      {update && !update.hide && (
-        <div className="m-sheet-bg top" data-testid="m-update">
-          <div className="m-sheet" role="dialog" aria-label="Update" onClick={(e) => e.stopPropagation()}>
-            <div className="m-grabber" aria-hidden />
-            <h3>{update.ready ? "Update ready" : `Update ${update.version}`}</h3>
-            {update.err ? <p className="muted">{update.err}</p> : update.p != null && !update.ready && <progress data-testid="m-update-progress" max={1} value={update.p || undefined} />}
-            {(update.ready || update.p == null) && <button className="m-big" onClick={() => update.ready ? (window as any).SuperchargeAndroid.installUpdate() : window.open(update.err ? update.asset : update.page)}>{update.ready ? "Restart" : update.err ? "Download manually" : "Install"}</button>}
-            <button className="m-big secondary" onClick={() => setUpdate({ ...update, hide: 1 })}>Later</button>
-          </div>
-        </div>
-      )}
+      {update && !update.hide && <Suspense fallback={null}><UpdateSheet u={update} set={setUpdate} /></Suspense>}
       <header className="m-top">
         {open ? <button className="icon" aria-label="Chats" data-testid="m-menu" onClick={() => { haptic(); setDrawer(true); }}><Icon name="panelLeft" size={20} /></button> : <div className="logo"><img src="/logo.png" alt="" /></div>}
         {open && <button className="icon" aria-label="Back" onClick={back} data-testid="m-back"><Icon name="arrowLeft" size={20} /></button>}
@@ -933,12 +927,12 @@ export default function MobileApp() {
                 <Suspense fallback={null}><ModelCustomForm tid="m-model" id={customId} name={customName} busy={settingOption} onId={setCustomId} onName={setCustomName} onBack={() => setCustomOpen(false)} onSave={() => void applyCustomModel()} /></Suspense>
               ) : (
                 <>
-                  {(activeOption.options ?? []).filter((v) => picker !== "model" || `${v.name ?? ""} ${v.value}`.toLowerCase().includes(modelSearch.trim().toLowerCase())).map((v) => (
+                  {shownChoices.map((v) => (
                     <button key={v.value} className="m-picker-option" data-testid={picker === "model" ? "m-model-choice" : undefined} aria-pressed={v.value === activeOption.currentValue} disabled={settingOption} onClick={() => { haptic(); void chooseOption(activeOption.id, v.value); }}>
-                      <span>{v.name || v.value}</span>{v.value === activeOption.currentValue && <span aria-hidden="true">✓</span>}
+                      <OptText o={v} />{v.value === activeOption.currentValue && <span aria-hidden="true">✓</span>}
                     </button>
                   ))}
-                  {picker === "model" && !(activeOption.options ?? []).filter((v) => `${v.name ?? ""} ${v.value}`.toLowerCase().includes(modelSearch.trim().toLowerCase())).length && <p className="muted m-none">No matching models</p>}
+                  {picker === "model" && !shownChoices.length && <p className="muted m-none">No matching models</p>}
                   {picker === "model" && <button type="button" className="m-picker-option" data-testid="m-model-custom-toggle" disabled={settingOption} onClick={() => { setCustomOpen(true); setCustomId(modelSearch.trim()); setCustomName(""); }}><span>Type model id…</span></button>}
                 </>
               )}

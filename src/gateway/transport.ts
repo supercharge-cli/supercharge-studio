@@ -34,10 +34,10 @@ export function networkMismatch(localIp: string | undefined, directUrls: string[
   if (!me) return "";
   const hosts = directUrls.map((u) => v4(hostOf(u))).filter((o): o is number[] => !!o && privV4(o));
   if (!hosts.length) return "";
-  if (!privV4(me)) return `This phone (${localIp}) is not on a local Wi-Fi network (mobile data or VPN?), so it can't reach the computer at ${hosts.map((o) => o.join(".")).join(", ")}. Join the same Wi-Fi as the computer, or use a relay.`;
+  if (!privV4(me)) return `This phone (${localIp}) is not on a local Wi-Fi network (mobile data or VPN?), so it can't reach ${hosts.map((o) => o.join(".")).join(", ")}. Join the computer's Wi-Fi, or use Public.`;
   const same = hosts.some((o) => o[0] === me[0] && o[1] === me[1] && o[2] === me[2]);
   if (same) return "";
-  return `This phone (${localIp}) appears to be on a different network than the computer (${hosts.map((o) => o.join(".")).join(", ")}). Connect the phone to the same Wi-Fi as the computer (not a guest network or a different router), or use a relay.`;
+  return `This phone (${localIp}) is on a different network than the computer (${hosts.map((o) => o.join(".")).join(", ")}). Join the computer's Wi-Fi (not a guest network), or use Public.`;
 }
 
 /** Readable explanation of why no route worked, naming each address. */
@@ -49,13 +49,13 @@ export function explainFailure(attempts: Attempt[], port?: string, localIp?: str
   const relayed = attempts.some((a) => a.route === "relay");
   if (mismatch) tips.push(mismatch);
   if (attempts.some((a) => a.route === "direct")) {
-    if (!mismatch) tips.push("Make sure this phone is on the same Wi-Fi as the computer (not mobile data or a guest network).");
+    if (!mismatch) tips.push("Use the same Wi-Fi as the computer (not mobile data or a guest network).");
     // Public mode (a relay route exists) only connects outward, so never ask about the firewall there.
-    if (p && !relayed) tips.push(`Allow TCP port ${p} in the computer's firewall (Settings → Devices on the computer shows the exact command).`);
+    if (p && !relayed) tips.push(`Allow TCP port ${p} in the computer's firewall (Settings → Devices there shows how).`);
     const d = attempts.find((a) => a.route === "direct" && isPrivateHost(a.url));
     if (d) tips.push(`Test it: open http://${hostOf(d.url)}/ in this phone's browser. If it doesn't load, the network${relayed ? "" : " or firewall"} is blocking it.`);
   }
-  if (!attempts.some((a) => a.route === "relay")) tips.push("To connect from anywhere, set a relay URL in Settings → Devices on the computer, then show a new code.");
+  if (!attempts.some((a) => a.route === "relay")) tips.push("To connect from anywhere, choose Public in Settings → Devices on the computer, then show a new code.");
   return `Cannot reach the desktop gateway.\n${lines.join("\n")}\n${tips.join("\n")}`;
 }
 
@@ -164,7 +164,7 @@ export class GatewayTransport implements Transport {
         const reason = /timed out/i.test(msg) ? "no answer (blocked by a firewall, or a different network)"
           : /closed \((\d+)\)/i.test(msg) ? `connection closed (${msg.match(/closed \((\d+)\)/i)![1]})${route === "relay" ? ", is this computer online on the relay?" : ""}`
           : quick ? "connection refused (gateway off, wrong port, or firewall rejecting)"
-          : "no route to host (the phone couldn't find the computer on its network: different Wi-Fi, guest network or router client isolation; less often a firewall)";
+          : "no route to host (different Wi-Fi, guest network or router isolation; rarely a firewall)";
         this.attempts.push({ url: this.urls[i], route, reason });
       }
     }

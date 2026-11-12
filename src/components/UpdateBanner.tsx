@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { invoke, isDesktop, listen } from "../lib/desktop";
 import type { AvailableUpdate } from "../lib/updates";
+import { Notes } from "../lib/releaseNotes";
 
 type St = { p?: number; ready?: string; err?: string };
 
@@ -26,17 +27,17 @@ export default function UpdateBanner({ u, onLater }: { u: AvailableUpdate; onLat
     <div className="notice update-banner" data-testid="update-banner" data-state={st.ready ? "ready" : st.err != null ? "error" : "downloading"} role="status">
       {st.ready ? (
         <>
-          <span>Update ready — restart to use Supercharge Studio {u.version}.</span>
+          <span>Update ready — restart to use Supercharge Studio {u.version}.<Notes md={u.notes} /></span>
           <button onClick={restart}>Restart</button>
         </>
       ) : st.err != null ? (
         <>
-          <span>{st.err ? `Couldn't install Supercharge Studio ${u.version}: ${st.err}` : `Supercharge Studio ${u.version} is available.`}</span>
+          <span>{st.err ? `Couldn't install Supercharge Studio ${u.version}: ${st.err}` : `Supercharge Studio ${u.version} is available.`}<Notes md={u.notes} /></span>
           <button onClick={() => window.open(u.asset || u.page, "_blank")}>Download manually</button>
         </>
       ) : (
         <>
-          <span>Downloading Supercharge Studio {u.version}…</span>
+          <span>Downloading Supercharge Studio {u.version}…<Notes md={u.notes} /></span>
           <progress data-testid="update-progress" max={1} value={st.p} />
         </>
       )}

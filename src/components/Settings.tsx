@@ -8,6 +8,7 @@ import { Icon } from "./Icon";
 import { Plugins } from "./Plugins";
 import type { PluginRpc } from "../lib/plugins";
 import { themeList } from "../lib/themes";
+import { APP_VERSION } from "../lib/updates";
 import ProviderSetup from "./ProviderSetup";
 import { agentInfo, agentLog, providerDiscoverModels, type AgentInfo, type DiscoveredModel } from "../lib/desktop";
 
@@ -151,6 +152,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
             <Icon name={t.icon} /> {t.label}
           </button>
         ))}
+        <div className="screen-nav-ver" data-testid="app-version">Supercharge Studio v{APP_VERSION}</div>
       </nav>
       <div className="screen-main">
         <header className="screen-head">

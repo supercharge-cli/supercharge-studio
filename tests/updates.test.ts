@@ -51,7 +51,7 @@ describe("update check", () => {
   const stub = (body: unknown, ok = true) => vi.stubGlobal("fetch", vi.fn(async () => ({ ok, json: async () => body })));
 
   it("returns the newer release with the asset, latest.json and install format", async () => {
-    stub({ tag_name: "v1.0.18", html_url: "https://github.com/supercharge-cli/supercharge-studio/releases/tag/v1.0.18", assets });
+    stub({ tag_name: "v1.0.18", html_url: "https://github.com/supercharge-cli/supercharge-studio/releases/tag/v1.0.18", assets, body: "- New thing" });
     const u = await checkUpdate("1.0.17", (all) => pickAsset(all, "rpm"), "rpm");
     expect(u).toEqual({
       version: "1.0.18",
@@ -60,8 +60,15 @@ describe("update check", () => {
       assetName: "supercharge-studio-linux-x86_64.rpm",
       manifest: REL + "latest.json",
       format: "rpm",
+      notes: "- New thing",
     });
     expect((fetch as any).mock.calls[0][0]).toBe("https://api.github.com/repos/supercharge-cli/supercharge-studio/releases/latest");
+  });
+  it("keeps the release notes, empty when missing and capped in size", async () => {
+    stub({ tag_name: "v1.0.18", assets });
+    expect((await checkUpdate("1.0.17", (all) => pickAsset(all)))?.notes).toBe("");
+    stub({ tag_name: "v1.0.18", assets, body: "x".repeat(10000) });
+    expect((await checkUpdate("1.0.17", (all) => pickAsset(all)))?.notes).toHaveLength(4000);
   });
   it("returns nothing when up to date or the request fails", async () => {
     stub({ tag_name: "v1.0.17", assets });

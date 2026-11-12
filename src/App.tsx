@@ -223,6 +223,16 @@ export default function App() {
     queue.current.push({ cid, u });
     if (!raf.current) raf.current = (typeof requestAnimationFrame === "function" ? requestAnimationFrame : (f: any) => setTimeout(f, 16))(flush) as any;
   }, [flush]);
+  /** Ask the CLI which agent profile runs this session; Lean mode recolors the app (`data-lean`). */
+  const syncAgent = (c: AcpClient | null, sid?: string) => {
+    if (c && sid) void c.ext("_supercharge/session/info", { sessionId: sid }).then((r: any) => {
+      const agent = (r?.result ?? r)?.agentName, f = chatForSession(sid);
+      if (typeof agent !== "string") return;
+      const u = { sessionUpdate: "session_info_update", _meta: { supercharge: { agent } } } as SessionUpdate;
+      hubRef.current?.update(sid, u);
+      if (f) enqueue(f.chat.id, u);
+    }, () => {});
+  };
   const pushItem = (cid: string, item: ChatItem) => {
     flush();
     setSessions((all) => ({ ...all, [cid]: { ...(all[cid] ?? emptySession()), items: [...(all[cid]?.items ?? []), item] } }));
@@ -663,6 +673,9 @@ export default function App() {
 
   const active = findProject(data, data.activeProjectId);
   const activeChat = active?.project.chats.find((c) => c.id === data.activeChatId);
+  useEffect(() => { if (conn === "open") syncAgent(clientRef.current, activeChat?.sessionId); }, [conn, activeChat?.sessionId]);
+  const lean = !!activeChat && sessions[activeChat.id]?.agent === "lean";
+  useEffect(() => { document.documentElement.toggleAttribute("data-lean", lean); }, [lean]);
   const planAsk = planQueue.find((item) => item.req.sessionId === activeChat?.sessionId) ?? null;
   useEffect(() => {
     if (!planAsk) return;
@@ -921,6 +934,7 @@ export default function App() {
         r = await c.prompt(sid, text, extra);
       }
       flush();
+      syncAgent(c, sid); // `/lean` and other agent switches rebuild the harness during a turn
       await new Promise((ok) => setTimeout(ok, 0)); // let the flushed updates render before reading sessionsRef
       // Prefer the agent's turn report; fall back to `usage` on the prompt result.
       if ((r as any).usage && !turnUsage.current.has(sid)) recordUsage(sid, (r as any).usage, `${sid}:result:${Date.now()}`);

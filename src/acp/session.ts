@@ -15,6 +15,8 @@ export type SessionState = {
   commands: { name: string; description?: string }[];
   modeId?: string;
   title?: string;
+  /** Agent profile running the session (e.g. "lean"), from `_supercharge/session/info`. */
+  agent?: string;
 };
 
 export const emptySession = (): SessionState => ({ items: [], toolCalls: {}, plan: [], commands: [] });
@@ -85,8 +87,10 @@ export function applyUpdate(s: SessionState, u: SessionUpdate): SessionState {
       return { ...s, plan: Array.isArray(x.entries) ? x.entries : [] };
     case "available_commands_update":
       return { ...s, commands: Array.isArray(x.availableCommands) ? x.availableCommands : [] };
-    case "session_info_update":
-      return typeof x.title === "string" && x.title ? { ...s, title: x.title } : s;
+    case "session_info_update": {
+      const a = x._meta?.supercharge?.agent;
+      return { ...s, ...(typeof x.title === "string" && x.title && { title: x.title }), ...(typeof a === "string" && { agent: a }) };
+    }
     case "current_mode_update":
       return { ...s, modeId: x.currentModeId };
     default:

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ConfigOption } from "../acp/types";
 import { Icon } from "./Icon";
 import { ModelCustomForm } from "./ModelCustomForm";
+import { OptText } from "./OptText";
 
 export function ModelPicker({ model, onSelect, onCustom, onClose }: {
   model: ConfigOption;
@@ -14,7 +15,7 @@ export function ModelPicker({ model, onSelect, onCustom, onClose }: {
   const [customId, setCustomId] = useState("");
   const [customName, setCustomName] = useState("");
   const q = search.toLowerCase();
-  const choices = (model.options ?? []).filter((c) => `${c.name ?? ""} ${c.value}`.toLowerCase().includes(q));
+  const choices = (model.options ?? []).filter((c) => `${c.name ?? ""} ${c.value} ${c.description ?? ""}`.toLowerCase().includes(q));
   const apply = () => {
     const id = customId.trim();
     if (!id) return;
@@ -30,7 +31,7 @@ export function ModelPicker({ model, onSelect, onCustom, onClose }: {
       <div className="model-picker-list">
         {!custom && choices.map((c) => (
           <button key={c.value} className={`model-choice ${c.value === model.currentValue ? "selected" : ""}`} data-testid="model-choice" onClick={() => { onSelect(model.id, c.value); onClose(); }}>
-            <span><strong>{c.name || c.value}</strong></span>
+            <OptText o={c} />
             {c.value === model.currentValue && <Icon name="check" size={14} />}
           </button>
         ))}

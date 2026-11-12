@@ -116,3 +116,7 @@ html.theme-anim *,html.theme-anim *::before,html.theme-anim *::after{transition:
 .tool-row{flex-direction:row;align-items:flex-start}.tool-row>.grow{display:flex;flex-direction:column;gap:8px;white-space:normal;overflow:visible}
 .rule-file{justify-content:flex-start;gap:8px;text-align:left}.rule-file.on{border-color:var(--acc)}
 .thread,.composer textarea{font-size:var(--fs,14px)}
+/* Settings: compact, readable column; version pinned under the nav. */
+.settings-screen .screen-body>*{max-width:860px}
+.settings-screen .stack>.set-sub{margin:6px 0 0;padding-top:12px;border-top:1px solid var(--line)}
+.screen-nav-ver{margin-top:auto;padding:8px 10px;font-size:12px;color:var(--muted)}

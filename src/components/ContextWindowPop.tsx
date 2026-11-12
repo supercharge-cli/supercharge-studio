@@ -38,7 +38,7 @@ export default function ContextWindowPop({ used, max, ctl, onDone }: { used: num
         <button type="submit" className="primary sm" disabled={busy}>Set</button>
       </form>}
       {err && <p className="ctx-pop-err" role="alert">{err}</p>}
-      <p className="muted small">Auto uses the size the model reports.</p>
+      {cur === "auto" && !custom && <p className="muted small">Auto uses the size the model reports.</p>}
     </div>
   );
 }

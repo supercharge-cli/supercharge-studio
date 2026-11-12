@@ -4,14 +4,15 @@ export type ModelSource = "option" | "session" | "setup" | "custom";
 export type ModelOpt = ConfigOption & { source?: ModelSource };
 export type CustomModel = { id: string; name?: string };
 
-const withCurrent = (opts: { value: string; name?: string }[], cur?: string | null) => (cur && !opts.some((o) => o.value === cur) ? [{ value: cur, name: cur }, ...opts] : opts);
+type Opt = { value: string; name?: string; description?: string };
+const withCurrent = (opts: Opt[], cur?: string | null) => (cur && !opts.some((o) => o.value === cur) ? [{ value: cur, name: cur }, ...opts] : opts);
 
 export function agentModel(options: ConfigOption[] | undefined): ModelOpt | undefined {
   const o = options?.find((x) => x.id === "model");
   return o && (o.options?.length || o.currentValue) ? { ...o, options: withCurrent(o.options ?? [], o.currentValue), source: "option" } : undefined;
 }
 
-export function mergeCustom(opts: { value: string; name?: string }[], custom: CustomModel[] | undefined, cur?: string | null) {
+export function mergeCustom(opts: Opt[], custom: CustomModel[] | undefined, cur?: string | null) {
   const seen = new Set(opts.map((o) => o.value));
   const extra = (custom ?? []).filter((c) => c.id && !seen.has(c.id)).map((c) => ({ value: c.id, name: c.name || c.id }));
   return withCurrent([...opts, ...extra], cur);

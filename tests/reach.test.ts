@@ -27,7 +27,7 @@ describe("reaching the desktop", () => {
     expect(err).toMatch(/Cannot reach the desktop gateway/);
     expect(err).toContain("127.0.0.1:1: connection refused");
     expect(err).toContain(`127.0.0.1:${sp}: no answer`);
-    expect(err).toMatch(/relay URL/);
+    expect(err).toMatch(/choose Public/);
     expect(t.attempts).toHaveLength(2);
   });
 
@@ -45,7 +45,7 @@ describe("reaching the desktop", () => {
     expect(networkMismatch(undefined, urls)).toBe("");
     const m = explainFailure([{ url: urls[0], route: "direct", reason: "no route to host" }], undefined, "10.0.0.5");
     expect(m).toMatch(/different network/);
-    expect(m).not.toMatch(/Make sure this phone/);
-    expect(explainFailure([{ url: urls[0], route: "direct", reason: "x" }], undefined, "192.168.1.9")).toMatch(/Make sure this phone/);
+    expect(m).not.toMatch(/Use the same Wi-Fi as the computer/);
+    expect(explainFailure([{ url: urls[0], route: "direct", reason: "x" }], undefined, "192.168.1.9")).toMatch(/Use the same Wi-Fi as the computer/);
   });
 });

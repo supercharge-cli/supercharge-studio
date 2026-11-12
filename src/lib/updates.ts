@@ -13,6 +13,8 @@ export type AvailableUpdate = {
   manifest?: string;
   /** How this copy was installed (desktop: appimage, rpm, deb, exe, dmg). */
   format?: string;
+  /** Release notes markdown (from WHATS_NEW.md), shown in the update prompt. */
+  notes?: string;
 };
 type Asset = { name: string; browser_download_url: string };
 
@@ -52,5 +54,5 @@ export async function checkUpdate(current: string, pick: (all: Asset[]) => Asset
   const all: Asset[] = body.assets ?? [];
   const asset = pick(all);
   const manifest = all.find((a) => a.name === "latest.json")?.browser_download_url;
-  return { version: tag.replace(/^v/, ""), page: String(body.html_url ?? ""), asset: asset?.browser_download_url, assetName: asset?.name, manifest, format };
+  return { version: tag.replace(/^v/, ""), page: String(body.html_url ?? ""), asset: asset?.browser_download_url, assetName: asset?.name, manifest, format, notes: String(body.body ?? "").slice(0, 4e3) };
 }

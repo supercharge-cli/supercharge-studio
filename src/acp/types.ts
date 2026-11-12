@@ -103,7 +103,7 @@ export type ConfigOption = {
   /** e.g. `thought_level` for the reasoning_effort select */
   category?: string;
   currentValue?: string;
-  options?: { value: string; name?: string }[];
+  options?: { value: string; name?: string; description?: string }[];
   [k: string]: unknown;
 };
 

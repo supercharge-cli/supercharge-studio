@@ -23,7 +23,7 @@ export function ModelControls({ options, onSelect, onCustom, children, context, 
   return (
     <div className="model-controls" data-testid="composer-chips">
       {model && <div className="model-menu-anchor" onKeyDown={(e) => { if (e.key === "Escape") close(); }}>
-        <button className="secondary model-trigger" data-testid="model-trigger" aria-haspopup="dialog" aria-label="Change model" title="Model" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <button className="secondary model-trigger" data-testid="model-trigger" aria-haspopup="dialog" aria-label="Change model" title={`Model: ${model.currentValue}`} aria-expanded={open} onClick={() => setOpen(!open)}>
           <Icon name="bolt" size={14} /> {active?.name ?? active?.value ?? model.currentValue} <span aria-hidden="true">⌄</span>
         </button>
         {open && <ModelPicker model={model} onSelect={onSelect} onCustom={onCustom} onClose={close} />}

@@ -280,8 +280,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # WHATS_NEW.md is the release notes (the apps show them in the update prompt); generated notes only if it is empty.
+          notes=(--generate-notes); grep -qE '^\s*([-*+]|[0-9]+\.)\s+\S' WHATS_NEW.md 2>/dev/null && notes=(--notes-file WHATS_NEW.md)
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --target "$GITHUB_SHA" --title "Supercharge Studio $TAG" --generate-notes
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Supercharge Studio $TAG" "${notes[@]}"
+          elif [ "${notes[0]}" = --notes-file ]; then
+            gh release edit "$TAG" --notes-file WHATS_NEW.md
           fi
           gh release upload "$TAG" dist/* --clobber
 

@@ -36,6 +36,15 @@ Without signing secrets the APKs are published as `supercharge-studio-android-<a
 The AUR `PKGBUILD` pins the tag (`releases/download/vX.Y.Z/supercharge-studio-linux-amd64.deb`)
 and saves it as `supercharge-studio-X.Y.Z.deb`, so each AUR version stays reproducible.
 
+## Release notes (WHATS_NEW.md)
+
+`WHATS_NEW.md` at the repo root is the source of truth for what's new in the next release:
+one bullet per user-visible change, in plain words. The publish job uses it as the GitHub
+Release body (`gh release create/edit --notes-file WHATS_NEW.md`; GitHub's generated notes only
+when the file has no bullets). Both apps read that body when they find an update and list it
+under **What's new** in the update prompt (headings and comments are skipped, at most 10 lines).
+Update the file before tagging, and replace its bullets after each release.
+
 ## In-app updates
 
 The apps check the latest release on launch and every 6 hours, download the update in the
