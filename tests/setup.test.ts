@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CUSTOM, CUSTOM_MODEL, FORMATS, PROVIDERS, filterModels, filterProviders, keyReusable, normBase, normalizeStatus, pickSetup, pollDevice, providersFromStatus, rpcSetup, switchedLive, unlistedProvider, type SetupApi } from "../src/lib/setup";
+import { CUSTOM, CUSTOM_MODEL, FORMATS, PROVIDERS, agentSetup, filterModels, filterProviders, listProviderModels, providerCatalog, keyReusable, normBase, normalizeStatus, pickSetup, pollDevice, providersFromStatus, rpcSetup, switchedLive, unlistedProvider, type SetupApi } from "../src/lib/setup";
 import { GatewayHub, type HubHost } from "../src/gateway/hub";
 
 describe("provider setup catalog", () => {
@@ -30,6 +30,55 @@ describe("provider setup catalog", () => {
   });
 });
 
+describe("the CLI's provider catalog from setup/status", () => {
+  const raw = [
+    { id: "openrouter", name: "OpenRouter", description: "Aggregator", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "a/b", format: "openai", curated: true, auth: "api_key" },
+    { id: "kimi", name: "Kimi", description: "Anthropic-compatible", baseUrl: "https://api.moonshot.ai/anthropic", defaultModel: "k2", format: "anthropic", curated: true, auth: "api_key" },
+    { id: "nous", name: "Nous Research", description: "Portal login", baseUrl: "https://inference-api.nousresearch.com/v1", defaultModel: "H", format: "openai", curated: true, auth: "oauth_device" },
+    { id: "agentrouter", name: "AgentRouter", description: "Aggregator via AgentRouter", baseUrl: "https://api.agentrouter.org/v1", defaultModel: "gpt-5.6-sol", format: "responses", curated: false, auth: "api_key" },
+    { id: "ollama", name: "Ollama", description: "Local", baseUrl: "http://127.0.0.1:11434/v1", defaultModel: "llama3.3", format: "openai", curated: true, auth: "api_key" },
+  ];
+  const status = normalizeStatus({ providerId: "agentrouter", baseUrl: "https://api.agentrouter.org/v1", format: "responses", modelId: "gpt-5.6-sol", hasApiKey: true, providers: raw });
+  it("uses the CLI's order, names and URLs, maps formats and device login", () => {
+    const c = providerCatalog(status);
+    expect(c.map((p) => p.id)).toEqual(["openrouter", "kimi", "nous", "agentrouter", "ollama"]);
+    expect(c.map((p) => p.format)).toEqual(["chat_completions", "messages", "chat_completions", "responses", "chat_completions"]);
+    expect(c.filter((p) => p.device).map((p) => p.id)).toEqual(["nous"]);
+    expect(c[0]).toEqual({ id: "openrouter", name: "OpenRouter", description: "Aggregator", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "a/b", format: "chat_completions" });
+    expect(c.find((p) => p.id === "ollama")?.keyOptional).toBe(true); // local servers stay key-optional
+    expect(filterProviders("", null, c).map((p) => p.id)).toEqual([...raw.map((p) => p.id), CUSTOM.id]);
+    expect(filterProviders("agentrouter", null, c).map((p) => p.id)).toEqual(["agentrouter"]);
+  });
+  it("needs no unlisted row for a provider the CLI catalog has", () => {
+    expect(unlistedProvider(status)).toBeNull();
+    expect(unlistedProvider(normalizeStatus({ providerId: "mine", baseUrl: "http://h/v1", providers: raw }))).toMatchObject({ id: "mine", name: "Mine", baseUrl: "http://h/v1" });
+  });
+  it("falls back to the built-in list only when the CLI sends no catalog", () => {
+    expect(providerCatalog(normalizeStatus({ providerId: "groq" }))).toBe(PROVIDERS);
+    expect(providerCatalog(normalizeStatus({ providers: [] }))).toBe(PROVIDERS);
+    expect(providerCatalog(null)).toBe(PROVIDERS);
+  });
+  it("lists a Studio provider's models through the CLI, never with an app-held key", async () => {
+    const models = vi.fn(async () => [{ id: "m", name: "M" }]);
+    const api = { models } as unknown as SetupApi;
+    const c = providerCatalog(status);
+    expect(await listProviderModels(api, { baseUrl: " https://openrouter.ai/api/v1/ ", format: "responses" }, c)).toEqual([{ id: "m", name: "M" }]);
+    expect(models).toHaveBeenLastCalledWith("openrouter", "https://openrouter.ai/api/v1/", undefined, "responses");
+    await listProviderModels(api, { baseUrl: "https://x.example/v1", format: "messages", cli: "agentrouter|https://x.example/v1" }, c);
+    expect(models).toHaveBeenLastCalledWith("agentrouter", "https://x.example/v1", undefined, "messages");
+    await listProviderModels(api, { baseUrl: "http://127.0.0.1:9000/v1", format: "chat_completions" }, c);
+    expect(models).toHaveBeenLastCalledWith("custom", "http://127.0.0.1:9000/v1", undefined, "chat_completions");
+  });
+  it("goes over the agent's _supercharge/setup/models", async () => {
+    const ext = vi.fn(async (m: string) => (m.endsWith("/models") ? { models: [{ id: "x", name: "X" }], providerId: "groq" } : {}));
+    const api = agentSetup({ hasExtension: (m) => m === "_supercharge/setup/save", ext })!;
+    expect(await listProviderModels(api, { baseUrl: "https://api.groq.com/openai/v1", format: "chat_completions" })).toEqual([{ id: "x", name: "X" }]);
+    expect(ext).toHaveBeenLastCalledWith("_supercharge/setup/models", { providerId: "groq", baseUrl: "https://api.groq.com/openai/v1", apiKey: undefined, format: "chat_completions" });
+    expect(agentSetup({ hasExtension: () => false, ext })).toBeNull();
+    expect(agentSetup(null)).toBeNull();
+  });
+});
+
 describe("unlisted CLI providers", () => {
   const cliProvider = { id: "agentrouter", name: "AgentRouter", description: "Aggregator", baseUrl: "https://api.agentrouter.org/v1", defaultModel: "gpt-5.6-sol", format: "responses" };
   it("does not duplicate a provider the CLI catalog already lists", () => {
@@ -53,7 +102,7 @@ describe("unlisted CLI providers", () => {
     expect(normalizeStatus({ model: "m2", hasKey: true, nousSignedIn: false })).toMatchObject({ model: "m2", hasKey: true, nousSignedIn: false });
   });
   it("shows the extra provider in filtered lists before Custom", () => {
-    const extra = unlistedProvider(normalizeStatus({ providerId: "agentrouter", baseUrl: "https://api.agentrouter.org/v1", format: "responses", model: "gpt-5.6-sol" }));
+    const extra = unlistedProvider(normalizeStatus({ providerId: "agentrouter", baseUrl: cliProvider.baseUrl, format: "responses" }));
     expect(filterProviders("", extra).map((p) => p.id)).toEqual([...PROVIDERS.map((p) => p.id), "agentrouter", CUSTOM.id]);
     expect(filterProviders("agentrouter", extra).map((p) => p.id)).toEqual(["agentrouter"]);
     expect(filterProviders("agentrouter", null)).toEqual([]);

@@ -12,7 +12,7 @@ export type Fmt = "chat_completions" | "messages" | "responses";
 export type SetupProvider = { id: string; name: string; description: string; baseUrl: string; defaultModel: string; format: Fmt; keyOptional?: boolean; device?: boolean };
 const P = (id: string, name: string, description: string, baseUrl: string, defaultModel: string, format: Fmt = "chat_completions", x: Partial<SetupProvider> = {}): SetupProvider => ({ id, name, description, baseUrl, defaultModel, format, ...x });
 
-/** Built-in providers, in the CLI's order. */
+/** Fallback list, in the CLI's order: used only when the CLI does not send its own catalog (agent down, older CLI). */
 export const PROVIDERS: SetupProvider[] = [
   P("pollinations", "Pollinations", "Recommended — large free/cheap model list", "https://gen.pollinations.ai/v1", "openai"),
   P("openai", "OpenAI", "api.openai.com", "https://api.openai.com/v1", "gpt-5.4"),
@@ -41,25 +41,14 @@ export const FORMATS: [Fmt, string, string][] = [["chat_completions", "Chat Comp
 
 /** The CLI's `setup/status` catalog, in the CLI's order. Null when this agent did not send one. */
 export function providersFromStatus(status?: SetupStatusFull | null): SetupProvider[] | null {
-  const rows = status?.providers?.filter((p) => p?.id);
-  if (!rows?.length) return null;
-  return rows.map((p) => ({
-    id: p.id,
-    name: p.name || p.id,
-    description: p.description || "",
-    baseUrl: p.baseUrl || "",
-    defaultModel: p.defaultModel || "",
-    format: asFmt(p.format),
-    device: p.auth === "oauth_device" || p.auth === "device",
-    keyOptional: /key optional/i.test(p.description || "") || p.auth === "none",
-  }));
+  const c = providerCatalog(status);
+  return c === PROVIDERS ? null : c;
 }
 
 /** Type-to-filter, as in the CLI: id, name or description; Custom matches "custom", "openai", "base url". */
 export function filterProviders(query: string, extra?: SetupProvider | null, catalog?: SetupProvider[] | null): SetupProvider[] {
   const q = query.trim().toLowerCase();
-  const source = catalog?.length ? catalog : PROVIDERS;
-  const rows = source.filter((p) => !q || p.id.includes(q) || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
+  const rows = (catalog?.length ? catalog : PROVIDERS).filter((p) => !q || p.id.includes(q) || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
   if (extra && (!q || extra.id.includes(q) || extra.name.toLowerCase().includes(q) || extra.description.toLowerCase().includes(q))) rows.push(extra);
   if (!q || "custom".includes(q) || "openai".includes(q) || "base url".includes(q)) rows.push(CUSTOM);
   return rows;
@@ -78,7 +67,7 @@ export function filterModels(models: SetupModel[], query: string): SetupModel[] 
 export type SetupStatus = { providerId?: string | null; baseUrl?: string | null; format?: string | null; model?: string | null; hasKey: boolean; nousSignedIn: boolean };
 
 /** One entry of the CLI's own provider catalog, sent in `setup/status` `providers`. */
-export type CliProvider = { id: string; name?: string; description?: string; baseUrl?: string; defaultModel?: string; format?: string; auth?: string };
+export type CliProvider = { id: string; name?: string; description?: string; baseUrl?: string; defaultModel?: string; format?: string; curated?: boolean; auth?: string };
 export type SetupStatusFull = SetupStatus & { providers?: CliProvider[] };
 
 /**
@@ -100,10 +89,32 @@ export function normalizeStatus(raw: any): SetupStatusFull {
   return status;
 }
 
-/** A CLI-connected provider the app's list does not know, pulled from the status (catalog first). */
-export function unlistedProvider(status: SetupStatusFull | null | undefined): SetupProvider | null {
+/**
+ * The provider list to offer: the CLI's own catalog from `setup/status` `providers` (its order,
+ * names, URLs, default models; `oauth_device` = device login), else the built-in fallback.
+ */
+export function providerCatalog(status: SetupStatusFull | null | undefined): SetupProvider[] {
+  const rows = (status?.providers ?? []).filter((p) => p?.id && p.id !== CUSTOM.id);
+  if (!rows.length) return PROVIDERS;
+  return rows.map((p) => {
+    const known = PROVIDERS.find((k) => k.id === p.id);
+    return {
+      id: p.id,
+      name: p.name || known?.name || p.id,
+      description: p.description ?? known?.description ?? "",
+      baseUrl: p.baseUrl ?? known?.baseUrl ?? "",
+      defaultModel: p.defaultModel ?? known?.defaultModel ?? "",
+      format: p.format ? asFmt(p.format) : known?.format ?? "chat_completions",
+      ...(known?.keyOptional ? { keyOptional: true } : {}),
+      ...(p.auth === "oauth_device" || (!p.auth && known?.device) ? { device: true } : {}),
+    };
+  });
+}
+
+/** A CLI-connected provider missing from the catalog in use (e.g. an id saved by hand in the CLI config). */
+export function unlistedProvider(status: SetupStatusFull | null | undefined, catalog = providerCatalog(status)): SetupProvider | null {
   const id = status?.providerId?.trim();
-  if (!id || id === CUSTOM.id || PROVIDERS.some((p) => p.id === id) || status!.providers?.some((p) => p?.id === id)) return null;
+  if (!id || id === CUSTOM.id || catalog.some((p) => p.id === id)) return null;
   const from = status!.providers?.find((p) => p?.id === id);
   return {
     id,
@@ -111,7 +122,7 @@ export function unlistedProvider(status: SetupStatusFull | null | undefined): Se
     description: from?.description || "Connected in the CLI — not in this app's list",
     baseUrl: from?.baseUrl ?? status!.baseUrl ?? "",
     defaultModel: from?.defaultModel ?? status!.model ?? "",
-    format: FORMATS.find(([f]) => f === (from?.format ?? status!.format))?.[0] ?? "chat_completions",
+    format: asFmt(from?.format ?? status!.format),
   };
 }
 /**
@@ -174,10 +185,23 @@ export function rpcSetup(call: (op: string, params: Record<string, unknown>) => 
 }
 
 type ExtClient = { hasExtension(m: string): boolean; ext<T = any>(m: string, p?: unknown): Promise<T> };
+/** The connected agent's `_supercharge/setup/*` over ACP, or null when it does not offer them. */
+export function agentSetup(client?: ExtClient | null): SetupApi | null {
+  return client?.hasExtension("_supercharge/setup/save") ? rpcSetup((op, p) => client.ext(`_supercharge/setup/${op}`, p)) : null;
+}
 /** Prefer the agent's own setup over ACP when it offers one, else the desktop shell. */
 export function pickSetup(client?: ExtClient | null): SetupApi | null {
-  if (client?.hasExtension("_supercharge/setup/save")) return rpcSetup((op, p) => client.ext(`_supercharge/setup/${op}`, p));
-  return isDesktop() ? desktopSetup : null;
+  return agentSetup(client) ?? (isDesktop() ? desktopSetup : null);
+}
+
+/**
+ * List a Studio provider's models through the CLI (`_supercharge/setup/models`), not by HTTP from
+ * the app. No key is sent: the CLI uses its own saved key or login for that provider/base URL.
+ */
+export function listProviderModels(api: SetupApi, p: Pick<Provider, "baseUrl" | "format" | "cli">, catalog: SetupProvider[] = PROVIDERS): Promise<SetupModel[]> {
+  const base = p.baseUrl.trim();
+  const id = p.cli?.split("|")[0] || catalog.find((c) => normBase(c.baseUrl) === normBase(base))?.id || CUSTOM.id;
+  return api.models(id, base, undefined, asFmt(p.format));
 }
 
 /** Poll a device login until approved, honoring the interval and slow_down. Resolves when done. */
@@ -237,7 +261,7 @@ export async function saveCustomModel(api: SetupApi, modelId: string, extra: { m
  */
 export async function readCli(api: SetupApi, list?: () => Promise<any>): Promise<Provider | null> {
   const s: any = await api.status().catch(() => null);
-  const pid: string = s?.providerId || "", known = providersFromStatus(s)?.find((p) => p.id === pid) ?? PROVIDERS.find((p) => p.id === pid);
+  const pid: string = s?.providerId || "", known = providerCatalog(s).find((p) => p.id === pid);
   const base: string = s?.baseUrl || known?.baseUrl || "";
   if (s?.configured === false || !(pid || base)) return null;
   const format = asFmt(s.format ?? known?.format);

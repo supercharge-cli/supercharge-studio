@@ -5,7 +5,7 @@ test.beforeEach(async ({ page }) => {
   await page.route(/^https:\/\/api\.github\.com\//, (route) => route.fulfill({ status: 404, body: "{}" }));
 });
 
-// Fake agent seeded with a CLI connected to "agentrouter", which the app's provider list does not know.
+// Fake agent seeded with a CLI connected to "agentrouter", which only the CLI's own catalog lists (not the app's fallback list).
 const SETTINGS = { bind: "127.0.0.1:2455", secret: "e2e", transport: "ws", autoStart: false, alwaysApprove: true };
 
 async function openSetup(page: Page) {

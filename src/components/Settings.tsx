@@ -1,6 +1,6 @@
 import { lazy, ReactNode, Suspense, useState } from "react";
 import { Privacy } from "./Privacy";
-import { mergeCli, pickSetup, type SetupStatus } from "../lib/setup";
+import { agentSetup, listProviderModels, mergeCli, pickSetup, providerCatalog, type SetupApi, type SetupStatusFull, type SetupStatus } from "../lib/setup";
 import type { ApiFormat, Provider, Settings as S } from "../lib/store";
 import { parseAgentUrl, uid } from "../lib/store";
 import type { ConfigOption } from "../acp/types";
@@ -52,7 +52,17 @@ const FORMATS: { v: ApiFormat; label: string }[] = [
   { v: "messages", label: "Messages" },
 ];
 
-function ProviderEditor({ p, desktop, onChange, onKey, onRemove }: { p: Provider; desktop: boolean; onChange: (p: Provider) => void; onKey: (k: string) => Promise<string>; onRemove: () => void }) {
+/**
+ * Models for a Studio provider: through the connected CLI's `_supercharge/setup/models` when the
+ * agent offers it; the desktop shell's /models check only when no agent setup is available.
+ */
+export async function discoverModels(p: Provider, cliSetup: SetupApi | null): Promise<DiscoveredModel[]> {
+  if (!cliSetup) return providerDiscoverModels(p.id, p.baseUrl.trim());
+  const status: SetupStatusFull | null = await cliSetup.status().catch(() => null);
+  return listProviderModels(cliSetup, p, providerCatalog(status));
+}
+
+function ProviderEditor({ p, desktop, cliSetup, onChange, onKey, onRemove }: { p: Provider; desktop: boolean; cliSetup: SetupApi | null; onChange: (p: Provider) => void; onKey: (k: string) => Promise<string>; onRemove: () => void }) {
   const [key, setKey] = useState("");
   const [keyState, setKeyState] = useState("");
   const [discovered, setDiscovered] = useState<DiscoveredModel[] | null>(null);
@@ -63,7 +73,7 @@ function ProviderEditor({ p, desktop, onChange, onKey, onRemove }: { p: Provider
     setLoading(true);
     setError("");
     try {
-      setDiscovered(await providerDiscoverModels(p.id, p.baseUrl.trim()));
+      setDiscovered(await discoverModels(p, cliSetup));
     } catch (e: any) {
       setError(String(e?.message ?? e));
     } finally {
@@ -84,9 +94,9 @@ function ProviderEditor({ p, desktop, onChange, onKey, onRemove }: { p: Provider
       </div>
       <label>Base URL<input data-testid="prov-url" placeholder="https://api.example.com/v1" value={p.baseUrl} onChange={(e) => onChange({ ...p, baseUrl: e.target.value })} /></label>
       <div className="provider-models">
-        <div className="row between"><strong>Available models</strong><button className="secondary" data-testid="prov-discover" disabled={!desktop || !p.baseUrl.trim() || loading} onClick={() => void discover()}>{loading ? "Finding models…" : "Refresh models"}</button></div>
-        <p className="muted">Choose the models you want available in chats. The desktop app checks /models with and without your saved key.</p>
-        {!desktop && <p className="muted">Model discovery requires the desktop app.</p>}
+        <div className="row between"><strong>Available models</strong><button className="secondary" data-testid="prov-discover" disabled={!(desktop || cliSetup) || !p.baseUrl.trim() || loading} onClick={() => void discover()}>{loading ? "Finding models…" : "Refresh models"}</button></div>
+        <p className="muted">{cliSetup ? "Choose the models you want available in chats. The Supercharge CLI lists them with its own saved key or login." : "Choose the models you want available in chats. The desktop app checks /models with and without your saved key."}</p>
+        {!desktop && !cliSetup && <p className="muted">Model discovery requires the desktop app.</p>}
         {error && <p className="danger-text" role="alert">{error}</p>}
         {discovered?.length === 0 && <p className="muted" role="status">The provider returned no models. Your saved selection is unchanged.</p>}
         {available.length > 0 && <input data-testid="prov-model-search" aria-label="Search available models" placeholder="Search models…" value={search} onChange={(e) => setSearch(e.target.value)} />}
@@ -121,6 +131,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
   const [busy, setBusy] = useState("");
   const [providerError, setProviderError] = useState("");
   const [setup] = useState(() => pickSetup(props.acp));
+  const [cliSetup] = useState(() => agentSetup(props.acp));
   const providers = s.providers ?? [];
   const setProviders = (ps: Provider[]) => set({ ...s, providers: ps });
 
@@ -223,6 +234,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
                   <ProviderEditor
                     p={p}
                     desktop={desktop}
+                    cliSetup={cliSetup}
                     onChange={(np) => setProviders(providers.map((x) => (x.id === p.id ? { ...np, edited: !!p.cli || undefined } : x)))}
                     onKey={(k) => props.onProviderKey(p.id, k)}
                     onRemove={() => { set({ ...s, providers: providers.filter((x) => x.id !== p.id), cliRemoved: p.cli ? [...(s.cliRemoved ?? []), p.cli] : s.cliRemoved }); setEditing(null); }}

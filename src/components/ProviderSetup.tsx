@@ -1,5 +1,5 @@
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
-import { applyCli, mergeCli, readCli, rpcSetup, CUSTOM, CUSTOM_MODEL, FORMATS, filterModels, filterProviders, keyReusable, pollDevice, providersFromStatus, unlistedProvider, type DeviceStart, type Fmt, type SetupApi, type SetupModel, type SetupProvider, type SetupStatus, type SetupStatusFull } from "../lib/setup";
+import { applyCli, mergeCli, readCli, rpcSetup, CUSTOM, CUSTOM_MODEL, FORMATS, filterModels, filterProviders, keyReusable, pollDevice, providerCatalog, unlistedProvider, type DeviceStart, type Fmt, type SetupApi, type SetupModel, type SetupProvider, type SetupStatus, type SetupStatusFull } from "../lib/setup";
 import type { Provider } from "../lib/store";
 import { Icon } from "./Icon";
 import "./provider-setup.css";
@@ -76,8 +76,9 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
     go("format"); setSel(FORMATS.findIndex(([f]) => f === p.format));
   }
 
-  const catalog = providersFromStatus(status);
-  const providers = filterProviders(filter, catalog ? null : unlistedProvider(status), catalog);
+  // The CLI's own catalog (from setup/status) when it sends one; the built-in list only as a fallback.
+  const catalog = providerCatalog(status), extra = unlistedProvider(status, catalog);
+  const providers = filterProviders(filter, extra, catalog);
   const shownModels = filterModels(models, filter);
   const pickModel = (m: SetupModel) => (m.id === CUSTOM_MODEL ? (setCustom(custom || prov.defaultModel), setCustomName(""), setCustomBack("model"), setStep("custom")) : void save(m.id, m.name));
   const listKeys = (n: number, enter: () => void) => (e: KeyboardEvent) => {
@@ -88,7 +89,7 @@ export default function ProviderSetup({ api, open, onSaved, onClose, sessionId }
   const back: Partial<Record<Step, Step>> = { url: "provider", format: prov.id === CUSTOM.id ? "url" : "provider", key: "format", model: prov.device ? "provider" : "key", custom: customBack, error: err.back, device: "provider", done: "provider" };
   const copy = (t: string, what: string) => { void navigator.clipboard?.writeText(t).then(() => { setCopied(what); setTimeout(() => setCopied(""), 1500); }); };
   const fmtName = FORMATS.find(([f]) => f === fmt)?.[1];
-  const current = status?.model ? `${[...filterProviders("", catalog ? null : unlistedProvider(status), catalog)].find((p) => p.id === status.providerId)?.name ?? status.providerId ?? "Custom"} · ${status.model}` : "";
+  const current = status?.model ? `${[...catalog, extra].find((p) => p?.id === status.providerId)?.name ?? status.providerId ?? "Custom"} · ${status.model}` : "";
 
   return (
     <div className="psetup" data-testid="provider-setup">

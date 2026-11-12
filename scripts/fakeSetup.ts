@@ -1,9 +1,17 @@
+import { PROVIDERS } from "../src/lib/setup";
+
+/** The CLI's own catalog in its `setup/status` shape: formats openai/anthropic/responses, auth kind. */
+const CLI_FORMAT = { chat_completions: "openai", messages: "anthropic", responses: "responses" } as const;
+const CLI_CATALOG = PROVIDERS.map((p) => ({ id: p.id, name: p.name, description: p.description, baseUrl: p.baseUrl, defaultModel: p.defaultModel, format: CLI_FORMAT[p.format], curated: true, auth: p.device ? "oauth_device" : "api_key" }));
+
 /** Scripted provider setup for the fakes: models, save and a two-poll device-code login. */
 export function fakeSetup(preset?: Record<string, unknown>) {
-  // FAKE_AGENT_SETUP_UNLISTED=1 seeds a CLI connected to a provider the app's list does not know,
-  // reported in the CLI's raw status shape (modelId/hasApiKey) with its own provider catalog.
+  // FAKE_AGENT_SETUP_UNLISTED=1 seeds a CLI connected to a provider only its own catalog has (not the
+  // app's fallback list), reported in the CLI's raw status shape (modelId/hasApiKey).
   const seeded = !!process.env.FAKE_AGENT_SETUP_UNLISTED;
-  const catalog = [{ id: "agentrouter", name: "AgentRouter", description: "Aggregator via AgentRouter", baseUrl: "https://api.agentrouter.org/v1", defaultModel: "gpt-5.6-sol", format: "responses" }];
+  const catalog = seeded
+    ? [...CLI_CATALOG, { id: "agentrouter", name: "AgentRouter", description: "Aggregator via AgentRouter", baseUrl: "https://api.agentrouter.org/v1", defaultModel: "gpt-5.6-sol", format: "responses", curated: false, auth: "api_key" }]
+    : CLI_CATALOG;
   const saved: any = seeded
     ? { providerId: "agentrouter", baseUrl: "https://api.agentrouter.org/v1", format: "responses", modelId: "gpt-5.6-sol", hasApiKey: true, nousSignedIn: false, providers: catalog }
     : { providerId: null, baseUrl: null, format: null, model: null, hasKey: false, nousSignedIn: false, ...preset };
@@ -11,7 +19,7 @@ export function fakeSetup(preset?: Record<string, unknown>) {
   const saves: any[] = [];
   const run = async (op: string, p: any = {}): Promise<any> => {
     switch (op) {
-      case "status": return { ...saved };
+      case "status": return { ...saved, providers: catalog };
       case "models":
         if (p.providerId === "nous" && !saved.nousSignedIn) throw new Error("Nous Portal is not signed in. Sign in with Nous Research first.");
         if (p.apiKey === "bad") throw new Error("provider returned HTTP 401: invalid API key");
