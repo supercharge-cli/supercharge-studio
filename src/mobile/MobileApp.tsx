@@ -21,6 +21,7 @@ import { usePullToRefresh, useSwipeBack } from "./gestures";
 import { candidates, GatewayTransport, type DeviceCreds } from "../gateway/transport";
 import { loadCreds, saveCreds } from "./creds";
 import { phoneIp } from "./ip";
+import { AfterReconnect, offline } from "./offline";
 import { type Attachment, deviceBlocks, fmtSize, fromFile, isImage, rejectReason } from "../lib/attachments";
 import { APP_VERSION, checkUpdate, pickApk, UPDATE_EVERY } from "../lib/updates";
 import { effortLabel, reasoningOption, sameEffort } from "../lib/sessionOptions";
@@ -194,6 +195,7 @@ export default function MobileApp() {
   const fileInput = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const client = useRef<AcpClient | null>(null);
+  const later = useRef(new AfterReconnect());
   const queued = useRef<{ sid: string; text: string }[]>([]);
   const loadedRef = useRef(new Set<string>());
   const activeSessionRef = useRef<string | null>(null);
@@ -204,10 +206,12 @@ export default function MobileApp() {
   const listRef = useRef<HTMLDivElement>(null);
   const ptr = useRef<HTMLDivElement>(null);
 
+  // Link down: refresh again after reconnecting (onReconnected does), never an unhandled rejection.
   const refresh = useCallback(async () => {
     const c = client.current;
-    if (!c) return;
-    const r: any = await c.listSessions();
+    if (!c || c.state !== "open") return false;
+    let r: any;
+    try { r = await c.listSessions(); } catch (e) { if (offline(e)) return false; throw e; }
     const seen = new Set<string>();
     const l: Sess[] = (r.sessions ?? []).filter((x: Sess) => !seen.has(x.sessionId) && !!seen.add(x.sessionId));
     setList(l);
@@ -223,6 +227,7 @@ export default function MobileApp() {
     setListed(true);
     setProjects(r._meta?.projects ?? []);
     setPrompts(r._meta?.prompts ?? []);
+    return true;
   }, []);
 
   // Keyboard: the native side shrinks the web view (adjustResize + IME insets), so the app
@@ -292,7 +297,7 @@ export default function MobileApp() {
           }));
         } else if (method === "_supercharge/handoff") setHandoff(String(p?.sessionId ?? ""));
         else if (method === "_supercharge/agent_event" && p?.sessionId && ["done", "error", "permission"].includes(p?.kind)) notifyRef.current(p.kind, String(p.sessionId), String(p.body ?? ""));
-        else if (method === "_supercharge/sessions/changed") void refresh();
+        else if (method === "_supercharge/sessions/changed") void refresh().catch(() => {});
         else if (method === "_supercharge/setup/auth_changed") void import("./extras").then((m) => m.emitAuthChanged(p));
         else if (method === "_supercharge/session/context_usage" && p?.sessionId && Number(p?.usedTokens) >= 0) setCtxBySession((all) => ({ ...all, [String(p.sessionId)]: { used: Number(p.usedTokens), max: Number(p.maxTokens) > 0 ? Number(p.maxTokens) : all[String(p.sessionId)]?.max } }));
       },
@@ -311,6 +316,7 @@ export default function MobileApp() {
         // Questions asked on the old socket can't be answered any more; the desktop asks again on load.
         setPermQueue((q) => { q.forEach((x) => x.resolve({ outcome: "cancelled" })); return []; });
         void refresh().then(flushQueued).catch(() => {});
+        void later.current.flush().catch((e) => setErr(String(e?.message ?? e)));
         const sid = activeSessionRef.current;
         if (sid) {
           setState((all) => ({ ...all, [sid]: emptySession() }));
@@ -350,6 +356,7 @@ export default function MobileApp() {
       window.removeEventListener("online", wake);
       window.removeEventListener("pageshow", wake);
       window.removeEventListener("supercharge:resume", wake);
+      later.current = new AfterReconnect();
       c.close();
     };
   }, [creds, refresh, retryKey]);
@@ -422,9 +429,15 @@ export default function MobileApp() {
     setLoadingSess(null);
   }
 
+  // Tapped while the link is down: say so, reconnect now and open the chat once it is back.
   async function newChat(p: Project) {
     const c = client.current;
     if (!c) return;
+    try {
+      if (!(await later.current.run(c.state === "open", () => newChatNow(c, p)))) { setToast("Reconnecting…"); c.reconnectNow(); }
+    } catch (e: any) { setErr(String(e?.message ?? e)); }
+  }
+  async function newChatNow(c: AcpClient, p: Project) {
     const r = await c.newSession(p.cwd, { projectId: p.projectId });
     loadedRef.current.add(r.sessionId);
     activeSessionRef.current = r.sessionId;
@@ -595,7 +608,11 @@ export default function MobileApp() {
 
   const back = () => { activeSessionRef.current = null; setPicker(null); setSheet(false); transition(() => setOpen(null)); };
   useSwipeBack(threadView, !!open, back);
-  usePullToRefresh(listRef, ptr, !!creds && !open, async () => { await refresh(); setToast("Up to date"); });
+  usePullToRefresh(listRef, ptr, !!creds && !open, async () => {
+    try { if (await refresh()) return setToast("Up to date"); } catch (e: any) { return setErr(String(e?.message ?? e)); }
+    setToast("Reconnecting…");
+    client.current?.reconnectNow();
+  });
 
   if (!creds) return <div className="m-app"><Suspense fallback={null}><Pair onPaired={(c) => { saveCreds(c); setCreds(c); }} /></Suspense></div>;
 
