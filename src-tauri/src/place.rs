@@ -7,6 +7,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Rect, Runtime};
 
 #[path = "place_math.rs"]
+#[allow(dead_code)] // `on_screen` is only used on Windows
 mod math;
 
 /// The browser slot as the UI measured it: CSS px, plus its devicePixelRatio (`scale`;
@@ -37,17 +38,30 @@ pub fn logical() -> (f64, f64, f64, f64) {
     LAST.lock().unwrap().map(|(b, _)| (b.x, b.y, b.width, b.height)).unwrap_or((0.0, 0.0, 1.0, 1.0))
 }
 
-/// Last slot as a native rect for the current window scale.
-pub fn rect<R: Runtime>(app: &AppHandle<R>) -> Rect {
-    let last = *LAST.lock().unwrap();
-    let Some((b, then)) = last else {
-        return Rect { position: LogicalPosition::new(0.0, 0.0).into(), size: LogicalSize::new(1.0, 1.0).into() };
-    };
-    match math::physical_rect(b.x, b.y, b.width, b.height, b.scale, then, window_scale(app)) {
-        Some((x, y, w, h)) => Rect { position: PhysicalPosition::new(x, y).into(), size: PhysicalSize::new(w, h).into() },
-        None => Rect { position: LogicalPosition::new(b.x, b.y).into(), size: LogicalSize::new(b.width.max(1.0), b.height.max(1.0)).into() },
+/// Last slot in the main window's physical client pixels, `None` before the UI has sent one
+/// (or when the window scale cannot be read and the UI sent no ratio).
+pub fn physical<R: Runtime>(app: &AppHandle<R>) -> Option<(i32, i32, u32, u32)> {
+    let (b, then) = (*LAST.lock().unwrap())?;
+    let now = window_scale(app);
+    match b.scale {
+        Some(_) => math::physical_rect(b.x, b.y, b.width, b.height, b.scale, then, now),
+        // An older UI without the ratio: logical px times the window scale.
+        None => math::physical_rect(b.x, b.y, b.width, b.height, Some(now), now, now),
     }
 }
+
+/// Last slot as a native rect for the current window scale.
+pub fn rect<R: Runtime>(app: &AppHandle<R>) -> Rect {
+    if let Some((x, y, w, h)) = physical(app) {
+        return Rect { position: PhysicalPosition::new(x, y).into(), size: PhysicalSize::new(w, h).into() };
+    }
+    let (x, y, w, h) = logical();
+    Rect { position: LogicalPosition::new(x, y).into(), size: LogicalSize::new(w.max(1.0), h.max(1.0)).into() }
+}
+
+pub use math::layer_shown;
+#[cfg(windows)]
+pub use math::on_screen;
 
 /// The window's DPI changed (another monitor, or the display scale): re-place both views
 /// now instead of waiting for the UI to measure again.

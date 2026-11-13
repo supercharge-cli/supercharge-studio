@@ -75,7 +75,7 @@ objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKSnapshotConfigura
 
 [target.'cfg(target_os = "windows")'.dependencies]
 webview2-com = "0.39"
-windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_System_Com_StructuredStorage"] }
+windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_System_Com_StructuredStorage", "Win32_UI_WindowsAndMessaging"] }
 windows-core = "0.62"
 
 # Studio is an independent repository even when checked out inside Supercharge.

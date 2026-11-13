@@ -516,7 +516,14 @@ pub fn run() {
                 if let Some(w) = app.get_window("main") {
                     let _ = w.hide();
                 }
+                // Windows: the AI cursor layer is its own window; do not leave it on the desktop.
+                #[cfg(windows)]
+                cursor::sync(app);
             }
+            // Windows: keep the AI cursor layer window on the browser slot when the main window
+            // moves, resizes, minimizes or comes back.
+            #[cfg(windows)]
+            tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_), .. } if label == "main" => cursor::sync(app),
             // Another monitor or display scale: re-place the side browser and cursor layer.
             tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::ScaleFactorChanged { .. }, .. } if label == "main" => place::reapply(app),
             #[cfg(target_os = "macos")]
