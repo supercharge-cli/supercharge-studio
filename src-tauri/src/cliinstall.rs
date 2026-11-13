@@ -74,7 +74,11 @@ pub fn latest_version() -> Result<String, String> {
 
 fn installed_version(bin: &std::path::Path) -> Option<String> {
     let o = crate::hidden::std_cmd(bin).arg("--version").stdin(std::process::Stdio::null()).output().ok()?;
-    parse_version(&String::from_utf8_lossy(&o.stdout)).or_else(|| parse_version(&String::from_utf8_lossy(&o.stderr)))
+    let v = parse_version(&String::from_utf8_lossy(&o.stdout)).or_else(|| parse_version(&String::from_utf8_lossy(&o.stderr)));
+    if let Some(v) = &v {
+        crate::telemetry::cli_version(v);
+    }
+    v
 }
 
 #[derive(Serialize)]

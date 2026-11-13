@@ -528,7 +528,10 @@ pub fn run() {
             tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::ScaleFactorChanged { .. }, .. } if label == "main" => place::reapply(app),
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => background::show_main(app),
-            tauri::RunEvent::Exit => agent::stop_now(),
+            tauri::RunEvent::Exit => {
+                agent::stop_now();
+                telemetry::shutdown();
+            }
             _ => {}
         });
 }

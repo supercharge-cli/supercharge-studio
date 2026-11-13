@@ -38,12 +38,11 @@ pub fn telemetry_js_error(message: String, stack: Option<String>) {
     }
 }
 
-/// Usage events the web UI may report itself (only the start of an agent session).
+/// A usage event from the web UI (`src/lib/track.ts`). Only allowlisted names and properties
+/// are kept (see `telemetry::allowed_props`); everything else is dropped.
 #[tauri::command]
-pub fn telemetry_event(name: String) {
+pub fn telemetry_event(name: String, props: Option<Value>) {
     if let Some(t) = telemetry::get() {
-        if name == "session_start" {
-            t.send_event("session_start");
-        }
+        t.track(&name, &props.unwrap_or(Value::Null));
     }
 }

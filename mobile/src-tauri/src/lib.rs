@@ -46,5 +46,10 @@ pub fn run() {
         ]);
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_barcode_scanner::init()).plugin(tauri_plugin_deep_link::init());
-    builder.run(tauri::generate_context!()).expect("error while running Supercharge Studio mobile");
+    builder.build(tauri::generate_context!()).expect("error while running Supercharge Studio mobile").run(|_, ev| match ev {
+        // Usage stats go out when the app leaves the screen (phones rarely exit cleanly).
+        tauri::RunEvent::WindowEvent { event: tauri::WindowEvent::Focused(false), .. } => telemetry::flush_soon(),
+        tauri::RunEvent::Exit => telemetry::shutdown(),
+        _ => {}
+    });
 }

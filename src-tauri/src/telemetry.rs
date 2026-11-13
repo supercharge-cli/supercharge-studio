@@ -1,18 +1,20 @@
 //! Crash reports and anonymous usage stats, shared by the desktop app, the phone app and the
 //! headless server (included with `#[path]`).
 //!
-//! * Compiled in only when the build sets `SENTRY_DSN` (crash reports) and/or
-//!   `SUPERCHARGE_TELEMETRY_POSTHOG_API_KEY` + `SUPERCHARGE_TELEMETRY_POSTHOG_ENABLED=true`
-//!   (usage stats). Local, fork and PR builds have neither: everything here is a no-op.
+//! * Crash reports are compiled in only when the build sets `SENTRY_DSN`. Usage stats are on in
+//!   release builds and off in debug builds; `SUPERCHARGE_TELEMETRY_POSTHOG_ENABLED=true|false` at
+//!   build time overrides that. The server never sends usage stats.
 //! * The user can turn either off in Settings; `DO_NOT_TRACK=1` or
 //!   `SUPERCHARGE_TELEMETRY_DISABLED=1` turn both off for a run.
 //! * Crash reports: Rust panics and uncaught web UI errors, as a minimal envelope (message,
 //!   panic location, version, OS, arch, release). Messages are scrubbed of paths, the home
 //!   directory, URLs, e-mail addresses, keys/tokens and long quoted text (which is where prompts
 //!   or chat content would show up), then truncated.
-//! * Usage stats: `app_start`, `session_start`, `feature_used` (a fixed feature name only) and
-//!   `update_installed`, with a random install id. No content, paths or account data.
-//! * Plain HTTPS POSTs through ureq on a background thread; failures are silent.
+//! * Usage stats: the events in [`USAGE_EVENTS`] with an allowlisted, sanitized set of properties
+//!   and a random install id. No content, paths, host names, IPs or account data. Events are queued
+//!   in memory (at most [`QUEUE_MAX`]), sent in one batch every [`FLUSH_EVERY`] and on exit, and kept
+//!   on disk only when a batch could not be delivered (sent on the next start).
+//! * Plain HTTPS POSTs through ureq on background threads; failures are silent.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -27,6 +29,13 @@ fn build_env(v: Option<&'static str>) -> Option<&'static str> {
     v.map(str::trim).filter(|v| !v.is_empty())
 }
 const DEFAULT_USAGE_HOST: &str = "https://us.i.posthog.com";
+/// The usage stats project's public ingestion key (it can only add events, not read them).
+const USAGE_KEY: &str = "phc_zQ4JMELY4e6vfQbfBAJdyGMHgqv9M2A4MYqtmRLtUHhY";
+/// Unsent usage events kept in memory and on disk (oldest dropped first).
+pub const QUEUE_MAX: usize = 200;
+/// How often queued usage events are sent.
+pub const FLUSH_EVERY: Duration = Duration::from_secs(30);
+const QUEUE_FILE: &str = "usage-pending.json";
 const MAX_CRASHES_PER_RUN: u32 = 5;
 const PREFS_FILE: &str = "telemetry.json";
 const PENDING_DIR: &str = "crash-pending";
@@ -79,15 +88,21 @@ impl Config {
     /// From the build environment (CI injects the repository secrets; other builds get nothing).
     pub fn from_build() -> Config {
         let crash = build_env(option_env!("SENTRY_DSN")).and_then(CrashTarget::from_dsn);
-        let enabled = build_env(option_env!("SUPERCHARGE_TELEMETRY_POSTHOG_ENABLED")).is_some_and(|v| v.eq_ignore_ascii_case("true"));
-        let usage = match (enabled, build_env(option_env!("SUPERCHARGE_TELEMETRY_POSTHOG_API_KEY"))) {
-            (true, Some(key)) => {
-                let host = build_env(option_env!("SUPERCHARGE_TELEMETRY_POSTHOG_HOST")).unwrap_or(DEFAULT_USAGE_HOST);
-                Some(UsageTarget { url: format!("{}/i/v0/e/", host.trim_end_matches('/')), key: key.to_string() })
-            }
-            _ => None,
-        };
+        let flag = build_env(option_env!("SUPERCHARGE_TELEMETRY_POSTHOG_ENABLED"));
+        let usage = usage_built_in(flag, cfg!(debug_assertions)).then(|| {
+            let host = build_env(option_env!("SUPERCHARGE_TELEMETRY_POSTHOG_HOST")).unwrap_or(DEFAULT_USAGE_HOST);
+            UsageTarget { url: format!("{}/batch/", host.trim_end_matches('/')), key: USAGE_KEY.to_string() }
+        });
         Config { crash, usage }
+    }
+}
+
+/// Usage stats are on in release builds; the build flag (`true`/`false`, `1`/`0`, …) overrides that.
+pub fn usage_built_in(flag: Option<&str>, debug: bool) -> bool {
+    match flag.map(|v| v.trim().to_ascii_lowercase()) {
+        Some(v) if matches!(v.as_str(), "false" | "0" | "no" | "off") => false,
+        Some(v) if matches!(v.as_str(), "true" | "1" | "yes" | "on") => true,
+        _ => !debug,
     }
 }
 
@@ -135,6 +150,12 @@ pub struct Telemetry {
     crashes: AtomicU32,
     seen: Mutex<HashSet<String>>,
     home: Option<String>,
+    /// Usage events waiting for the next batch.
+    queue: Mutex<Vec<Value>>,
+    /// Messages sent since the last batch (reported as one `message_sent` with a count).
+    messages: AtomicU32,
+    /// One batch at a time.
+    flushing: Mutex<()>,
 }
 
 static GLOBAL: OnceLock<Telemetry> = OnceLock::new();
@@ -161,17 +182,21 @@ fn now_secs() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-fn http() -> ureq::Agent {
+fn http(timeout: Duration) -> ureq::Agent {
     ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(4))
-        .timeout(Duration::from_secs(8))
+        .timeout_connect(timeout.min(Duration::from_secs(4)))
+        .timeout(timeout)
         .user_agent(concat!("supercharge-studio/", env!("CARGO_PKG_VERSION")))
         .redirects(0)
         .build()
 }
 
 fn post(url: &str, headers: &[(&str, &str)], body: &str) -> bool {
-    let mut req = http().post(url);
+    post_with(url, headers, body, Duration::from_secs(8))
+}
+
+fn post_with(url: &str, headers: &[(&str, &str)], body: &str, timeout: Duration) -> bool {
+    let mut req = http(timeout).post(url);
     for (k, v) in headers {
         req = req.set(k, v);
     }
@@ -199,10 +224,24 @@ impl Telemetry {
             crashes: AtomicU32::new(0),
             seen: Mutex::new(HashSet::new()),
             home: dirs_home(),
+            queue: Mutex::new(vec![]),
+            messages: AtomicU32::new(0),
+            flushing: Mutex::new(()),
         };
         t.refresh();
         if dirty && (t.cfg.crash.is_some() || t.cfg.usage.is_some()) {
             t.save();
+        }
+        // Events a previous run could not deliver (dropped if usage stats are now off).
+        let file = t.dir.join(QUEUE_FILE);
+        if let Ok(b) = std::fs::read(&file) {
+            let _ = std::fs::remove_file(&file);
+            if t.usage_enabled() {
+                let mut old: Vec<Value> = serde_json::from_slice(&b).unwrap_or_default();
+                old.retain(|e| e["event"].as_str().is_some_and(|n| USAGE_EVENTS.contains(&n)));
+                let skip = old.len().saturating_sub(QUEUE_MAX);
+                *t.queue.lock().unwrap() = old.into_iter().skip(skip).collect();
+            }
         }
         t
     }
@@ -248,58 +287,165 @@ impl Telemetry {
         if crash == Some(false) {
             let _ = std::fs::remove_dir_all(self.dir.join(PENDING_DIR));
         }
+        if !self.usage_enabled() {
+            self.clear_queue();
+        }
         self.status()
     }
 
     fn base_props(&self) -> serde_json::Map<String, Value> {
         let mut m = serde_json::Map::new();
+        m.insert("source".into(), json!("studio"));
         m.insert("app".into(), json!(self.component));
-        m.insert("version".into(), json!(self.version));
+        m.insert("app_version".into(), json!(self.version));
+        m.insert("platform".into(), json!(platform(self.component)));
         m.insert("os".into(), json!(std::env::consts::OS));
         m.insert("arch".into(), json!(std::env::consts::ARCH));
-        // Anonymous events: no person profile, no IP geolocation.
+        m.insert("$lib".into(), json!("supercharge-studio"));
+        // Anonymous events: no person profile, no IP address or IP-based location.
         m.insert("$process_person_profile".into(), json!(false));
         m.insert("$geoip_disable".into(), json!(true));
+        m.insert("$ip".into(), Value::Null);
         m
     }
 
-    /// The JSON body for a usage event (None when usage stats are off or the name isn't allowed).
-    pub fn usage_body(&self, event: &str, extra: &[(&str, &str)]) -> Option<String> {
-        let target = self.cfg.usage.as_ref()?;
+    /// One usage event as queued (None when usage stats are off or the name isn't allowed).
+    pub fn usage_event(&self, event: &str, extra: serde_json::Map<String, Value>) -> Option<Value> {
+        self.cfg.usage.as_ref()?;
         if !self.usage_enabled() || !USAGE_EVENTS.contains(&event) {
             return None;
         }
         let mut props = self.base_props();
-        for (k, v) in extra {
-            props.insert((*k).into(), json!(v));
+        props.extend(extra);
+        let id = self.prefs.lock().ok()?.install_id.clone();
+        Some(json!({ "event": event, "distinct_id": id, "timestamp": iso_time(SystemTime::now()), "properties": props }))
+    }
+
+    /// Queue a usage event for the next batch (oldest dropped past [`QUEUE_MAX`]).
+    fn enqueue(&self, event: &str, extra: serde_json::Map<String, Value>) -> bool {
+        let Some(ev) = self.usage_event(event, extra) else { return false };
+        // try_lock: never wait (this also runs from the panic hook).
+        let Ok(mut q) = self.queue.try_lock() else { return false };
+        q.push(ev);
+        let over = q.len().saturating_sub(QUEUE_MAX);
+        q.drain(..over);
+        true
+    }
+
+    /// Queue an event at most once per run (per `key`).
+    fn enqueue_once(&self, key: String, event: &str, extra: serde_json::Map<String, Value>) -> bool {
+        if !self.usage_enabled() || !self.seen.lock().unwrap().insert(key) {
+            return false;
         }
-        let id = self.prefs.lock().unwrap().install_id.clone();
-        Some(json!({ "api_key": target.key, "event": event, "distinct_id": id, "timestamp": now_secs(), "properties": props }).to_string())
+        self.enqueue(event, extra)
     }
 
-    fn event_with(&self, event: &str, extra: &[(&str, &str)]) -> Option<std::thread::JoinHandle<()>> {
-        let body = self.usage_body(event, extra)?;
-        let url = self.cfg.usage.as_ref()?.url.clone();
-        std::thread::Builder::new().name("telemetry".into()).spawn(move || {
-            post(&url, &[("Content-Type", "application/json")], &body);
-        }).ok()
+    /// Number of queued events (plus a pending `message_sent`), for tests and the exit path.
+    pub fn queued(&self) -> usize {
+        self.queue.lock().map(|q| q.len()).unwrap_or(0) + usize::from(self.messages.load(Ordering::SeqCst) > 0)
     }
 
-    /// Send a usage event (no extra properties) in the background; the thread is returned for tests.
-    pub fn send_event(&self, event: &str) -> Option<std::thread::JoinHandle<()>> {
-        self.event_with(event, &[])
+    fn clear_queue(&self) {
+        if let Ok(mut q) = self.queue.lock() {
+            q.clear();
+        }
+        self.messages.store(0, Ordering::SeqCst);
+        let _ = std::fs::remove_file(self.dir.join(QUEUE_FILE));
+    }
+
+    /// Send everything queued in one batch. On failure the events stay queued (and are saved to
+    /// disk for the next start); returns whether the batch was delivered (true when empty).
+    pub fn flush(&self, timeout: Duration) -> bool {
+        let Some(target) = self.cfg.usage.clone() else { return true };
+        let Ok(_one) = self.flushing.lock() else { return false };
+        if !self.usage_enabled() {
+            self.clear_queue();
+            return true;
+        }
+        let n = self.messages.swap(0, Ordering::SeqCst);
+        if n > 0 {
+            let mut m = serde_json::Map::new();
+            m.insert("count".into(), json!(n));
+            self.enqueue("message_sent", m);
+        }
+        let batch = std::mem::take(&mut *self.queue.lock().unwrap());
+        if batch.is_empty() {
+            return true;
+        }
+        let body = json!({ "api_key": target.key, "batch": batch }).to_string();
+        if post_with(&target.url, &[("Content-Type", "application/json")], &body, timeout) {
+            let _ = std::fs::remove_file(self.dir.join(QUEUE_FILE));
+            return true;
+        }
+        let mut q = self.queue.lock().unwrap();
+        let newer = std::mem::take(&mut *q);
+        let mut all = batch;
+        all.extend(newer);
+        let over = all.len().saturating_sub(QUEUE_MAX);
+        all.drain(..over);
+        if self.usage_enabled() {
+            let _ = std::fs::create_dir_all(&self.dir);
+            let _ = std::fs::write(self.dir.join(QUEUE_FILE), serde_json::to_vec(&all).unwrap_or_default());
+        }
+        *q = all;
+        false
+    }
+
+    /// A usage event reported by the web UI: only [`JS_EVENTS`], with sanitized properties.
+    /// The phone only reports its own connection and errors; its chats run through the desktop
+    /// app, which counts them, so nothing is counted twice.
+    pub fn track(&self, event: &str, props: &Value) -> bool {
+        if !self.usage_enabled() || !JS_EVENTS.contains(&event) || (self.component == "mobile" && !matches!(event, "agent_connected" | "error")) {
+            return false;
+        }
+        if event == "message_sent" {
+            self.messages.fetch_add(1, Ordering::SeqCst);
+            return true;
+        }
+        let Some(extra) = allowed_props(event, props) else { return false };
+        match event {
+            // Once per run (reconnects and repeated picks of the same model are not new).
+            "agent_connected" => self.enqueue_once(format!("a:{}", extra.get("cli_version").and_then(Value::as_str).unwrap_or("")), event, extra),
+            "model_selected" => self.enqueue_once(format!("m:{}", Value::Object(extra.clone())), event, extra),
+            "error" => self.enqueue_once(format!("e:{}", Value::Object(extra.clone())), event, extra),
+            _ => self.enqueue(event, extra),
+        }
+    }
+
+    /// `cli_version_detected` once per run per version.
+    pub fn cli_version(&self, version: &str) -> bool {
+        let Some(v) = clean_version(version) else { return false };
+        let mut m = serde_json::Map::new();
+        m.insert("version".into(), json!(v));
+        self.enqueue_once(format!("v:{v}"), "cli_version_detected", m)
     }
 
     /// `feature_used` once per run per feature; only names from [`FEATURES`].
-    pub fn feature(&self, name: &'static str) -> Option<std::thread::JoinHandle<()>> {
-        if !self.usage_enabled() || !FEATURES.contains(&name) || !self.seen.lock().unwrap().insert(format!("f:{name}")) {
-            return None;
+    pub fn feature(&self, name: &'static str) -> bool {
+        if !FEATURES.contains(&name) {
+            return false;
         }
-        self.event_with("feature_used", &[("feature", name)])
+        let mut m = serde_json::Map::new();
+        m.insert("feature".into(), json!(name));
+        self.enqueue_once(format!("f:{name}"), "feature_used", m)
     }
 
-    /// Startup: `app_start`, then `update_installed` if the version changed since the last run.
-    pub fn started(&self) -> Vec<std::thread::JoinHandle<()>> {
+    /// An uncaught error as a `$exception` usage event: type and scrubbed message only, sent only
+    /// when both crash reports and usage stats are on, each distinct error once per run.
+    fn exception(&self, kind: &str, message: &str) -> bool {
+        if !self.crash_enabled() || self.seen.lock().map(|s| s.len()).unwrap_or(usize::MAX) > 500 {
+            return false;
+        }
+        let value = scrub(message, self.home.as_deref(), 200);
+        let mut m = serde_json::Map::new();
+        m.insert("$exception_list".into(), json!([{ "type": kind, "value": value, "mechanism": { "type": "generic", "handled": false } }]));
+        m.insert("$exception_type".into(), json!(kind));
+        m.insert("$exception_message".into(), json!(value));
+        self.enqueue_once(format!("x:{kind}:{value}"), "$exception", m)
+    }
+
+    /// Startup: queue `app_opened`, then `update_installed` if the version changed since the last run.
+    pub fn started(&self) -> usize {
         let prev = {
             let mut p = self.prefs.lock().unwrap();
             std::mem::replace(&mut p.last_version, self.version.to_string())
@@ -307,12 +453,13 @@ impl Telemetry {
         if prev != self.version && (self.cfg.crash.is_some() || self.cfg.usage.is_some()) {
             self.save();
         }
-        let mut out = vec![];
-        out.extend(self.event_with("app_start", &[]));
+        let mut n = usize::from(self.enqueue("app_opened", serde_json::Map::new()));
         if !prev.is_empty() && prev != self.version {
-            out.extend(self.event_with("update_installed", &[("from", prev.as_str())]));
+            let mut m = serde_json::Map::new();
+            m.insert("from".into(), json!(clean_version(&prev).unwrap_or_default()));
+            n += usize::from(self.enqueue("update_installed", m));
         }
-        out
+        n
     }
 
     /// The crash envelope (header, item header, event) for a scrubbed error.
@@ -367,6 +514,16 @@ impl Telemetry {
     /// An uncaught error from the web UI (sent in the background).
     pub fn js_error(&self, message: &str, stack: &str) -> Option<std::thread::JoinHandle<()>> {
         let message: String = message.chars().take(1000).collect();
+        // Agent errors are reported by code only (see JS_HOOK).
+        match message.strip_prefix("AcpRpcError ") {
+            Some(code) => {
+                self.track("error", &json!({ "kind": "acp_rpc", "code": code.trim().parse::<i64>().ok() }));
+            }
+            None => {
+                let kind = message.split(':').next().filter(|k| k.len() < 40 && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')).unwrap_or("js_error");
+                self.exception(kind, &message);
+            }
+        }
         if !self.crash_allowed(&message) {
             return None;
         }
@@ -381,6 +538,13 @@ impl Telemetry {
     pub fn panic(&self, message: &str, location: Option<&str>) {
         if !self.crash_allowed(&format!("{message}@{}", location.unwrap_or(""))) {
             return;
+        }
+        // Saved with the queue so it goes out next run if the process aborts.
+        if self.exception("panic", message) {
+            if let Ok(q) = self.queue.try_lock() {
+                let _ = std::fs::create_dir_all(&self.dir);
+                let _ = std::fs::write(self.dir.join(QUEUE_FILE), serde_json::to_vec(&*q).unwrap_or_default());
+            }
         }
         let env = self.crash_envelope("panic", message, location, "", true);
         let dir = self.dir.join(PENDING_DIR);
@@ -418,12 +582,109 @@ impl Telemetry {
 }
 
 /// Usage event names that may be sent.
-pub const USAGE_EVENTS: &[&str] = &["app_start", "session_start", "feature_used", "update_installed"];
+pub const USAGE_EVENTS: &[&str] = &[
+    "app_opened", "update_installed", "session_started", "message_sent", "model_selected", "agent_connected", "cli_version_detected",
+    "feature_used", "error", "$exception",
+];
+/// Usage events the web UI may report (through `telemetry_event`).
+pub const JS_EVENTS: &[&str] = &["session_started", "message_sent", "model_selected", "agent_connected", "error"];
 /// Feature names for `feature_used` (nothing else is accepted).
 pub const FEATURES: &[&str] = &[
     "terminal", "side_browser", "git_commit", "git_push", "pull_request", "worktree", "checkpoint", "phone_pairing", "public_relay",
     "provider_setup", "export_chat", "attachment", "project_rules", "stdio_transport", "cli_install",
 ];
+
+/// desktop | android | ios | server
+fn platform(component: &str) -> &'static str {
+    match component {
+        "mobile" if cfg!(target_os = "ios") => "ios",
+        "mobile" => "android",
+        "server" => "server",
+        _ => "desktop",
+    }
+}
+
+/// RFC 3339 UTC time with milliseconds (the ingestion API rejects bare epoch numbers).
+pub fn iso_time(t: SystemTime) -> String {
+    let d = t.duration_since(UNIX_EPOCH).unwrap_or_default();
+    let secs = d.as_secs() as i64;
+    let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    // Days since 1970-01-01 → civil date (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z", rem / 3600, rem % 3600 / 60, rem % 60, d.subsec_millis())
+}
+
+/// A provider or model id kept as data: short, plain characters, and nothing that looks like a
+/// path, URL, e-mail address or key.
+pub fn clean_id(v: &str, max: usize) -> Option<String> {
+    let v = v.trim();
+    let plain = v.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':' | '/' | '+' | '@' | '[' | ']'));
+    let lower = v.to_ascii_lowercase();
+    const KEY_PREFIXES: &[&str] = &["sk-", "sk_", "pk_", "rk_", "ghp_", "gho_", "ghs_", "ghu_", "github_pat_", "xox", "glpat-", "aiza", "eyj", "hf_", "phc_", "phx_", "nous-"];
+    let keyish = KEY_PREFIXES.iter().any(|p| lower.starts_with(p))
+        || v.split(|c: char| !c.is_ascii_alphanumeric()).any(|s| s.len() >= 24 && s.bytes().any(|b| b.is_ascii_digit()) && s.bytes().any(|b| b.is_ascii_alphabetic()));
+    let email = v.split_once('@').is_some_and(|(a, b)| !a.is_empty() && b.contains('.'));
+    let pathish = v.starts_with(['/', '.', '~']) || v.contains("..") || v.contains("//") || v.matches('/').count() > 3;
+    (!v.is_empty() && v.chars().count() <= max && plain && !keyish && !email && !pathish).then(|| v.to_string())
+}
+
+/// A version such as `1.2.3`, `v0.9.0-beta.1` or `1.0.0+abc`.
+pub fn clean_version(v: &str) -> Option<String> {
+    let v = v.trim().trim_start_matches('v');
+    (v.len() <= 40 && v.starts_with(|c: char| c.is_ascii_digit()) && v.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+'))).then(|| v.to_string())
+}
+
+/// The properties a web UI event may carry, sanitized; anything else is dropped. None when a
+/// required property is missing or unsafe.
+pub fn allowed_props(event: &str, props: &Value) -> Option<serde_json::Map<String, Value>> {
+    let s = |k: &str| props.get(k).and_then(Value::as_str);
+    let mut m = serde_json::Map::new();
+    match event {
+        "session_started" | "message_sent" => {}
+        "model_selected" => {
+            let model = clean_id(s("model")?, 120)?;
+            // The provider is the id's prefix (`provider/model` or `provider:model`) unless given.
+            let provider = s("provider").and_then(|p| clean_id(p, 60)).or_else(|| model.split_once(['/', ':']).and_then(|(p, _)| clean_id(p, 60)));
+            if let Some(p) = provider {
+                m.insert("provider".into(), json!(p));
+            }
+            m.insert("model".into(), json!(model));
+        }
+        "agent_connected" => {
+            if let Some(v) = s("cli_version").and_then(clean_version) {
+                m.insert("cli_version".into(), json!(v));
+            }
+        }
+        "error" => {
+            let kind = s("kind")?;
+            if kind.is_empty() || kind.len() > 40 || !kind.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') {
+                return None;
+            }
+            m.insert("kind".into(), json!(kind));
+            match props.get("code") {
+                Some(Value::Number(n)) if n.is_i64() => {
+                    m.insert("code".into(), json!(n));
+                }
+                Some(Value::String(c)) => {
+                    if let Some(c) = clean_id(c, 40).filter(|c| !c.contains(['/', '@'])) {
+                        m.insert("code".into(), json!(c));
+                    }
+                }
+                _ => {}
+            }
+        }
+        _ => return None,
+    }
+    Some(m)
+}
 
 fn dirs_home() -> Option<String> {
     std::env::var("HOME").ok().or_else(|| std::env::var("USERPROFILE").ok()).filter(|h| h.len() > 1)
@@ -431,7 +692,7 @@ fn dirs_home() -> Option<String> {
 
 // ---- global instance --------------------------------------------------------------------
 
-/// Set up once at startup: load prefs, install the panic hook, send `app_start`/pending reports.
+/// Set up once at startup: load prefs, install the panic hook, queue `app_opened`, send pending reports, then batch usage events.
 /// `usage`: whether this component sends usage stats at all (the server only sends crashes);
 /// `off`: an extra opt-out for this run (e.g. the server's `--no-crash-reports`).
 pub fn init(component: &'static str, version: &'static str, dir: &Path, usage: bool, off: bool) -> &'static Telemetry {
@@ -445,11 +706,17 @@ pub fn init(component: &'static str, version: &'static str, dir: &Path, usage: b
     if t.cfg.crash.is_some() {
         install_panic_hook();
     }
-    if t.crash_enabled() || t.usage_enabled() || t.cfg.crash.is_some() {
+    if t.crash_enabled() || t.usage_enabled() || t.cfg.crash.is_some() || t.cfg.usage.is_some() {
         let _ = std::thread::Builder::new().name("telemetry".into()).spawn(move || {
             t.flush_pending();
-            for h in t.started() {
-                let _ = h.join();
+            if t.cfg.usage.is_none() {
+                return;
+            }
+            t.started();
+            // Usage batches: right after start, then every FLUSH_EVERY (a no-op while off or empty).
+            loop {
+                t.flush(Duration::from_secs(8));
+                std::thread::sleep(FLUSH_EVERY);
             }
         });
     }
@@ -480,6 +747,32 @@ pub fn get() -> Option<&'static Telemetry> {
 pub fn feature(name: &'static str) {
     if let Some(t) = GLOBAL.get() {
         t.feature(name);
+    }
+}
+
+/// `cli_version_detected` from anywhere (no-op until `init`, or when off).
+pub fn cli_version(version: &str) {
+    if let Some(t) = GLOBAL.get() {
+        t.cli_version(version);
+    }
+}
+
+/// Send queued usage events now, waiting at most a moment (on exit).
+pub fn shutdown() {
+    if let Some(t) = GLOBAL.get() {
+        if t.usage_enabled() && t.queued() > 0 {
+            t.flush(Duration::from_secs(2));
+        }
+    }
+}
+
+/// Send queued usage events in the background (e.g. when the phone app goes to the background).
+#[allow(dead_code)] // phone app only
+pub fn flush_soon() {
+    if let Some(t) = GLOBAL.get() {
+        if t.usage_enabled() && t.queued() > 0 {
+            let _ = std::thread::Builder::new().name("telemetry".into()).spawn(move || t.flush(Duration::from_secs(5)));
+        }
     }
 }
 
@@ -712,7 +1005,7 @@ mod tests {
     fn cfg(base: &str) -> Config {
         Config {
             crash: CrashTarget::from_dsn(&format!("{}/42", base.replace("http://", "http://pubkey@"))),
-            usage: Some(UsageTarget { url: format!("{base}/i/v0/e/"), key: "phc_testkey".into() }),
+            usage: Some(UsageTarget { url: format!("{base}/batch/"), key: "phc_testkey".into() }),
         }
     }
 
@@ -731,22 +1024,120 @@ mod tests {
     }
 
     #[test]
-    fn builds_without_secrets_are_off() {
-        // Local / fork / PR builds: no secrets in the build environment.
-        if option_env!("SENTRY_DSN").unwrap_or("").is_empty() && option_env!("SUPERCHARGE_TELEMETRY_POSTHOG_API_KEY").unwrap_or("").is_empty() {
-            let c = Config::from_build();
-            assert!(c.crash.is_none() && c.usage.is_none());
-            let d = tmp("off");
-            let t = Telemetry::new(c, "desktop", "1.0.0", &d, false);
-            assert!(!t.crash_enabled() && !t.usage_enabled());
-            assert_eq!(t.status(), Status { crash_available: false, usage_available: false, crash: false, usage: false });
-            assert!(t.usage_body("app_start", &[]).is_none());
-            assert!(t.feature("terminal").is_none());
-            assert!(t.started().is_empty());
-            t.panic("boom", None);
-            assert!(t.js_error("x", "").is_none());
-            assert!(!d.exists(), "nothing is written when telemetry isn't compiled in");
+    fn usage_stats_follow_the_build_profile() {
+        // Release builds send usage stats, debug builds don't; the build flag overrides either.
+        assert!(usage_built_in(None, false));
+        assert!(!usage_built_in(None, true));
+        assert!(!usage_built_in(Some("false"), false) && !usage_built_in(Some("0"), false) && !usage_built_in(Some("OFF"), false));
+        assert!(usage_built_in(Some("true"), true) && usage_built_in(Some("1"), true));
+        assert!(!usage_built_in(Some("maybe"), true));
+        let c = Config::from_build();
+        if let Some(u) = &c.usage {
+            assert!(u.url.ends_with("/batch/") && u.key.starts_with("phc_"));
         }
+    }
+
+    #[test]
+    fn builds_without_telemetry_are_off() {
+        let d = tmp("off");
+        let t = Telemetry::new(Config::default(), "desktop", "1.0.0", &d, false);
+        assert!(!t.crash_enabled() && !t.usage_enabled());
+        assert_eq!(t.status(), Status { crash_available: false, usage_available: false, crash: false, usage: false });
+        assert!(t.usage_event("app_opened", Default::default()).is_none());
+        assert!(!t.feature("terminal"));
+        assert_eq!(t.started(), 0);
+        assert!(!t.track("session_started", &Value::Null));
+        assert!(t.flush(WAIT));
+        t.panic("boom", None);
+        assert!(t.js_error("x", "").is_none());
+        assert!(!d.exists(), "nothing is written when telemetry isn't compiled in");
+    }
+
+    #[test]
+    fn iso_times() {
+        assert_eq!(iso_time(UNIX_EPOCH), "1970-01-01T00:00:00.000Z");
+        assert_eq!(iso_time(UNIX_EPOCH + Duration::from_millis(1_763_078_400_123)), "2025-11-14T00:00:00.123Z");
+        assert_eq!(iso_time(UNIX_EPOCH + Duration::from_secs(951_782_400)), "2000-02-29T00:00:00.000Z");
+    }
+
+    #[test]
+    fn props_allowlist_and_sanitizer() {
+        let p = |e: &str, v: Value| allowed_props(e, &v).map(Value::Object);
+        // Unknown keys are dropped; content never passes.
+        assert_eq!(p("session_started", json!({ "text": "my secret prompt", "cwd": "/home/a" })).unwrap(), json!({}));
+        assert_eq!(p("message_sent", json!({ "text": "hi" })).unwrap(), json!({}));
+        assert!(p("prompt_text", json!({})).is_none());
+        // Provider/model ids are data; the provider defaults to the id's prefix.
+        assert_eq!(p("model_selected", json!({ "model": "hub/some-org/big-model-3.1-405b-instruct", "extra": 1 })).unwrap(), json!({ "provider": "hub", "model": "hub/some-org/big-model-3.1-405b-instruct" }));
+        assert_eq!(p("model_selected", json!({ "model": "fast-5", "provider": "acme" })).unwrap(), json!({ "provider": "acme", "model": "fast-5" }));
+        assert_eq!(p("model_selected", json!({ "model": "chat-model-4@20250514" })).unwrap(), json!({ "model": "chat-model-4@20250514" }));
+        for bad in ["/home/alice/models/x.gguf", "C:\\Users\\bob\\m.bin", "~/m", "../m", "http://10.0.0.5:8080/v1", "bob@example.com", "sk-proj-AAAAbbbbCCCC1234dddd", "write me a poem", "a".repeat(200).as_str(), "x/../../etc", "model\nname"] {
+            assert!(p("model_selected", json!({ "model": bad })).is_none(), "{bad}");
+        }
+        assert!(p("model_selected", json!({})).is_none());
+        assert_eq!(p("model_selected", json!({ "model": "m1", "provider": "/etc/passwd" })).unwrap(), json!({ "model": "m1" }));
+        // Versions.
+        assert_eq!(p("agent_connected", json!({ "cli_version": "v1.4.2-beta.1" })).unwrap(), json!({ "cli_version": "1.4.2-beta.1" }));
+        assert_eq!(p("agent_connected", json!({ "cli_version": "my laptop" })).unwrap(), json!({}));
+        assert_eq!(clean_version("0.9.1+abc"), Some("0.9.1+abc".into()));
+        assert_eq!(clean_version("/usr/bin/x"), None);
+        // Errors: a short kind and a code, nothing else.
+        assert_eq!(p("error", json!({ "kind": "agent_connect", "code": -32603, "message": "failed at /home/a" })).unwrap(), json!({ "kind": "agent_connect", "code": -32603 }));
+        assert_eq!(p("error", json!({ "kind": "agent_connect", "code": "ECONNREFUSED" })).unwrap(), json!({ "kind": "agent_connect", "code": "ECONNREFUSED" }));
+        assert_eq!(p("error", json!({ "kind": "x", "code": "/home/a/b" })).unwrap(), json!({ "kind": "x" }));
+        assert!(p("error", json!({ "kind": "Has Spaces" })).is_none());
+        assert!(p("error", json!({ "code": 1 })).is_none());
+    }
+
+    #[test]
+    fn usage_opt_out_clears_the_queue() {
+        let dead = {
+            let l = TcpListener::bind("127.0.0.1:0").unwrap();
+            format!("http://{}", l.local_addr().unwrap())
+        };
+        let d = tmp("optout-queue");
+        let t = Telemetry::new(cfg(&dead), "desktop", "1.0.0", &d, false);
+        assert_eq!(t.started(), 1);
+        assert!(t.track("session_started", &Value::Null) && t.track("message_sent", &Value::Null));
+        assert_eq!(t.queued(), 3);
+        // Offline: kept in memory and on disk.
+        assert!(!t.flush(Duration::from_millis(500)));
+        assert!(d.join(QUEUE_FILE).exists());
+        assert_eq!(t.queued(), 3);
+        t.set(None, Some(false));
+        assert_eq!(t.queued(), 0);
+        assert!(!d.join(QUEUE_FILE).exists());
+        assert!(!t.track("session_started", &Value::Null) && !t.feature("terminal") && t.usage_event("app_opened", Default::default()).is_none());
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn usage_queue_is_capped_and_survives_restarts() {
+        let dead = {
+            let l = TcpListener::bind("127.0.0.1:0").unwrap();
+            format!("http://{}", l.local_addr().unwrap())
+        };
+        let d = tmp("queue");
+        let t = Telemetry::new(cfg(&dead), "desktop", "1.0.0", &d, false);
+        for _ in 0..(QUEUE_MAX + 50) {
+            t.track("session_started", &Value::Null);
+        }
+        assert_eq!(t.queued(), QUEUE_MAX);
+        assert!(!t.flush(Duration::from_millis(500)));
+        // Next run (now online) sends what was saved, in one batch.
+        let (base, rx) = mock();
+        let t2 = Telemetry::new(cfg(&base), "desktop", "1.0.0", &d, false);
+        assert!(!d.join(QUEUE_FILE).exists());
+        assert_eq!(t2.queued(), QUEUE_MAX);
+        assert!(t2.flush(WAIT));
+        let (path, _, body) = rx.recv_timeout(WAIT).unwrap();
+        assert_eq!(path, "/batch/");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["batch"].as_array().unwrap().len(), QUEUE_MAX);
+        assert_eq!(t2.queued(), 0);
+        assert!(t2.flush(WAIT), "empty queue: nothing to send");
+        assert!(rx.recv_timeout(Duration::from_millis(300)).is_err());
+        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]
@@ -795,8 +1186,9 @@ mod tests {
         assert!(t.crash_enabled() && t.usage_enabled());
         let st = t.set(Some(false), Some(false));
         assert_eq!(st, Status { crash_available: true, usage_available: true, crash: false, usage: false });
-        assert!(t.feature("terminal").is_none());
-        assert!(t.started().is_empty());
+        assert!(!t.feature("terminal"));
+        assert_eq!(t.started(), 0);
+        assert!(t.flush(WAIT));
         assert!(t.js_error("boom", "").is_none());
         t.panic("boom", Some("src/lib.rs:1"));
         assert!(!d.join(PENDING_DIR).exists());
@@ -816,7 +1208,7 @@ mod tests {
         c.usage = None;
         let u = Telemetry::new(c, "desktop", "1.0.0", &tmp("nousage"), false);
         assert!(!u.usage_enabled() && u.crash_enabled());
-        assert!(u.feature("terminal").is_none());
+        assert!(!u.feature("terminal"));
         let _ = std::fs::remove_dir_all(d);
     }
 
@@ -827,44 +1219,94 @@ mod tests {
         std::fs::create_dir_all(&d).unwrap();
         std::fs::write(d.join(PREFS_FILE), r#"{"last_version":"1.0.0"}"#).unwrap();
         let t = Telemetry::new(cfg(&base), "desktop", "1.0.1", &d, false);
-        for h in t.started() {
-            h.join().unwrap();
-        }
-        let mut got = vec![rx.recv_timeout(WAIT).unwrap(), rx.recv_timeout(WAIT).unwrap()];
-        got.sort_by_key(|g| g.2.contains("update_installed"));
-        let (path, _, body) = &got[0];
-        assert_eq!(path, "/i/v0/e/");
-        let v: Value = serde_json::from_str(body).unwrap();
-        assert_eq!(v["event"], "app_start");
+        assert_eq!(t.started(), 2);
+        assert!(t.track("session_started", &json!({ "cwd": "/home/alice/secret" })));
+        assert!(t.track("message_sent", &json!({ "text": "please refactor billing" })));
+        assert!(t.track("message_sent", &Value::Null));
+        assert!(t.track("model_selected", &json!({ "model": "acme/fast-5" })));
+        assert!(!t.track("model_selected", &json!({ "model": "acme/fast-5" })), "same pick once per run");
+        assert!(t.track("agent_connected", &json!({ "cli_version": "0.9.3" })));
+        assert!(!t.track("agent_connected", &json!({ "cli_version": "0.9.3" })), "reconnects are not new");
+        assert!(t.cli_version("0.9.3") && !t.cli_version("0.9.3"));
+        assert!(t.feature("terminal") && !t.feature("terminal") && !t.feature("read_my_files"));
+        assert!(!t.track("app_opened", &Value::Null), "the UI can't fake app events");
+        assert!(!t.track("whatever", &Value::Null));
+        assert!(t.flush(WAIT));
+        let (path, _, body) = rx.recv_timeout(WAIT).unwrap();
+        assert_eq!(path, "/batch/");
+        assert!(!body.contains("alice") && !body.contains("refactor"));
+        let v: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(v["api_key"], "phc_testkey");
-        let id = v["distinct_id"].as_str().unwrap().to_string();
+        let evs = v["batch"].as_array().unwrap();
+        let names: Vec<&str> = evs.iter().map(|e| e["event"].as_str().unwrap()).collect();
+        assert_eq!(names, ["app_opened", "update_installed", "session_started", "model_selected", "agent_connected", "cli_version_detected", "feature_used", "message_sent"]);
+        let id = evs[0]["distinct_id"].as_str().unwrap().to_string();
         assert_eq!(id.len(), 32);
-        assert_eq!(v["properties"]["version"], "1.0.1");
-        assert_eq!(v["properties"]["os"], std::env::consts::OS);
-        assert_eq!(v["properties"]["arch"], std::env::consts::ARCH);
-        assert_eq!(v["properties"]["$process_person_profile"], false);
-        let u: Value = serde_json::from_str(&got[1].2).unwrap();
-        assert_eq!(u["event"], "update_installed");
-        assert_eq!(u["properties"]["from"], "1.0.0");
-        // Only allowed names, once per run.
-        t.feature("terminal").unwrap().join().unwrap();
-        assert!(t.feature("terminal").is_none());
-        assert!(t.feature("read_my_files").is_none());
-        let (_, _, body) = rx.recv_timeout(WAIT).unwrap();
-        let f: Value = serde_json::from_str(&body).unwrap();
-        assert_eq!(f["event"], "feature_used");
-        assert_eq!(f["properties"]["feature"], "terminal");
-        assert_eq!(f["distinct_id"], id.as_str());
-        assert!(t.usage_body("something_else", &[]).is_none());
+        for e in evs {
+            assert_eq!(e["distinct_id"], id.as_str());
+            assert!(e["timestamp"].as_str().unwrap().ends_with('Z'));
+            let p = &e["properties"];
+            assert_eq!(p["source"], "studio");
+            assert_eq!(p["app_version"], "1.0.1");
+            assert_eq!(p["platform"], "desktop");
+            assert_eq!(p["os"], std::env::consts::OS);
+            assert_eq!(p["arch"], std::env::consts::ARCH);
+            assert_eq!(p["$process_person_profile"], false);
+            assert_eq!(p["$geoip_disable"], true);
+            assert!(p.get("$ip").is_some_and(Value::is_null));
+        }
+        assert_eq!(evs[1]["properties"]["from"], "1.0.0");
+        assert_eq!(evs[3]["properties"]["provider"], "acme");
+        assert_eq!(evs[3]["properties"]["model"], "acme/fast-5");
+        assert_eq!(evs[4]["properties"]["cli_version"], "0.9.3");
+        assert_eq!(evs[5]["properties"]["version"], "0.9.3");
+        assert_eq!(evs[6]["properties"]["feature"], "terminal");
+        assert_eq!(evs[7]["properties"]["count"], 2);
         // Same install id next run; no second update_installed.
         let t2 = Telemetry::new(cfg(&base), "desktop", "1.0.1", &d, false);
-        let hs = t2.started();
-        assert_eq!(hs.len(), 1);
-        for h in hs {
-            h.join().unwrap();
-        }
+        assert_eq!(t2.started(), 1);
+        assert!(t2.flush(WAIT));
         let (_, _, body) = rx.recv_timeout(WAIT).unwrap();
-        assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["distinct_id"], id.as_str());
+        assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["batch"][0]["distinct_id"], id.as_str());
+        // The phone only reports its connection and errors (its chats are counted by the desktop).
+        let m = Telemetry::new(cfg(&base), "mobile", "1.0.1", &tmp("phone"), false);
+        assert!(!m.track("message_sent", &Value::Null) && !m.track("session_started", &Value::Null) && !m.track("model_selected", &json!({ "model": "a" })));
+        assert!(m.track("agent_connected", &Value::Null));
+        assert_eq!(m.usage_event("app_opened", Default::default()).unwrap()["properties"]["platform"], if cfg!(target_os = "ios") { "ios" } else { "android" });
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn exceptions_are_scrubbed_usage_events() {
+        let (base, rx) = mock();
+        let d = tmp("exc");
+        let t = Telemetry::new(cfg(&base), "desktop", "1.0.0", &d, false);
+        let _ = t.js_error("TypeError: cannot open /home/alice/notes.md", "");
+        let _ = t.js_error("AcpRpcError -32603", "");
+        assert!(t.flush(WAIT));
+        // The crash report and the batch arrive in either order.
+        let mut batch = None;
+        for _ in 0..3 {
+            if let Ok((path, _, body)) = rx.recv_timeout(WAIT) {
+                if path == "/batch/" {
+                    batch = Some(body);
+                    break;
+                }
+            }
+        }
+        let v: Value = serde_json::from_str(&batch.unwrap()).unwrap();
+        let evs = v["batch"].as_array().unwrap();
+        assert_eq!(evs[0]["event"], "$exception");
+        assert_eq!(evs[0]["properties"]["$exception_type"], "TypeError");
+        assert_eq!(evs[0]["properties"]["$exception_message"], "TypeError: cannot open <path>");
+        assert_eq!(evs[1]["event"], "error");
+        assert_eq!(evs[1]["properties"]["kind"], "acp_rpc");
+        assert_eq!(evs[1]["properties"]["code"], -32603);
+        assert!(!v.to_string().contains("alice"));
+        // Crash reports off: no exceptions in usage stats either.
+        t.set(Some(false), None);
+        let _ = t.js_error("RangeError: other", "");
+        assert_eq!(t.queued(), 0);
         let _ = std::fs::remove_dir_all(d);
     }
 
