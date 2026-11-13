@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 
 const COLS = 63;
-const ROWS = 28;
 const SHINE = 5;
 const START = 0.5;
 const PASS = 2;
@@ -103,10 +102,17 @@ const INK = `
                 000000000000000000000000
 `.slice(1);
 
-const pad = (art: string) => art.split("\n").map((line) => line.padEnd(COLS));
+// Rows come from the art itself (the template literals end with a newline, so drop trailing
+// blank lines): a fixed row count read past the last line and threw on every frame.
+export const pad = (art: string) => {
+  const lines = art.split("\n");
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return lines.map((line) => line.padEnd(COLS));
+};
 const mono = pad(MONO);
 const art = pad(ART);
 const ink = pad(INK);
+const ROWS = art.length;
 const n = PALETTE.length / 6;
 let lo = Infinity;
 let hi = -Infinity;
@@ -120,7 +126,7 @@ for (const pic of [mono, art]) {
 }
 const span = hi - lo + 2 * HALF;
 
-function frame(t: number): { ch: string; color: string }[][] {
+export function frame(t: number): { ch: string; color: string }[][] {
   const every = Math.max(SHINE, PASS + 0.5);
   const since = t - START;
   const at = since >= 0 ? lo - HALF + (span * (since % every)) / PASS : -Infinity;
@@ -128,14 +134,14 @@ function frame(t: number): { ch: string; color: string }[][] {
   for (let y = 0; y < ROWS; y++) {
     const row: { ch: string; color: string }[] = [];
     for (let x = 0; x < COLS; x++) {
-      let ch = art[y][x];
+      let ch = art[y]?.[x] ?? " ";
       let color = "transparent";
       if (ch !== " ") {
         const d = Math.abs(x + LEAN * y - at);
         let k = d < HALF ? 1 - d / HALF : 0;
         k = k * k * (3 - 2 * k);
         if (k > 0.55 && SOLID.includes(ch)) ch = "/";
-        const idx = 3 * n + (k > 0.6 ? 2 : k > 0.25 ? 1 : 0) * n + parseInt(ink[y][x], 36);
+        const idx = 3 * n + (k > 0.6 ? 2 : k > 0.25 ? 1 : 0) * n + (parseInt(ink[y]?.[x] ?? "0", 36) || 0);
         color = PALETTE[idx] ?? "#d7d7ea";
       }
       row.push({ ch, color });
