@@ -55,8 +55,9 @@ Sent only when the build includes them and you have not turned them off:
 Every event also carries `source` (`studio`), `app` (desktop or mobile), `app_version`,
 `platform` (desktop, android or ios), `os`, `arch` and a random install id (created on first
 start, stored in `telemetry.json` in the app's config folder, and not linked to any account).
-Events are anonymous: no person profile is built, no IP address is stored and no IP-based
-location is recorded. Ids and versions are checked before sending: anything that looks like a
+Events are anonymous: no person profile is built and no IP-based location is recorded. The
+app never puts your IP address in an event, but the stats service may store the IP address the
+request arrives from. Ids and versions are checked before sending: anything that looks like a
 path, URL, e-mail address or key is dropped, as is every property not listed above.
 
 Chats from the phone run through the desktop app, so the desktop counts them once; the phone

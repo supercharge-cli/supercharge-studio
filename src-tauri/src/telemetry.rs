@@ -302,7 +302,7 @@ impl Telemetry {
         m.insert("os".into(), json!(std::env::consts::OS));
         m.insert("arch".into(), json!(std::env::consts::ARCH));
         m.insert("$lib".into(), json!("supercharge-studio"));
-        // Anonymous events: no person profile, no IP address or IP-based location.
+        // Anonymous events: no person profile, no IP in the payload, no IP-based location.
         m.insert("$process_person_profile".into(), json!(false));
         m.insert("$geoip_disable".into(), json!(true));
         m.insert("$ip".into(), Value::Null);
