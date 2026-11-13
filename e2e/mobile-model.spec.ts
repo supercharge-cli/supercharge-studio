@@ -24,6 +24,7 @@ test("per-chat model and reasoning pickers follow load, changes, and live update
     const modesFor = (sid) => ({ currentModeId: modes[sid], availableModes: [{ id: "default", name: "Agent" }, { id: "plan", name: "Plan" }] });
     export class AcpClient {
       constructor(opts) { this.opts = opts; window.mockClient = this; }
+      state = "open";
       async connect() { this.opts.onStateChange("open"); }
       async initialize() { return {}; }
       async listSessions() { return { sessions: [{ sessionId: "s1", title: "First", cwd: "/w" }, { sessionId: "s2", title: "Second", cwd: "/w" }], _meta: { projects: [] } }; }
@@ -104,6 +105,7 @@ test("mobile: type a custom model id when the list is empty or missing the wante
     };
     export class AcpClient {
       constructor(opts) { this.opts = opts; window.mockClient = this; window.setupSaves = []; }
+      state = "open";
       async connect() { this.opts.onStateChange("open"); }
       async initialize() { return {}; }
       async listSessions() { return { sessions: [{ sessionId: "s1", title: "First", cwd: "/w" }], _meta: { projects: [] } }; }

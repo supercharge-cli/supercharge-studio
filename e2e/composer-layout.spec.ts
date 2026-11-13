@@ -15,6 +15,7 @@ async function mobile(page: Page) {
     const opts = [{ id: "model", currentValue: "m", options: [{ value: "m", name: "test-model-with-a-really-long-name-1m" }, { value: "x", name: "Other" }] }, { id: "permission_mode", currentValue: "always-approve", options: [{ value: "ask", name: "Ask" }, { value: "always-approve", name: "Always Approve" }] }];
     export class AcpClient {
       constructor(o) { this.opts = o; }
+      state = "open";
       async connect() { this.opts.onStateChange("open"); }
       async initialize() { return {}; }
       async listSessions() { return { sessions: [{ sessionId: "s1", title: "First", cwd: "/workspace" }], _meta: { projects: [] } }; }

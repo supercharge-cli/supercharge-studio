@@ -73,7 +73,8 @@ test.describe("phone", () => {
       window.saves = [];
       export class AcpClient {
         constructor(opts) { this.opts = opts; }
-        async connect() { this.opts.onStateChange("open"); }
+        state = "open";
+      async connect() { this.opts.onStateChange("open"); }
         async initialize() { this.initResult = { agentCapabilities: { _meta: { supercharge: { setup: true } } } }; return this.initResult; }
         async listSessions() { return { sessions: [], _meta: { projects: [] } }; }
         async ext(method, p) {
