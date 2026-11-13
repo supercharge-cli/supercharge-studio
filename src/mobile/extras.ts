@@ -3,6 +3,7 @@ export * from "../components/ProviderSetup";
 export { default } from "../components/ProviderSetup";
 export { default as Pair } from "./pair";
 export { UpdateSheet } from "./UpdateSheet";
+export { Privacy } from "../components/Privacy";
 export { SearchIndex } from "../lib/searchIndex";
 // Shared modules the phone build points here (see vite.mobile.config.ts).
 export { ContextWindowPop } from "../components/ContextWindowPop";

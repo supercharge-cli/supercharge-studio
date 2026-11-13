@@ -1,5 +1,4 @@
 import { invoke, isDesktop } from "../lib/desktop";
-import { Privacy } from "../components/Privacy";
 import { cleanPermission } from "../lib/labels";
 import { answerOption, permKey } from "../lib/quick";
 import { clip, Deduper, defaultNotifyPrefs, notifyTitle, shouldNotify, type NotifyKind, type NotifyPrefs } from "../lib/notify";
@@ -10,6 +9,7 @@ import { AcpClient, ConnectionState } from "../acp/client";
 import { applyUpdate, ChatItem, emptySession, SessionState } from "../acp/session";
 import type { ConfigOption, PermissionOutcome, PermissionRequest, SessionModes } from "../acp/types";
 import { ModeControl } from "../components/ModeControl";
+import { track } from "../lib/track";
 import { Icon } from "../components/Icon";
 import { OptText } from "../components/OptText";
 import { Thought, ThoughtLive } from "../components/Thought";
@@ -35,6 +35,7 @@ const storeCustoms = (list: CustomModel[]) => { try { localStorage.setItem(CK, J
 /** Provider setup on the paired computer (same steps as the CLI's /setup), loaded on first open. */
 const Pair = lazy(() => import("./extras").then((m) => ({ default: m.Pair })));
 const UpdateSheet = lazy(() => import("./extras").then((m) => ({ default: m.UpdateSheet })));
+const Privacy = lazy(() => import("./extras").then((m) => ({ default: m.Privacy })));
 const PhoneSetup = lazy(() => import("./extras").then((m) => ({
   default: function PhoneSetup({ client, onClose, sessionId }: { client: AcpClient; onClose: () => void; sessionId: () => string | undefined }) {
     const api = useMemo(() => m.phoneSetup(client), [client]);
@@ -343,6 +344,7 @@ export default function MobileApp() {
       try {
         await c.connect();
         await c.initialize();
+        track("agent_connected");
         setErr("");
         await refresh();
         // The CLI's own provider shows up here without setting it up again (references only).
@@ -791,7 +793,7 @@ export default function MobileApp() {
               </section>
             )}
             {q && shown.length === 0 && msgHits.length === 0 && <p className="muted m-none">No chats match “{search}”.</p>}
-            {listed && !q && <section className="m-proj"><Privacy /></section>}
+            {listed && !q && <section className="m-proj"><Suspense fallback={null}><Privacy /></Suspense></section>}
             </div>
           <div className="m-fab-row">
             <button className="m-fab m-disconnect" data-testid="m-disconnect" onClick={() => { haptic(); setConfirmDisconnect(true); }}>Disconnect</button>

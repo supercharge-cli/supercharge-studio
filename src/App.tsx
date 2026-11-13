@@ -18,6 +18,7 @@ import { resolveTheme, themeList } from "./lib/themes";
 import { expandPrompt } from "./lib/prompts";
 import { acpServers } from "./lib/mcpServers";
 import { dueSchedules, nextRun } from "./lib/schedules";
+import { track, trackModels } from "./lib/track";
 import { chatMentions, transcript } from "./lib/transcript";
 import type { ToolsTab } from "./components/Tools";
 import { extractMentions, fileItems, mentionBlocks } from "./lib/mentions";
@@ -502,12 +503,14 @@ export default function App() {
         scheduleSync();
       },
     });
+    trackModels(client);
     browser.attach(client);
     clientRef.current = client;
     try {
       await client.connect();
       const init = await client.initialize();
       setStatus(`Connected${init.agentInfo?.version ? ` · agent ${init.agentInfo.version}` : ""}`);
+      track("agent_connected", { cli_version: init.agentInfo?.version });
       // Restore the open chat's history after (re)connecting.
       const d = dataRef.current;
       const f = findProject(d, d.activeProjectId);
@@ -516,6 +519,7 @@ export default function App() {
       void syncCli();
       void importCli(client);
     } catch (e: any) {
+      track("error", { kind: "agent_connect", code: e?.code });
       setStatus(String(e?.message ?? e));
     }
   }, []);
@@ -796,6 +800,7 @@ export default function App() {
     const create = (async () => {
       const mcpServers = await browserMcp(c);
       const res = await c.newSession(normCwd(chat.cwd ?? found.project.cwd), { yoloMode: dataRef.current.settings.alwaysApprove }, mcpServers);
+      track("session_started");
       rememberOptions(res.sessionId, res.configOptions ?? []);
       rememberModes(res.sessionId, res.modes);
       rememberWindows((res as any).models);
@@ -915,6 +920,7 @@ export default function App() {
     try {
       let sid = await ensureSession(projectId, chatId);
       if (!sid) throw new Error("No session");
+      track("message_sent");
       hub.update(sid, { sessionUpdate: "user_message_chunk", content: { type: "text", text }, _meta: { supercharge: { from: from ?? "desktop" } } });
       const sentFiles = (extra as any[]).filter((b) => ["image", "resource", "resource_link"].includes(b?.type)).map((b) => b.name ?? decodeURIComponent(String(b.resource?.uri ?? b.uri ?? "").split("/").pop() || "") ?? b.type);
       if (from && sentFiles.length) hub.update(sid, { sessionUpdate: "user_message_chunk", content: { type: "text", text: `${text ? "\n" : ""}📎 ${sentFiles.map((n) => n || "image").join(", ")}` } });

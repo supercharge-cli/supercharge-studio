@@ -455,8 +455,6 @@ export class AcpClient {
       mcpServers,
       ...(meta ? { _meta: meta } : {}),
     });
-    // Anonymous "session_start" usage event (the app decides whether it is sent at all).
-    r.then(() => (globalThis as any).__TAURI_INTERNALS__?.invoke("telemetry_event", { name: "session_start" }), () => {});
     return r;
   }
 
