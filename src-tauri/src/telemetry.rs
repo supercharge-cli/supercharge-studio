@@ -653,7 +653,12 @@ pub fn scrub_frame(line: &str, _home: Option<&str>) -> Option<Value> {
 
 /// Injected into the app UI webview (not the side browser): forwards uncaught errors and
 /// unhandled promise rejections to `telemetry_js_error`. Kept out of the JS bundle on purpose.
-pub const JS_HOOK: &str = r#"(()=>{let n=0;const s=(m,k)=>{if(n++>9)return;try{window.__TAURI_INTERNALS__.invoke("telemetry_js_error",{message:String(m||"Error").slice(0,1000),stack:String(k||"").slice(0,6000)}).catch(()=>{})}catch(_){}};addEventListener("error",e=>s(e.message,e.error&&e.error.stack));addEventListener("unhandledrejection",e=>{const r=e.reason;if(r&&typeof r.code=="number"&&r.name=="AcpRpcError")return s("AcpRpcError "+r.code,"");s(r&&r.message||r,r&&r.stack)})})()"#;
+/// Browser notices that are not app errors (also dropped in `JS_HOOK`, before sending).
+pub fn benign_js_error(message: &str) -> bool {
+    message.trim_start().starts_with("ResizeObserver loop")
+}
+
+pub const JS_HOOK: &str = r#"(()=>{let n=0;const s=(m,k)=>{m=String(m||"Error");if(/^ResizeObserver loop/.test(m))return;if(n++>9)return;try{window.__TAURI_INTERNALS__.invoke("telemetry_js_error",{message:m.slice(0,1000),stack:String(k||"").slice(0,6000)}).catch(()=>{})}catch(_){}};addEventListener("error",e=>s(e.message,e.error&&e.error.stack));addEventListener("unhandledrejection",e=>{const r=e.reason;if(r&&typeof r.code=="number"&&r.name=="AcpRpcError")return s("AcpRpcError "+r.code,"");s(r&&r.message||r,r&&r.stack)})})()"#;
 
 #[cfg(test)]
 mod tests {
@@ -958,5 +963,17 @@ mod tests {
         assert!(JS_HOOK.contains("telemetry_js_error") && JS_HOOK.contains("unhandledrejection"));
         // Agent errors carry agent text (it can echo a prompt or config): code only.
         assert!(JS_HOOK.contains(r#"s("AcpRpcError "+r.code,"")"#));
+    }
+
+    #[test]
+    fn js_hook_drops_resize_observer_loop_notices() {
+        // Browsers raise "ResizeObserver loop completed with undelivered notifications" as a
+        // window error when a layout settles over two frames; it is harmless noise. It is
+        // dropped before the per-page cap so it cannot crowd out real errors.
+        let drop = JS_HOOK.find("ResizeObserver loop").unwrap();
+        assert!(drop < JS_HOOK.find("n++>9").unwrap());
+        assert!(benign_js_error("ResizeObserver loop completed with undelivered notifications."));
+        assert!(benign_js_error("ResizeObserver loop limit exceeded"));
+        assert!(!benign_js_error("TypeError: Cannot read properties of undefined (reading '0')"));
     }
 }

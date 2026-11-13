@@ -30,6 +30,9 @@ pub fn telemetry_set(crash: Option<bool>, usage: Option<bool>) -> Value {
 /// An uncaught error or unhandled rejection in the web UI (from `telemetry::JS_HOOK`).
 #[tauri::command]
 pub fn telemetry_js_error(message: String, stack: Option<String>) {
+    if telemetry::benign_js_error(&message) {
+        return;
+    }
     if let Some(t) = telemetry::get() {
         t.js_error(&message, stack.as_deref().unwrap_or(""));
     }
