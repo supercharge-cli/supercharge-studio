@@ -38,6 +38,8 @@ export const browserClientMeta = () => ({
 export const POINTER_OPS: Record<string, string> = { click: "click", hover: "hover", type: "type", press_key: "key", select_option: "click", scroll: "scroll" };
 
 export type Bounds = { x: number; y: number; width: number; height: number };
+/** Slot rect for the native side: CSS px plus the UI's devicePixelRatio (monitor scale × page zoom), so it lands on exact physical pixels. */
+export const nativeBounds = (b: Bounds) => ({ ...b, scale: globalThis.devicePixelRatio || 1 });
 
 /** Page-side helpers, inlined into every evaluated script. */
 const HELPERS = `
@@ -252,7 +254,7 @@ export class BrowserController {
   async open(url: string, bounds: Bounds) {
     this.bounds = bounds;
     this.url = url;
-    if (isDesktop()) await invoke("browser_open", { url, bounds });
+    if (isDesktop()) await invoke("browser_open", { url, bounds: nativeBounds(bounds) });
     if (!this.tabs.length) this.tabs = [url];
     this.emit();
     const w = this.waiters.splice(0);
@@ -260,7 +262,7 @@ export class BrowserController {
   }
   async setBounds(bounds: Bounds) {
     this.bounds = bounds;
-    if (isDesktop()) await invoke("browser_set_bounds", { bounds }).catch(() => {});
+    if (isDesktop()) await invoke("browser_set_bounds", { bounds: nativeBounds(bounds) }).catch(() => {});
   }
   async setVisible(visible: boolean) {
     if (isDesktop()) await invoke("browser_set_visible", { visible }).catch(() => {});
@@ -279,7 +281,7 @@ export class BrowserController {
     if (this.tabs.length) this.tabs[this.tab] = url; else this.tabs = [url];
     if (isDesktop()) {
       await this.ensureOpen();
-      if (this.bounds) await invoke("browser_open", { url, bounds: this.bounds });
+      if (this.bounds) await invoke("browser_open", { url, bounds: nativeBounds(this.bounds) });
       else await invoke("browser_navigate", { url });
       this.emit();
       await new Promise((r) => setTimeout(r, 150));

@@ -4,22 +4,15 @@
 //! user's own mouse is reported by a navigation to a sentinel host that we cancel here.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Runtime, WebviewBuilder, WebviewUrl};
+use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewBuilder, WebviewUrl};
 
 pub const CURSOR: &str = "browser-cursor";
 pub const TAKEOVER_HOST: &str = "takeover.supercharge.invalid";
 const CURSOR_JS: &str = include_str!("cursor.js");
 
-/// Last side browser bounds (logical px), so the layer can be created over it.
-static BOUNDS: Mutex<(f64, f64, f64, f64)> = Mutex::new((0.0, 0.0, 1.0, 1.0));
 /// The agent is acting: the layer should be shown (when the browser is).
 static ACTIVE: AtomicBool = AtomicBool::new(false);
-
-pub fn remember(x: f64, y: f64, w: f64, h: f64) {
-    *BOUNDS.lock().unwrap() = (x, y, w, h);
-}
 
 /// True when a navigation is the layer reporting that the user took over.
 pub fn is_takeover(url: &tauri::Url) -> bool {
@@ -29,17 +22,17 @@ pub fn is_takeover(url: &tauri::Url) -> bool {
 /// Put the layer over the browser, shown only while the agent acts and the browser shows.
 pub fn sync<R: Runtime>(app: &AppHandle<R>) {
     let Some(wv) = app.get_webview(CURSOR) else { return };
-    let (x, y, w, h) = *BOUNDS.lock().unwrap();
     let show = ACTIVE.load(Ordering::SeqCst) && !crate::browser_hidden() && app.get_webview(crate::BROWSER).is_some();
     #[cfg(target_os = "linux")]
     {
+        let (x, y, w, h) = crate::place::logical();
         crate::linux_layout::place(&wv, x, y, w, h, show);
         return;
     }
+    // Same rect as the browser (one call: no half-applied move), so the cursor lines up.
     #[allow(unreachable_code)]
     {
-        let _ = wv.set_position(LogicalPosition::new(x, y));
-        let _ = wv.set_size(LogicalSize::new(w, h));
+        let _ = wv.set_bounds(crate::place::rect(app));
         let _ = if show { wv.show() } else { wv.hide() };
     }
 }
@@ -77,7 +70,7 @@ pub async fn browser_cursor(app: AppHandle, op: String, x: Option<f64>, y: Optio
         return wv.eval(format!("window.__cur&&window.__cur({msg})")).map_err(|e| e.to_string());
     }
     let window = app.get_window("main").ok_or("no main window")?;
-    let (bx, by, bw, bh) = *BOUNDS.lock().unwrap();
+    let at = crate::place::rect(&app);
     let handle = app.clone();
     window
         .add_child(
@@ -94,8 +87,8 @@ pub async fn browser_cursor(app: AppHandle, op: String, x: Option<f64>, y: Optio
                     // Only the layer's own page may load here.
                     url.path().ends_with("cursor.html")
                 }),
-            LogicalPosition::new(bx, by),
-            LogicalSize::new(bw, bh),
+            at.position,
+            at.size,
         )
         .map_err(|e| e.to_string())?;
     sync(&app);

@@ -8,7 +8,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use serde::Deserialize;
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, Url, WebviewBuilder, WebviewUrl,
 };
@@ -40,6 +39,7 @@ mod terminal;
 mod pick;
 mod screenshot;
 mod cursor;
+mod place;
 mod notify_actions;
 mod secrets;
 mod agent;
@@ -183,13 +183,7 @@ async fn stdio_stop(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Deserialize)]
-struct Bounds {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-}
+use place::Bounds;
 
 /// Set while the app has hidden the side browser (an overlay covers its area).
 /// Moving or reopening the view must not show it again until the app says so.
@@ -214,7 +208,8 @@ async fn browser_open(app: AppHandle, url: String, bounds: Bounds) -> Result<(),
     }
     // A new browser view stacks on top: rebuild the AI cursor layer above it when next needed.
     cursor::close(&app);
-    cursor::remember(bounds.x, bounds.y, bounds.width, bounds.height);
+    place::remember(&app, bounds);
+    let at = place::rect(&app);
     let window = app.get_window("main").ok_or("no main window")?;
     let report = app.clone();
     let report_done = app.clone();
@@ -233,8 +228,8 @@ async fn browser_open(app: AppHandle, url: String, bounds: Bounds) -> Result<(),
                         report_browser_url(&report_done, payload.url());
                     }
                 }),
-            LogicalPosition::new(bounds.x, bounds.y),
-            LogicalSize::new(bounds.width, bounds.height),
+            at.position,
+            at.size,
         )
         .map_err(|e| e.to_string())?;
     if browser_hidden() {
@@ -322,16 +317,17 @@ async fn browser_navigate(app: AppHandle, url: String) -> Result<(), String> {
 #[tauri::command]
 async fn browser_set_bounds(app: AppHandle, bounds: Bounds) -> Result<(), String> {
     let wv = app.get_webview(BROWSER).ok_or("browser not open")?;
-    cursor::remember(bounds.x, bounds.y, bounds.width, bounds.height);
+    place::remember(&app, bounds);
     cursor::sync(&app);
     #[cfg(target_os = "linux")]
     {
         linux_layout::place(&wv, bounds.x, bounds.y, bounds.width, bounds.height, !browser_hidden());
         return Ok(());
     }
+    // One physical-pixel call (see place_math.rs): separate set_position + set_size let the
+    // size update re-apply a position an asynchronous move had not applied yet.
     #[allow(unreachable_code)]
-    wv.set_position(LogicalPosition::new(bounds.x, bounds.y)).map_err(|e| e.to_string())?;
-    wv.set_size(LogicalSize::new(bounds.width, bounds.height)).map_err(|e| e.to_string())
+    wv.set_bounds(place::rect(&app)).map_err(|e| e.to_string())
 }
 
 /// Temporarily hide/show the side browser (e.g. while a modal is open: native
@@ -521,6 +517,8 @@ pub fn run() {
                     let _ = w.hide();
                 }
             }
+            // Another monitor or display scale: re-place the side browser and cursor layer.
+            tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::ScaleFactorChanged { .. }, .. } if label == "main" => place::reapply(app),
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => background::show_main(app),
             tauri::RunEvent::Exit => agent::stop_now(),
