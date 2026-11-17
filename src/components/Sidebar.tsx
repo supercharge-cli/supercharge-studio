@@ -151,7 +151,7 @@ function FolderTree({ p, ed, setEd }: { p: Props; ed: Editing; setEd: (e: Editin
                 {ed?.kind === "renameChat" && ed.id === c.id ? (
                   <Inline key={`rc-${c.id}`} initial={c.title} onDone={(v) => (v && p.onTree({ type: "renameChat", chatId: c.id, title: v }), setEd(null))} />
                 ) : (
-                  <button className="link grow" data-testid="chat-open" title={c.title} onClick={() => p.onSelectChat(projectId, c.id)} onDoubleClick={() => setEd({ kind: "renameChat", id: c.id })}>
+                  <button className="link grow" data-testid="chat-open" onClick={() => p.onSelectChat(projectId, c.id)} onDoubleClick={() => setEd({ kind: "renameChat", id: c.id })}>
                     <span className="chat-t" data-testid="chat-title">{c.title}</span>{c.worktree && <span className="wt-badge" data-testid="wt-badge" title={c.worktree.path}>{c.worktree.branch.replace(/^supercharge\//, "")}</span>}<span className="muted small chat-time" data-testid="chat-time">{relTime(c.updatedAt ?? c.createdAt, now)}</span>
                   </button>
                 )}
@@ -180,7 +180,7 @@ function Recents({ p }: { p: Props }) {
     <nav className="tree recents" data-testid="recents">
       {shown.map(({ projectId, projectName, chat: c, at }) => (
         <div key={c.id} className={`chat recent ${c.id === p.data.activeChatId ? "active" : ""}`} data-testid="chat">
-          <button className="link grow" data-testid="chat-open" title={c.title} onClick={() => p.onSelectChat(projectId, c.id)}>
+          <button className="link grow" data-testid="chat-open" onClick={() => p.onSelectChat(projectId, c.id)}>
             <span className="recent-main"><span className="chat-t" data-testid="chat-title">{c.title}{c.worktree && <span className="wt-badge" title={c.worktree.path}>{c.worktree.branch.replace(/^supercharge\//, "")}</span>}</span><span className="muted small recent-proj">{projectName}</span></span>
             <span className="muted small chat-time" data-testid="chat-time">{relTime(at, now)}</span>
           </button>

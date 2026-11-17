@@ -12,7 +12,7 @@
 }
 *{box-sizing:border-box}
 html,body,#root{margin:0;height:100%;overflow:hidden}
-body{font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--fg);background:var(--bg);-webkit-font-smoothing:antialiased}
+body{font:14.5px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans",Roboto,sans-serif;color:var(--fg);background:var(--bg);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 code,.mono{font:12.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 code{background:var(--code);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
 button{display:inline-flex;align-items:center;gap:6px;background:var(--acc);color:#fff;border:0;border-radius:9px;padding:7px 13px;cursor:pointer;font:inherit;font-weight:500;transition:background .12s,opacity .12s}
@@ -41,9 +41,12 @@ select option{background:var(--panel);color:var(--fg)}
 .side-resize:hover,body.resizing .side-resize{background:var(--acc-bg)}
 body.resizing{cursor:col-resize;user-select:none}
 body.resizing .sidebar{transition:none}
-.recent-main{display:flex;flex-direction:column;min-width:0;flex:1;align-items:flex-start}
-.recent-main .chat-t,.recent-proj{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.recent-proj{font-size:11px}
+.recent-main{display:flex;flex-direction:column;min-width:0;flex:1;align-items:flex-start;gap:1px}
+.recent-main .chat-t,.recent-proj{max-width:100%}
+.recent-proj{font-size:12px;line-height:1.3;letter-spacing:.01em}
+.chat-t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;overflow:hidden;line-height:1.35;letter-spacing:-.011em;font-weight:500}
+.recents .chat{margin:1px 2px}
+.recents .chat .link{white-space:normal;align-items:flex-start;padding:7px 8px;font-size:13.5px}
 .sidebar.collapsed{width:52px;align-items:center;padding-top:10px;gap:6px}
 .side-head{display:flex;align-items:center;gap:8px;padding:12px 10px 10px 14px}
 .logo{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;overflow:hidden;background:#000}
@@ -384,7 +387,7 @@ button:active:not(:disabled){transform:scale(.97)}
 .side-views button[role=tab]{background:none;border:1px solid transparent;border-radius:6px;padding:2px 8px;font-size:12px;color:var(--muted);cursor:pointer}
 .side-views button[role=tab].on{border-color:var(--line);color:var(--fg)}
 .chat .link.grow{display:flex;gap:6px;align-items:baseline;min-width:0}
-.chat .chat-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.chat .chat-t{flex:1;min-width:0}
 .chat .chat-time{flex:none;font-variant-numeric:tabular-nums}
 .project .more{padding-left:28px}
 @keyframes spin{to{transform:rotate(360deg)}}
