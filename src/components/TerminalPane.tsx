@@ -1,6 +1,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
+import "./terminal.css";
 import { useEffect, useRef } from "react";
 import { invoke, listen } from "../lib/desktop";
 import { hardenTerminalInput } from "../lib/terminalInput";

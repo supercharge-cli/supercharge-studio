@@ -1,4 +1,4 @@
-import { score } from "../components/CommandPalette";
+import { score } from "./score";
 
 /** One row in the composer's pop-up menu (slash commands, sub-options or @ mentions). */
 export type MenuItem = { id: string; label: string; detail?: string; group?: string; icon?: string; value: string };

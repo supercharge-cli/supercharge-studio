@@ -1,6 +1,6 @@
 /** Local app data: groups → projects → chats. Persisted to localStorage. */
 import { DEFAULT_RELAY, ensureHostId, reachOf, type Reach } from "./reach";
-import { canonicalThemeId } from "./themes";
+import { canonicalThemeId } from "./themeAliases";
 /** `updatedAt`: last activity (ms). `cli`: discovered from the agent's session list (the CLI owns it). `cwd`: the session's own folder. */
 export type Chat = { id: string; title: string; sessionId?: string; createdAt: number; updatedAt?: number; cli?: boolean; cwd?: string;
   /** Set when the chat runs in its own git worktree (cwd = path). */
@@ -31,15 +31,6 @@ export type UiPromptGlyph = "❯" | "$" | "::" | ">" | "λ" | "⚡";
 export type UiMonoFont = "modern" | "terminal" | "default";
 export type UiCursorStyle = "block" | "bar" | "underline";
 export type UiAccent = "theme" | "sky" | "emerald" | "amber" | "rose" | "violet";
-export const ACCENTS: { id: UiAccent; name: string; c: string }[] = [
-  { id: "theme", name: "Theme default", c: "var(--fg)" },
-  { id: "sky", name: "Sky", c: "#38bdf8" },
-  { id: "emerald", name: "Emerald", c: "#34d399" },
-  { id: "amber", name: "Amber", c: "#fbbf24" },
-  { id: "rose", name: "Rose", c: "#fb7185" },
-  { id: "violet", name: "Violet", c: "#a78bfa" },
-];
-
 export type Settings = {
   /** Model last picked in the composer; new chats start with it when the agent offers it. */
   lastModel?: string;

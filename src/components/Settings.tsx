@@ -1,16 +1,16 @@
-import { lazy, ReactNode, Suspense, useEffect, useState } from "react";
+import { ReactNode, Suspense, useState } from "react";
 import { Privacy } from "./Privacy";
 import { agentSetup, listProviderModels, mergeCli, pickSetup, providerCatalog, type SetupApi, type SetupStatusFull, type SetupStatus } from "../lib/setup";
 import type { ApiFormat, Provider, Settings as S } from "../lib/store";
-import { parseAgentUrl, uid, ACCENTS } from "../lib/store";
+import { parseAgentUrl, uid } from "../lib/store";
 import type { ConfigOption } from "../acp/types";
 import { Icon } from "./Icon";
 import { Plugins } from "./Plugins";
 import type { PluginRpc } from "../lib/plugins";
-import { canonicalThemeId, themeList } from "../lib/themes";
 import { APP_VERSION } from "../lib/updates";
 import ProviderSetup from "./ProviderSetup";
-import { agentCheck, agentInfo, agentLog, providerDiscoverModels, type AgentInfo, type DiscoveredModel } from "../lib/desktop";
+import { Appearance, Keybindings, TestConn } from "./SettingsExtras";
+import { agentInfo, agentLog, providerDiscoverModels, type AgentInfo, type DiscoveredModel } from "../lib/desktop";
 
 type Props = {
   value: S;
@@ -129,22 +129,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
   const [s, set] = useState<S>({ ...value, providers: value.providers ?? [] });
   const [tab, setTab] = useState<Section>(props.initial ?? "connection");
 
-  useEffect(() => {
-    if (tab === "appearance") {
-      const root = document.documentElement;
-      if (s.theme) root.dataset.theme = canonicalThemeId(s.theme) ?? s.theme;
-      if (s.density) root.dataset.density = s.density;
-      if (s.boxStyle) root.dataset.boxStyle = s.boxStyle;
-      if (s.monoFont) root.dataset.fontPref = s.monoFont;
-      if (s.scanlines !== undefined) root.dataset.scanlines = String(s.scanlines);
-      if (s.cursorStyle) root.dataset.cursorStyle = s.cursorStyle;
-      if (s.fontSize) root.style.setProperty("--fs", `${s.fontSize}px`);
-      if (s.promptGlyph) root.style.setProperty("--prompt-glyph", `"${s.promptGlyph}"`);
-      if (s.accent && s.accent !== "theme") root.dataset.accent = s.accent; else delete root.dataset.accent;
-    }
-  }, [tab, s.theme, s.density, s.boxStyle, s.monoFont, s.fontSize, s.promptGlyph, s.scanlines, s.cursorStyle, s.accent]);
   const [filter, setFilter] = useState("");
-  const [pingState, setPingState] = useState<"idle" | "pinging" | "ok" | "fail">("idle");
   const [editing, setEditing] = useState<string | null>(null);
   const [pluginView, setPluginView] = useState<"catalog" | "connections">("catalog");
   const [busy, setBusy] = useState("");
@@ -165,14 +150,8 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
     <div className="screen settings-screen" role="region" aria-label="Settings" data-testid="settings-screen">
       <nav className="screen-nav">
         <div className="screen-nav-title">Settings</div>
-        <div className="screen-nav-filter" style={{ padding: "0 6px 8px" }}>
-          <input
-            className="set-filter-input"
-            style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6 }}
-            placeholder="Filter..."
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
+        <div className="screen-nav-filter">
+          <input className="set-filter-input" placeholder="Filter…" value={filter} onChange={(e) => setFilter(e.target.value)} />
         </div>
         {SECTIONS.filter((t) => !filter.trim() || t.label.toLowerCase().includes(filter.toLowerCase())).map((t) => (
           <button key={t.id} className={tab === t.id ? "on" : ""} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}>
@@ -201,28 +180,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
               <label>Agent address<input value={s.bind} placeholder="127.0.0.1:2419 or ws://…/ws?server-key=…" data-testid="agent-bind" onChange={(e) => set({ ...s, bind: e.target.value })} onBlur={(e) => splitUrl(e.target.value)} onPaste={(e) => { const t = e.clipboardData.getData("text"); if (splitUrl(t)) e.preventDefault(); }} /></label>
               <label>Server key<input type="password" value={s.secret} data-testid="agent-secret" onChange={(e) => set({ ...s, secret: e.target.value, agentChoice: "key" })} onBlur={(e) => splitUrl(e.target.value)} onPaste={(e) => { const t = e.clipboardData.getData("text"); if (splitUrl(t)) e.preventDefault(); }} /></label>
             </div>
-            <div className="card row between" style={{ padding: "10px 14px", margin: "4px 0" }}>
-              <div>
-                <strong>Connection Diagnostics</strong>
-                <p className="muted small" style={{ margin: 0 }}>Ping ACP server at <code>{s.bind || "127.0.0.1:2419"}</code></p>
-              </div>
-              <button
-                type="button"
-                className="secondary compact"
-                data-testid="test-conn-btn"
-                onClick={async () => {
-                  setPingState("pinging");
-                  try {
-                    const res = await agentCheck(s.bind || "127.0.0.1:2419", s.secret);
-                    setPingState(res === "ok" ? "ok" : "fail");
-                  } catch {
-                    setPingState("fail");
-                  }
-                }}
-              >
-                {pingState === "pinging" ? "Pinging…" : pingState === "ok" ? "✓ Connected (0.9ms)" : pingState === "fail" ? "✗ Unreachable" : "Test Connection"}
-              </button>
-            </div>
+            <Suspense fallback={null}><TestConn bind={s.bind} secret={s.secret} /></Suspense>
             <label className="check"><input type="checkbox" checked={s.autoStart} onChange={(e) => set({ ...s, autoStart: e.target.checked })} /> Start the agent automatically if it is not running</label>
             <label className="check"><input type="checkbox" checked={s.alwaysApprove} onChange={(e) => set({ ...s, alwaysApprove: e.target.checked })} /> Always approve by default for new chats</label>
             <p className="muted small">Change tool permissions for an existing chat with the mode button below its message box.</p>
@@ -310,207 +268,13 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
         )}
 
         {tab === "appearance" && (
-          <div className="stack">
-            <label>Chat text size · {s.fontSize ?? 14}px<input type="range" min={12} max={20} step={1} data-testid="font-size" value={s.fontSize ?? 14} onChange={(e) => set({ ...s, fontSize: +e.target.value })} /></label>
-
-            <div className="stack set-sub">
-              <label>Interface density</label>
-              <div className="seg" role="radiogroup" aria-label="Density">
-                {[
-                  { id: "compact", label: "Compact" },
-                  { id: "normal", label: "Normal" },
-                  { id: "comfortable", label: "Comfortable" },
-                ].map((d) => (
-                  <button
-                    key={d.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={(s.density ?? "normal") === d.id}
-                    className={(s.density ?? "normal") === d.id ? "on" : ""}
-                    data-testid={`density-${d.id}`}
-                    onClick={() => set({ ...s, density: d.id as any })}
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="stack set-sub">
-              <label>Border & Frame style</label>
-              <div className="seg" role="radiogroup" aria-label="Box style">
-                {[
-                  { id: "modern", label: "Modern hairline" },
-                  { id: "ascii", label: "ASCII box" },
-                  { id: "minimal", label: "Rounded minimal" },
-                ].map((b) => (
-                  <button
-                    key={b.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={(s.boxStyle ?? "modern") === b.id}
-                    className={(s.boxStyle ?? "modern") === b.id ? "on" : ""}
-                    data-testid={`box-style-${b.id}`}
-                    onClick={() => set({ ...s, boxStyle: b.id as any })}
-                  >
-                    {b.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="stack set-sub">
-              <label>Agent prompt glyph</label>
-              <div className="seg" role="radiogroup" aria-label="Prompt glyph">
-                {[
-                  { id: "❯", label: "❯ Chevron" },
-                  { id: "$", label: "$ Shell" },
-                  { id: "::", label: ":: ASCII Colon" },
-                  { id: ">", label: "> Arrow" },
-                  { id: "λ", label: "λ Lambda" },
-                  { id: "⚡", label: "⚡ Supercharge" },
-                ].map((g) => (
-                  <button
-                    key={g.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={(s.promptGlyph ?? "❯") === g.id}
-                    className={(s.promptGlyph ?? "❯") === g.id ? "on" : ""}
-                    data-testid={`glyph-${g.id}`}
-                    onClick={() => set({ ...s, promptGlyph: g.id as any })}
-                  >
-                    {g.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="stack set-sub">
-              <label>Terminal cursor style</label>
-              <div className="seg" role="radiogroup" aria-label="Cursor style">
-                {[
-                  { id: "bar", label: "Bar |" },
-                  { id: "block", label: "Block █" },
-                  { id: "underline", label: "Underline _" },
-                ].map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={(s.cursorStyle ?? "bar") === c.id}
-                    className={(s.cursorStyle ?? "bar") === c.id ? "on" : ""}
-                    data-testid={`cursor-${c.id}`}
-                    onClick={() => set({ ...s, cursorStyle: c.id as any })}
-                  >
-                    {c.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="stack set-sub">
-              <label>Code & metadata font</label>
-              <div className="seg" role="radiogroup" aria-label="Monospace font">
-                {[
-                  { id: "modern", label: "Modern" },
-                  { id: "terminal", label: "Classic" },
-                  { id: "default", label: "System default" },
-                ].map((f) => (
-                  <button
-                    key={f.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={(s.monoFont ?? "modern") === f.id}
-                    className={(s.monoFont ?? "modern") === f.id ? "on" : ""}
-                    data-testid={`font-${f.id}`}
-                    onClick={() => set({ ...s, monoFont: f.id as any })}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="stack set-sub">
-              <label>Color theme</label>
-              <div className="theme-grid" role="radiogroup" aria-label="Theme">
-                {themeList.map((t) => (
-                  <button key={t.id} role="radio" aria-checked={(s.theme ?? "dark") === t.id} className={`theme-card ${(s.theme ?? "dark") === t.id ? "on" : ""}`} data-testid={`theme-${t.id}`} onClick={() => set({ ...s, theme: t.id })}>
-                    <span className="sw">{t.swatch.map((c, i) => <i key={i} style={{ background: c }} />)}</span>
-                    <span className="row"><Icon name={t.id === "system" ? "panelLeft" : t.dark ? "moon" : "sun"} size={14} /> {t.name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="stack set-sub">
-              <label>Accent color</label>
-              <div className="accent-grid" role="radiogroup" aria-label="Accent color">
-                {ACCENTS.map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={(s.accent ?? "theme") === a.id}
-                    className={`accent-sw ${(s.accent ?? "theme") === a.id ? "on" : ""}`}
-                    style={{ "--c": a.c } as React.CSSProperties}
-                    title={a.name}
-                    data-testid={`accent-${a.id}`}
-                    onClick={() => set({ ...s, accent: a.id })}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="card preview-card-wrap" style={{ margin: "10px 0", padding: "12px 14px" }}>
-              <div className="row between" style={{ marginBottom: 8 }}>
-                <strong>Live Interface Preview</strong>
-                <span className="pill muted small">{s.density ?? "normal"} · {s.boxStyle ?? "modern"}</span>
-              </div>
-              <div className="preview-block-body" style={{ background: "var(--code)", border: "1px solid var(--line)", borderRadius: 6, padding: "10px 12px", font: "12.5px/1.55 var(--mono)" }}>
-                <div style={{ color: "var(--muted)", marginBottom: 4 }}>[ YOU ] 12:44 PM</div>
-                <div style={{ color: "var(--fg)", marginBottom: 8 }}>Why does token refresh fail in development?</div>
-                <div style={{ borderTop: "1px solid var(--line)", paddingTop: 6, color: "var(--acc)" }}>
-                  <strong>{s.promptGlyph ?? "❯"} [ AGENT ]</strong> <span style={{ color: "var(--fg)" }}>The cookie partition was rejected because <code>Secure</code> flag was required on localhost.</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="stack" style={{ gap: 8 }}>
-              <label className="check"><input type="checkbox" checked={!!s.reduceMotion} onChange={(e) => set({ ...s, reduceMotion: e.target.checked })} /> Instant transitions (zero animations, maximum efficiency)</label>
-              <label className="check"><input type="checkbox" checked={!!s.scanlines} onChange={(e) => set({ ...s, scanlines: e.target.checked })} /> CRT phosphor scanlines and monitor glow</label>
-            </div>
-            <p className="muted small">All customizations apply instantly when saved. Themes, density, and box styles sync seamlessly with mobile.</p>
-          </div>
+          <Suspense fallback={<p className="muted">Loading…</p>}><Appearance s={s} set={set} /></Suspense>
         )}
 
         {tab === "shortcuts" && (
-          <div className="stack shortcuts-page">
-            <p className="muted small">Keyboard shortcuts used in Studio.</p>
-            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-              {[
-                { key: "Ctrl + K", action: "Command Palette & Fuzzy File Finder", scope: "Global" },
-                { key: "Ctrl + ,", action: "Settings & Customizations", scope: "Global" },
-                { key: "Ctrl + B", action: "Toggle Left Project Sidebar", scope: "View" },
-                { key: "Ctrl + \\", action: "Toggle Right Panel (Terminal / Web / Changes)", scope: "View" },
-                { key: "Ctrl + N", action: "New Chat Session in Workspace", scope: "Navigation" },
-                { key: "Ctrl + Shift + U", action: "Usage & Token Cost Analytics", scope: "Analytics" },
-                { key: "Ctrl + L", action: "Focus Command / Prompt Composer", scope: "Composer" },
-                { key: "Ctrl + .", action: "Stop Currently Running Turn", scope: "Execution" },
-                { key: "Enter", action: "Execute / Send Command Prompt", scope: "Composer" },
-                { key: "Shift + Enter", action: "Insert Multi-line Break", scope: "Composer" },
-                { key: "@", action: "Quick File Mention Suggestion", scope: "Composer" },
-                { key: "/", action: "Quick Slash Command Suggestions", scope: "Composer" },
-                { key: "Esc", action: "Dismiss Dialog / Modal / Return to Chat", scope: "Global" },
-              ].map((sc, idx) => (
-                <div key={idx} className="row between" style={{ padding: "8px 12px", borderBottom: "1px solid var(--line)" }}>
-                  <div><strong>{sc.action}</strong> <span className="muted small">· {sc.scope}</span></div>
-                  <kbd>{sc.key}</kbd>
-                </div>
-              ))}
-            </div>
-          </div>
+          <Suspense fallback={<p className="muted">Loading…</p>}><Keybindings /></Suspense>
         )}
+
 
         {tab === "agent" && (
           <div className="stack">

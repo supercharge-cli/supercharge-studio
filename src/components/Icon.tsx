@@ -28,7 +28,7 @@ const P: Record<string, string> = {
   qr: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM18 18h3v3h-3z",
   laptop: "M4 5h16v11H4zM2 19h20",
   arrowLeft: "M19 12H5M12 19l-7-7 7-7",
-  copy: "M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M16 4h2a2 2 0 0 1 2 2v4M21 14H11a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2Z",
+  copy: "M8 8h11v12H8zM5 4h11v4",
 };
 
 export function Icon({ name, size = 16, title, className }: { name: keyof typeof P | string; size?: number; title?: string; className?: string }) {

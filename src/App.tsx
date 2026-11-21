@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { combineSteer, makeSteerer, type Queued } from "./acp/steer";
 import { AcpClient, ConnectionState, isAuthError, isModelError, pickConfiguredModel } from "./acp/client";
 import { applyUpdate, ChatItem, emptySession, SessionState } from "./acp/session";
@@ -14,7 +14,7 @@ import { ComposerMenu } from "./components/ComposerMenu";
 import { effortToApply, optionFor, reasoningOption, setModelRequest, shownModel, updateSessionOptions } from "./lib/sessionOptions";
 import { providerCatalogKey } from "./lib/catalog";
 import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./lib/composer";
-import { findTheme, resolveTheme, themeList } from "./lib/themes";
+import { findTheme, resolveTheme, themeChoices } from "./lib/themeIds";
 import { expandPrompt } from "./lib/prompts";
 import { acpServers } from "./lib/mcpServers";
 import { dueSchedules, nextRun } from "./lib/schedules";
@@ -546,26 +546,21 @@ export default function App() {
   const fontSize = data.settings.fontSize;
   useEffect(() => { document.documentElement.style.setProperty("--fs", `${fontSize ?? 14}px`); }, [fontSize]);
 
-  const density = data.settings.density;
-  const boxStyle = data.settings.boxStyle;
-  const promptGlyph = data.settings.promptGlyph;
-  const monoFont = data.settings.monoFont;
-  const reduceMotion = data.settings.reduceMotion;
-  const scanlines = data.settings.scanlines;
-  const cursorStyle = data.settings.cursorStyle;
-  const accent = data.settings.accent;
   useEffect(() => {
-    const root = document.documentElement;
-    if (density) root.dataset.density = density; else delete root.dataset.density;
-    if (boxStyle) root.dataset.boxStyle = boxStyle; else delete root.dataset.boxStyle;
-    if (accent && accent !== "theme") root.dataset.accent = accent; else delete root.dataset.accent;
-    if (monoFont) root.dataset.fontPref = monoFont; else delete root.dataset.fontPref;
-    if (scanlines) root.dataset.scanlines = "true"; else delete root.dataset.scanlines;
-    if (cursorStyle) root.dataset.cursorStyle = cursorStyle; else delete root.dataset.cursorStyle;
-    if (promptGlyph) root.style.setProperty("--prompt-glyph", `"${promptGlyph}"`);
-    else root.style.removeProperty("--prompt-glyph");
-    if (reduceMotion) root.dataset.reduceMotion = "true"; else delete root.dataset.reduceMotion;
-  }, [density, boxStyle, monoFont, promptGlyph, reduceMotion, scanlines, cursorStyle, accent]);
+    const r = document.documentElement, d = r.dataset, s = data.settings;
+    const put = (k: string, v?: string | boolean) => {
+      const val = v === true ? "true" : (v && v !== "theme" ? String(v) : "");
+      if (val) d[k] = val; else delete d[k];
+    };
+    put("density", s.density);
+    put("boxStyle", s.boxStyle);
+    put("accent", s.accent);
+    put("fontPref", s.monoFont === "default" ? undefined : s.monoFont);
+    put("scanlines", s.scanlines);
+    put("cursorStyle", s.cursorStyle);
+    put("reduceMotion", s.reduceMotion);
+    s.promptGlyph ? r.style.setProperty("--prompt-glyph", `"${s.promptGlyph}"`) : r.style.removeProperty("--prompt-glyph");
+  }, [data.settings]);
 
   // First desktop run: optional test provider from the environment (key goes straight to secure storage).
   useEffect(() => {
@@ -1326,7 +1321,7 @@ export default function App() {
       run: (a) => { if (a) return setModel(a); if (modelOption?.options?.length) setTimeout(() => setDraftCaret("/models ")); else openSettings("agent"); },
       sub: modelOption?.options?.length ? () => modelOption!.options!.map((o) => ({ id: `m-${o.value}`, label: o.name ?? o.value, detail: o.value === modelOption!.currentValue ? "current" : o.name && o.name !== o.value ? o.value : undefined, value: o.value, icon: o.value === modelOption!.currentValue ? "check" : undefined })) : undefined,
     },
-    { name: "theme", detail: "Change the color theme", icon: theme === "light" ? "sun" : "moon", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/theme ")); return; } const t = findTheme(a); if (!t) return false; setTheme(t.id); }, sub: () => themeList.map((t) => ({ id: `t-${t.id}`, label: t.name, detail: t.id === theme ? "current" : t.dark ? "dark" : "light", value: t.id, icon: t.id === theme ? "check" : undefined })) },
+    { name: "theme", detail: "Change the color theme", icon: theme === "light" ? "sun" : "moon", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/theme ")); return; } const t = findTheme(a); if (!t) return false; setTheme(t.id); }, sub: () => themeChoices.map((t) => ({ id: `t-${t.id}`, label: t.name, detail: t.id === theme ? "current" : t.dark ? "dark" : "light", value: t.id, icon: t.id === theme ? "check" : undefined })) },
     { name: "font", detail: "Chat text size", icon: "sliders", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/font ")); return; } const n = parseInt(a); if (!(n >= 12 && n <= 20)) return false; update((d) => ({ ...d, settings: { ...d.settings, fontSize: n } })); }, sub: () => [12, 13, 14, 15, 16, 18, 20].map((n) => ({ id: `f-${n}`, label: `${n}px`, detail: n === (fontSize ?? 14) ? "current" : undefined, value: String(n), icon: n === (fontSize ?? 14) ? "check" : undefined })) },
     { name: "help", detail: "Show commands and shortcuts", icon: "command", run: () => {
       const lines = [...nativeCommands.map((c) => `- \`/${c.name}\` ${c.detail}`), ...commands.map((c) => `- \`/${c.name}\` ${c.description ?? ""} (agent)`)];
@@ -1497,7 +1492,7 @@ export default function App() {
       { id: "tools", title: "Open tools: prompts, rules, MCP servers, schedules", icon: "sliders", run: () => openTools("prompts") },
       { id: "usage", title: "Open usage & costs", hint: "Ctrl Shift U", icon: "chart", run: () => setView("usage") },
       { id: "theme", title: `Switch to ${theme === "light" ? "dark" : "light"} theme`, icon: theme === "light" ? "moon" : "sun", run: () => setTheme(theme === "light" ? "dark" : "light") },
-      ...themeList.map((t) => ({ id: `theme-${t.id}`, title: `Theme: ${t.name}`, group: "Themes", icon: t.dark ? "moon" : "sun", run: () => setTheme(t.id) })),
+      ...themeChoices.map((t) => ({ id: `theme-${t.id}`, title: `Theme: ${t.name}`, group: "Themes", icon: t.dark ? "moon" : "sun", run: () => setTheme(t.id) })),
       { id: "sidebar", title: "Toggle sidebar", hint: "Ctrl B", icon: "panelLeft", run: () => setSideCollapsed((x) => !x) },
       { id: "panel", title: "Toggle browser & plan panel", hint: "Ctrl \\", icon: "panelRight", run: () => setPanel((x) => !x) },
       { id: "terminal", title: "Open terminal", icon: "terminal", run: () => openPanel("terminal") },
@@ -1541,11 +1536,8 @@ export default function App() {
   });
 
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
-  const copyMsg = (txt: string, idx: number) => {
-    void navigator.clipboard?.writeText(txt);
-    setCopiedIdx(idx);
-    setTimeout(() => setCopiedIdx(null), 1500);
-  };
+  const copyMsg = (txt: string, idx: number) => { void navigator.clipboard?.writeText(txt); setCopiedIdx(idx); setTimeout(() => setCopiedIdx(null), 1500); };
+  const actBtn = (title: string, onClick: () => void, body: ReactNode) => <button type="button" className="icon sm" title={title} onClick={onClick}>{body}</button>;
 
   const renderItem = useCallback(
     (m: ChatItem, i: number) =>
@@ -1553,19 +1545,10 @@ export default function App() {
       : m.kind === "tool" ? (
         sess.toolCalls[m.toolCallId] ? <ToolCard tc={sess.toolCalls[m.toolCallId]} /> : null
       ) : m.kind === "agent" ? (
-        <div className="msg-block agent-block">
-          <div className="block-toolbar row between">
-            <span className="block-badge"><strong style={{ color: "var(--acc)" }}>{data.settings.promptGlyph ?? "❯"} [ AGENT ]</strong></span>
-            <div className="block-acts">
-              <button
-                type="button"
-                className="icon sm"
-                title="Copy markdown"
-                onClick={() => copyMsg(m.text, i)}
-              >
-                {copiedIdx === i ? <span className="copy-ok">✓ Copied</span> : <Icon name="copy" size={13} />}
-              </button>
-            </div>
+        <div className="mb agent-block">
+          <div className="bt row between">
+            <span className="bb" />
+            <div className="ba">{actBtn("Copy markdown", () => copyMsg(m.text, i), copiedIdx === i ? <span className="copy-ok">Copied</span> : <Icon name="copy" size={13} />)}</div>
           </div>
           <div className="bubble agent"><Markdown text={m.text} /></div>
         </div>
@@ -1581,32 +1564,18 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div className="msg-block user-block">
-          <div className="block-toolbar row between">
-            <span className="block-badge">[ YOU ]</span>
-            <div className="block-acts">
-              <button
-                type="button"
-                className="icon sm"
-                title="Tweak prompt in composer"
-                onClick={() => { setDraft(m.text); composerRef.current?.focus(); }}
-              >
-                <Icon name="edit" size={13} />
-              </button>
-              <button
-                type="button"
-                className="icon sm"
-                title="Copy prompt"
-                onClick={() => copyMsg(m.text, i)}
-              >
-                {copiedIdx === i ? <span className="copy-ok">✓ Copied</span> : <Icon name="copy" size={13} />}
-              </button>
+        <div className="mb user-block">
+          <div className="bt row between">
+            <span className="bb" />
+            <div className="ba">
+              {actBtn("Tweak prompt in composer", () => { setDraft(m.text); composerRef.current?.focus(); }, <Icon name="edit" size={13} />)}
+              {actBtn("Copy prompt", () => copyMsg(m.text, i), copiedIdx === i ? <span className="copy-ok">Copied</span> : <Icon name="copy" size={13} />)}
             </div>
           </div>
           <div className={`bubble ${m.kind}`}>{(m as any).from && <span className="from"><Icon name="phone" size={11} /> {(m as any).from}</span>}{m.text}{(m as any).attachments?.length > 0 && <span className="att-names" data-testid="bubble-attachments">{(m as any).attachments.map((n: string) => <span key={n} className="att-name"><Icon name="file" size={11} /> {n}</span>)}</span>}</div>
         </div>
       ),
-    [sess.toolCalls, data.settings.promptGlyph, copiedIdx],
+    [sess.toolCalls, copiedIdx],
   );
 
   return (
@@ -1784,29 +1753,26 @@ export default function App() {
                 {sess.items.length === 0 && !isBusy && !(activeChat && loadingChats.has(activeChat.id)) && (
                   <div className="empty chat-start fade-in" data-testid="chat-start">
                     <LogoMark />
-                    <div className="workspace-hud">
+                    <div className="hud">
                       <div className="hud-line">
-                        <span className="hud-pill"><strong>WORKSPACE</strong> {active ? active.project.name : "none"}</span>
-                        <span className="hud-pill"><strong>STATUS</strong> {conn === "open" ? "ACP Connected" : "Connecting…"}</span>
-                        <span className="hud-pill"><strong>MODEL</strong> {shownModel(realModel, data.settings.lastModel, baseModel?.currentValue) || "Autonomous Agent"}</span>
+                        {([["WORKSPACE", active ? active.project.name : "none"], ["STATUS", conn === "open" ? "ACP Connected" : "Connecting…"], ["MODEL", shownModel(realModel, data.settings.lastModel, baseModel?.currentValue) || "Autonomous Agent"]] as const).map(([k, v]) => (
+                          <span className="hud-pill" key={k}><strong>{k}</strong> {v}</span>
+                        ))}
                       </div>
                       <p className="hud-sub">Minimalist developer workspace</p>
                     </div>
                     <h2>{active ? active.project.name : "No project open"}</h2>
                     <p>{active ? "What should we work on?" : "Add a project in the sidebar, then start a chat."}</p>
                     {active && (
-                      <div className="start-pills start-cards-grid">
+                      <div className="start-pills sc-grid">
                         {[
                           ["Explain this project", "Explain how this project is structured.", "$ explain-architecture", "code"],
                           ["Find a bug", "Look for a bug in the current project and tell me what is wrong.", "$ run-diagnostics", "search"],
                           ["Review changes", "Review the uncommitted changes and summarize them.", "$ git-diff-review", "file"],
                         ].map(([label, text, cmd, icon]) => (
-                          <button key={label} type="button" className="start-card" title="Put this in the message box" onClick={() => setDraftCaret(text)}>
-                            <div className="start-card-cmd row between">
-                              <span><Icon name={icon as any} size={13} /> {cmd}</span>
-                              <kbd>↵</kbd>
-                            </div>
-                            <span className="start-card-lbl">{label}</span>
+                          <button key={label} type="button" className="scard" title="Put this in the message box" onClick={() => setDraftCaret(text)}>
+                            <div className="scard-cmd row between"><span><Icon name={icon as any} size={13} /> {cmd}</span><kbd>↵</kbd></div>
+                            <span className="scard-lbl">{label}</span>
                           </button>
                         ))}
                       </div>
@@ -1899,33 +1865,15 @@ export default function App() {
                 <button className="round" aria-label="Send" title="Send (Enter)" onClick={() => void send()} disabled={conn !== "open" || !active || (!draft.trim() && !atts.length)}><Icon name="send" /><span className="sr">Send</span></button>
               )}
             </div>
-            <div className="composer-toolbar row">
-              <button
-                type="button"
-                className="comp-tool-chip ghost sm"
-                title="Reference a file from workspace (@)"
-                onClick={() => { setDraft((d) => d + (d.endsWith(" ") || !d ? "@" : " @")); composerRef.current?.focus(); }}
-              >
-                <span>@</span> file
-              </button>
-              <button
-                type="button"
-                className="comp-tool-chip ghost sm"
-                title="Run slash command (/)"
-                onClick={() => { setDraft((d) => d + (d.endsWith(" ") || !d ? "/" : " /")); composerRef.current?.focus(); }}
-              >
-                <span>/</span> command
-              </button>
-              <button
-                type="button"
-                className={`comp-tool-chip ghost sm ${data.settings.alwaysApprove ? "active" : ""}`}
-                title="Toggle Auto-approve permissions"
-                onClick={() => update((d) => ({ ...d, settings: { ...d.settings, alwaysApprove: !d.settings.alwaysApprove } }))}
-              >
+            <div className="cbar row">
+              {([["@", "file", "Reference a file from workspace (@)"], ["/", "command", "Run slash command (/)"]] as const).map(([ch, lab, title]) => (
+                <button type="button" key={ch} className="cchip ghost sm" title={title} onClick={() => { setDraft((d) => d + (d.endsWith(" ") || !d ? ch : ` ${ch}`)); composerRef.current?.focus(); }}><span>{ch}</span> {lab}</button>
+              ))}
+              <button type="button" className={`cchip ghost sm ${data.settings.alwaysApprove ? "active" : ""}`} title="Toggle Auto-approve permissions" onClick={() => update((d) => ({ ...d, settings: { ...d.settings, alwaysApprove: !d.settings.alwaysApprove } }))}>
                 <Icon name="bolt" size={11} /> {data.settings.alwaysApprove ? "Auto-Approve" : "Safe Mode"}
               </button>
               <div className="spacer" />
-              <span className="muted comp-char-count">{draft.length > 0 ? `${draft.length} chars` : ""}</span>
+              {draft.length > 0 && <span className="muted ccount">{draft.length} chars</span>}
             </div>
             <p className="hint" data-testid="composer-hint">
               {conn !== "open"

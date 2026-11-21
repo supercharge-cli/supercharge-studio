@@ -8,3 +8,4 @@ export { SearchIndex } from "../lib/searchIndex";
 // Shared modules the phone build points here (see vite.mobile.config.ts).
 export { ContextWindowPop } from "../components/ContextWindowPop";
 export { downscaleImage } from "../lib/imageResize";
+export { ThemePicker } from "./ThemePicker";

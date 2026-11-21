@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { diffLines, diffStats, hunks } from "../src/lib/diff";
-import { score } from "../src/components/CommandPalette";
+import { score } from "../src/lib/score";
 
 describe("diff", () => {
   it("computes line changes", () => {

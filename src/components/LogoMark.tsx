@@ -7,44 +7,7 @@ const PASS = 2;
 const HALF = 5;
 const LEAN = 0.9;
 const SOLID = "8dbqpPYOo0";
-const PALETTE = [
-  "#0b0d24", "#f9f9fb", "#4391e9", "#7054e6", "#d7d7ea", "#3fd4f8",
-  "#35375e", "#8d8aa5", "#606271", "#fbfbfc", "#85b8f1", "#a290ef",
-  "#e5e5f1", "#82e3fa", "#7c7d96", "#b5b3c5", "#b6b6bd", "#fdfdfe",
-  "#c7def8", "#d4ccf8", "#f3f3f9", "#c5f2fd", "#c2c3cf", "#dddce4",
-  "#4852c7", "#f9f9fb", "#4391e9", "#7054e6", "#d7d7ea", "#3fd4f8",
-  "#565999", "#8d8aa5", "#888fdb", "#fbfbfc", "#85b8f1", "#a290ef",
-  "#e5e5f1", "#82e3fa", "#9193bd", "#b5b3c5", "#c8cbee", "#fdfdfe",
-  "#c7def8", "#d4ccf8", "#f3f3f9", "#c5f2fd", "#cccde0", "#dddce4",
-];
-const MONO = `
-                       .qq__             .__.
-                       '8888qq_     __p88PYYYP8qq_,
-                        d8888888q__pP"'"""""^Y- '"Yq_,
-                        '888888888P'          "^o_  "8q,
-                         '888888"      _,.__q____     "8p,
-                       _p8P888P'     ~P\\p8888888888qq_  "8_
-                 __  _pP'_pq88q_,     q8888888888888888q_,8p
-                 ""_q8'q888888888,   p88888888888888888888p8|
-     q888888888P  q8"'|8888888888b  q88888888888888888888p88|
-         .__ppq_  8p)pq88888888888 q888888888888888888888888'
-          """""'  _8q888888888888P 88888888888888888888888qP
-       ._pppppq__q8""88888888888P  888888888888888888888888'
-     _p88888888/YP"q8q_'"Y888P"'  ,"8888888888888888888888"
-   ___""""8888888qpqpp88q__'"O8pq_)( "8888888888888888888P
-  "YYY'   .q8888888888"""""8q_,"'"8q_,  ""88888888888888P
-          '888888888P      '888q_ d888qq__  '""Y8888P\\8"
-        ___ '""88888q__    _888888P'"888888pqqq___pp8"'
-        '"'  .  '"88888q)_p88Y8P"'____"YPP"_88Y8(_q888q_
-            "Y"   8888888"'qp,_pp888P"^8q,_8888P"8888888,
-                   "YPP"_p888888P\\p8"_pq/8"O88b  q888888'
-                  \\p._p888888888b8P'q888\\8' '"8q__888""
-                   _p8888888PY""88__pq__8"      '""'
-                   q888888P"  .8888888P"
-                   "88P"'     '8888888"
-            _,._qpqqqqpp-      '""""'
-                ''""""""YYYYPPPPPPPPPYY^
-`.slice(1);
+const PALETTE = "0b0d24f9f9fb4391e97054e6d7d7ea3fd4f835375e8d8aa5606271fbfbfc85b8f1a290efe5e5f182e3fa7c7d96b5b3c5b6b6bdfdfdfec7def8d4ccf8f3f3f9c5f2fdc2c3cfdddce44852c7f9f9fb4391e97054e6d7d7ea3fd4f85659998d8aa5888fdbfbfbfc85b8f1a290efe5e5f182e3fa9193bdb5b3c5c8cbeefdfdfec7def8d4ccf8f3f3f9c5f2fdcccde0dddce4".match(/.{6}/g)!.map((c) => "#"+c);
 const ART = `
                        .qq__             .__.
                        '8888qq_     __p88888888qq_,
@@ -109,22 +72,12 @@ export const pad = (art: string) => {
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
   return lines.map((line) => line.padEnd(COLS));
 };
-const mono = pad(MONO);
 const art = pad(ART);
 const ink = pad(INK);
 const ROWS = art.length;
 const n = PALETTE.length / 6;
-let lo = Infinity;
-let hi = -Infinity;
-for (const pic of [mono, art]) {
-  pic.forEach((line, y) => {
-    for (let x = 0; x < COLS; x++) if (line[x] !== " ") {
-      lo = Math.min(lo, x + LEAN * y);
-      hi = Math.max(hi, x + LEAN * y);
-    }
-  });
-}
-const span = hi - lo + 2 * HALF;
+// Extent of the art (and its outline) along the glint diagonal, precomputed.
+const lo = 12.2, hi = 73.1, span = hi - lo + 2 * HALF;
 
 export function frame(t: number): { ch: string; color: string }[][] {
   const every = Math.max(SHINE, PASS + 0.5);

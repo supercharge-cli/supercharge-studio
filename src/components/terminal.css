@@ -1,0 +1,7 @@
+/* Project terminal pane (loaded with the terminal chunk). */
+.tabs .term-x{opacity:.6;margin-left:4px;padding:0 3px;border-radius:var(--r-sm)}
+.tabs .term-x:hover{opacity:1;background:var(--line)}
+.term-host{flex:1;min-height:0;padding:8px 8px 10px}
+.term-stack{flex:1;min-height:0;display:flex;flex-direction:column}
+.term-stack[hidden],.term-host[hidden]{display:none!important}
+

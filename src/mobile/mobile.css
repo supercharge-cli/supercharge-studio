@@ -251,11 +251,7 @@ html.m-cam .m-scan-win{box-shadow:0 0 0 100vmax #06060abd}
 [data-density="compact"] .m-thread .bubble.user{padding:8px 11px;font-size:14px}
 [data-density="compact"] .m-compose-box{padding:8px 8px 6px;gap:6px}
 [data-density="compact"] .m-compose-box textarea{min-height:34px;font-size:15px}
-[data-box-style="ascii"] .m-compose-box,[data-box-style="ascii"] .m-top .icon,[data-box-style="ascii"] .m-thread .bubble.user,
-[data-box-style="ascii"] .m-sheet,[data-box-style="ascii"] .m-row,[data-box-style="ascii"] .m-fab,[data-box-style="ascii"] .m-views,
-[data-box-style="ascii"] .m-pill,[data-box-style="ascii"] .m-chip,[data-box-style="ascii"] .m-attach,[data-box-style="ascii"] .m-compose-row .round,
-[data-box-style="ascii"] .m-search,[data-box-style="ascii"] .m-picker-option,[data-box-style="ascii"] .m-chat,[data-box-style="ascii"] .toolcard,
-[data-box-style="ascii"] .md-codewrap{border-radius:0!important}
 [data-box-style="ascii"] .m-pill::before,[data-box-style="ascii"] .m-chip::before{content:"[ "}
 [data-box-style="ascii"] .m-pill::after,[data-box-style="ascii"] .m-chip::after{content:" ]"}
-[data-box-style="minimal"]{--r:10px;--r-sm:8px}
+
+.m-theme-select{width:auto;border:0;background:none;color:var(--fg);font-weight:600;font-size:14px}

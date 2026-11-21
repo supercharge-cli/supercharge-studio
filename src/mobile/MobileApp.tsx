@@ -24,7 +24,6 @@ import { phoneIp } from "./ip";
 import { AfterReconnect, offline } from "./offline";
 import { type Attachment, deviceBlocks, fmtSize, fromFile, isImage, rejectReason } from "../lib/attachments";
 import { APP_VERSION, checkUpdate, pickApk, UPDATE_EVERY } from "../lib/updates";
-import { canonicalThemeId, themeList } from "../lib/themes";
 import { effortLabel, reasoningOption, sameEffort } from "../lib/sessionOptions";
 import { ContextMeter, type WindowCtl } from "../components/ContextMeter";
 import { applyWindow, windowOption } from "../lib/contextWindow";
@@ -34,6 +33,7 @@ const CK = "supercharge-mobile/custom-models";
 const loadCustoms = (): CustomModel[] => { try { const j = JSON.parse(localStorage.getItem(CK) ?? "[]"); return Array.isArray(j) ? j.filter((x: any) => x?.id) : []; } catch { return []; } };
 const storeCustoms = (list: CustomModel[]) => { try { localStorage.setItem(CK, JSON.stringify(list)); } catch {} };
 /** Provider setup on the paired computer (same steps as the CLI's /setup), loaded on first open. */
+const ThemePicker = lazy(() => import("./extras").then((m) => ({ default: m.ThemePicker })));
 const Pair = lazy(() => import("./extras").then((m) => ({ default: m.Pair })));
 const UpdateSheet = lazy(() => import("./extras").then((m) => ({ default: m.UpdateSheet })));
 const Privacy = lazy(() => import("./extras").then((m) => ({ default: m.Privacy })));
@@ -255,64 +255,20 @@ export default function MobileApp() {
     return () => { vv?.removeEventListener("resize", fit); window.removeEventListener("resize", fit); };
   }, []);
 
-  const [mobileTheme, setMobileTheme] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem("supercharge-studio/v1");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.settings?.theme) return canonicalThemeId(parsed.settings.theme) ?? parsed.settings.theme;
-      }
-    } catch {}
-    return "system";
-  });
-  const [mobileDensity, setMobileDensity] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem("supercharge-studio/v1");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.settings?.density) return parsed.settings.density;
-      }
-    } catch {}
-    return "normal";
-  });
-  const [mobileBoxStyle, setMobileBoxStyle] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem("supercharge-studio/v1");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.settings?.boxStyle) return parsed.settings.boxStyle;
-      }
-    } catch {}
-    return "modern";
-  });
-  const [mobileAccent, setMobileAccent] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem("supercharge-studio/v1");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.settings?.accent) return parsed.settings.accent;
-      }
-    } catch {}
-    return "theme";
-  });
-
   useEffect(() => {
     const mq = window.matchMedia?.("(prefers-color-scheme: light)");
     const apply = () => {
-      const root = document.documentElement;
-      if (mobileTheme && mobileTheme !== "system") {
-        root.dataset.theme = mobileTheme;
-      } else {
-        root.dataset.theme = mq?.matches ? "light" : "dark";
-      }
-      root.dataset.density = mobileDensity;
-      root.dataset.boxStyle = mobileBoxStyle;
-      if (mobileAccent && mobileAccent !== "theme") root.dataset.accent = mobileAccent; else delete root.dataset.accent;
+      try {
+        const s = JSON.parse(localStorage.getItem("supercharge-studio/v1") ?? "null")?.settings ?? {};
+        const al: Record<string, string> = { zed: "graphite", warp: "carbon", tokyo: "twilight", gruvbox: "retro", nord: "arctic" };
+        const th = (typeof s.theme === "string" && al[s.theme]) || s.theme;
+        document.documentElement.dataset.theme = th && th !== "system" ? th : (mq?.matches ? "light" : "dark");
+      } catch { document.documentElement.dataset.theme = mq?.matches ? "light" : "dark"; }
     };
     apply();
     mq?.addEventListener?.("change", apply);
     return () => mq?.removeEventListener?.("change", apply);
-  }, [mobileTheme, mobileDensity, mobileBoxStyle, mobileAccent]);
+  }, []);
 
   useEffect(() => {
     if (!creds) return;
@@ -943,21 +899,7 @@ export default function MobileApp() {
               }} />
             </div>}
             <button className="m-row" onClick={() => { setSheet(false); void client.current?.ext("_supercharge/focus", { sessionId: open }); setToast("Opened on your computer"); }}><span>Open on computer</span><Icon name="panelRight" size={15} /></button>
-            <div className="m-row" data-testid="m-appearance">
-              <span>Theme</span>
-              <select style={{ width: "auto", border: "0", background: "none", color: "var(--fg)", fontWeight: 600, fontSize: "14px" }} value={mobileTheme} onChange={(e) => {
-                const t = e.target.value;
-                setMobileTheme(t);
-                try {
-                  const saved = localStorage.getItem("supercharge-studio/v1");
-                  const parsed = saved ? JSON.parse(saved) : {};
-                  parsed.settings = { ...parsed.settings, theme: canonicalThemeId(t) ?? t };
-                  localStorage.setItem("supercharge-studio/v1", JSON.stringify(parsed));
-                } catch {}
-              }}>
-                {themeList.map((th) => <option key={th.id} value={th.id}>{th.name}</option>)}
-              </select>
-            </div>
+            <Suspense fallback={null}><ThemePicker /></Suspense>
             <div className="m-row m-notify" data-testid="m-notify"><span>Alerts</span>
               <span className="m-notify-opts">
                 {([["done", "Done"], ["error", "Errors"], ["permission", "Approvals"], ["sound", "Sound"]] as const).map(([k, label]) => (
