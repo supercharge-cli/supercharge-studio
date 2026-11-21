@@ -561,7 +561,7 @@ export function discoverExtensions(init: InitializeResult | null | undefined): E
   const scan = (v: unknown) => {
     if (!v || typeof v !== "object") return;
     for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-      if ((k === "methods" || k === "extensions" || k === "extMethods") && Array.isArray(val)) {
+      if ((k === "methods" || k.endsWith("/methods") || k === "extensions" || k === "extMethods") && Array.isArray(val)) {
         val.forEach((n) => add(typeof n === "string" ? n : (n as any)?.name ?? (n as any)?.method));
       } else if ((k === "methods" || k === "extensions" || k === "extMethods") && val && typeof val === "object") {
         Object.keys(val).forEach((n) => add(n));

@@ -30,11 +30,19 @@ type Listed = { sessionId: string; cwd: string; title?: string; updatedAt?: stri
 type St = { n: number; listed: Listed[]; known: Set<string>; modelFixed?: boolean; loads: { sessionId: string; cwd: string; mcp: string[] }[] };
 const CLI = process.env.FAKE_AGENT_CLI === "1";
 // The CLI fake also offers the proposed ACP provider-setup extension (`_supercharge/setup/<op>`).
-const SETUP_METHODS = ["status", "models", "save", "device_start", "device_poll", "device_cancel", "auth_start", "auth_poll", "auth_cancel"].map((op) => `_supercharge/setup/${op}`);
+// FAKE_AGENT_PROVIDERS=1 adds the provider catalogue (`providers_list`, `provider_*`); without it the
+// fake is a CLI from before the catalogue and those calls fail with method-not-found.
+const CATALOGUE = process.env.FAKE_AGENT_PROVIDERS === "1";
+const SETUP_METHODS = ["status", "models", "save", "device_start", "device_poll", "device_cancel", "auth_start", "auth_poll", "auth_cancel", ...(CATALOGUE ? ["providers_list", "provider_status", "provider_add_custom", "provider_set_key", "provider_remove"] : [])].map((op) => `_supercharge/setup/${op}`);
+// Catalogue mode also lists a browser sign-in provider and a Responses router, as the CLI does.
+const CATALOGUE_EXTRA = CATALOGUE ? [
+  { id: "mistral-auth", name: "Mistral (browser sign-in)", description: "Sign in with your Mistral account", baseUrl: "https://api.mistral.ai/v1", defaultModel: "mistral-medium-latest", format: "openai", curated: [], auth: "api_key", authMethods: ["browser"] },
+  { id: "agentrouter", name: "AgentRouter", description: "Router with a Responses API", baseUrl: "https://agentrouter.org/v1", defaultModel: "gpt-5", format: "responses", curated: [], auth: "api_key", authMethods: ["api_key"] },
+] : [];
 // FAKE_AGENT_PROVIDER=1: the CLI was already set up (OpenRouter, key saved in its config), in the CLI's
 // own status shape (`modelId`, `hasApiKey`, `configured`); sessions list that provider's models.
 const PRESET = process.env.FAKE_AGENT_PROVIDER === "1";
-const setupFake = fakeSetup(PRESET ? { configured: true, providerId: "openrouter", baseUrl: "https://openrouter.ai/api/v1", format: "openai", modelId: "model-a", hasApiKey: true, hasKey: true } : undefined);
+const setupFake = fakeSetup(PRESET ? { configured: true, providerId: "openrouter", baseUrl: "https://openrouter.ai/api/v1", format: "openai", modelId: "model-a", hasApiKey: true, hasKey: true } : undefined, CATALOGUE_EXTRA);
 const MODELS = PRESET ? [["model-a", "Model A"], ["model-b", "Model B"]] : [["studio-test-1", "First"], ["studio-test-2", "Second"]];
 const ago = (m: number) => new Date(Date.now() - m * 60000).toISOString();
 const cliSeed = (): Listed[] => [
@@ -387,7 +395,11 @@ wss.on("connection", (ws: WebSocket) => {
         if (CLI && SETUP_METHODS.includes(m.method)) {
           const op = m.method.split("/").pop();
           try { const r = await setupFake.run(op, m.params, (method, params) => send({ method, params })); if (op === "save") noModel = true; return reply(op === "models" ? { models: r } : op === "device_poll" ? { status: r } : r); }
-          catch (e: any) { return send({ id: m.id, error: { code: e.code ?? -32000, message: e.message } }); }
+          catch (e: any) {
+            // Catalogue mode answers like the CLI: ACP invalid_params with the reason in `data`.
+            if (CATALOGUE && e.code === -32602) return send({ id: m.id, error: { code: -32602, message: "Invalid params", data: e.message } });
+            return send({ id: m.id, error: { code: e.code ?? -32000, message: e.message } });
+          }
         }
         if (m.id != null) send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } });
     }

@@ -27,7 +27,8 @@ const budgets: { dir: string; label: string; entry: RegExp; entryMax: number; to
   // The redesigned catalog adds ~0.9 KB of CSS, with headroom for CI compression differences.
   // entry 66 / all js 115 / css 16 KB: appearance redesign (themes, density, keybindings, scanlines).
   // Raised from 65 / 110 / 15 to fit the shipped build plus ~1–2 KB slack (CI gzip can run a little larger).
-  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 66 * KB, totalJsMax: 115 * KB, cssMax: 16 * KB },
+  // all js 119 KB: Settings → Providers driven by the CLI's provider catalogue (~2.4 KB gz in the lazy settings chunk).
+  { dir: "dist/assets", label: "desktop", entry: /^index-.*\.js$/, entryMax: 66 * KB, totalJsMax: 119 * KB, cssMax: 16 * KB },
   // Redesigned chat UI with attachments and sheets; +reasoning labels / thought_level (~1 KB gz).
   // entry 36 / all js 41 / css 14 KB: Recents message search, alerts, photo/camera button, context ring + window picker.
   // all js 46 / css 15 KB: the same provider setup sheet (lazy, ~5.3 KB js + 0.7 KB css gz).

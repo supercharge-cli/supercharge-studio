@@ -1,4 +1,4 @@
-import { ReactNode, Suspense, useState } from "react";
+import { ReactNode, Suspense, useMemo, useState } from "react";
 import { Privacy } from "./Privacy";
 import { agentSetup, listProviderModels, mergeCli, pickSetup, providerCatalog, type SetupApi, type SetupStatusFull, type SetupStatus } from "../lib/setup";
 import type { ApiFormat, Provider, Settings as S } from "../lib/store";
@@ -9,6 +9,8 @@ import { Plugins } from "./Plugins";
 import type { PluginRpc } from "../lib/plugins";
 import { APP_VERSION } from "../lib/updates";
 import ProviderSetup from "./ProviderSetup";
+import ProviderManager from "./ProviderManager";
+import { agentProviders } from "../lib/providers";
 import { Appearance, Keybindings, TestConn } from "./SettingsExtras";
 import { agentInfo, agentLog, providerDiscoverModels, type AgentInfo, type DiscoveredModel } from "../lib/desktop";
 
@@ -136,6 +138,12 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
   const [providerError, setProviderError] = useState("");
   const [setup] = useState(() => pickSetup(props.acp));
   const [cliSetup] = useState(() => agentSetup(props.acp));
+  // Follows the connection: an agent that connects (or reconnects) after Settings opened still gets its catalogue.
+  const cliProv = useMemo(() => agentProviders(props.acp), [props.acp]);
+  /** The CLI manages providers itself: Studio-side provider entries are only shown if some exist. */
+  const [cliOwns, setCliOwns] = useState(false);
+  // Imported references to the CLI's provider are redundant once the CLI lists its providers itself.
+  const shownProviders = cliOwns ? (s.providers ?? []).filter((p) => !p.cli) : (s.providers ?? []);
   const providers = s.providers ?? [];
   const setProviders = (ps: Provider[]) => set({ ...s, providers: ps });
 
@@ -198,24 +206,27 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
 
         {tab === "providers" && (
           <div className="stack prov-page">
-            {setup ? (
-              <div data-testid="setup-card"><Suspense fallback={<p className="muted">Loading…</p>}><ProviderSetup api={setup} sessionId={props.sessionId} open={props.openUrl ?? ((u) => window.open(u, "_blank"))} onSaved={(st) => { set({ ...s, activeProviderId: undefined }); props.onSetupSaved?.(st); }} /></Suspense></div>
-            ) : <p className="muted">Provider setup needs the desktop app.</p>}
-            <div className="prov-saved">
+            {setup ? (() => {
+              const open = props.openUrl ?? ((u: string) => void window.open(u, "_blank"));
+              const saved = (st: any) => { set({ ...s, activeProviderId: undefined }); props.onSetupSaved?.(st); };
+              const basic = <div data-testid="setup-card"><Suspense fallback={<p className="muted">Loading…</p>}><ProviderSetup api={setup} sessionId={props.sessionId} open={open} onSaved={saved} /></Suspense></div>;
+              return cliProv ? <ProviderManager api={cliProv} open={open} sessionId={props.sessionId} onSaved={saved} onReady={setCliOwns} fallback={basic} /> : basic;
+            })() : <p className="muted">Provider setup needs the desktop app.</p>}
+            {(!cliOwns || shownProviders.length > 0) && <div className="prov-saved">
             <div className="row between prov-saved-head">
               <div>
                 <h4 className="set-sub">Saved in Studio</h4>
                 <p className="muted small">The active provider is written to the agent config and becomes the default model. Keys stay in secure storage.</p>
               </div>
-              <button className="secondary" data-testid="prov-add" onClick={() => {
+              {!cliOwns && <button className="secondary" data-testid="prov-add" onClick={() => {
                 const np: Provider = { id: uid(), name: "New provider", baseUrl: "", format: "responses", models: [] };
                 setProviders([...providers, np]);
                 setEditing(np.id);
-              }}><Icon name="plus" /> Add provider</button>
+              }}><Icon name="plus" /> Add provider</button>}
             </div>
             {providerError && <p className="danger-text" role="alert">{providerError}</p>}
-            {providers.length === 0 && <div className="empty-card">No saved providers. Add one, or pick a provider above.</div>}
-            {providers.map((p) => (
+            {shownProviders.length === 0 && <div className="empty-card">No saved providers. Add one, or pick a provider above.</div>}
+            {shownProviders.map((p) => (
               <div key={p.id}>
                 <div className={`prov-row ${s.activeProviderId === p.id ? "active" : ""}`} data-testid="provider-row">
                   <div className="prov-main">
@@ -251,9 +262,9 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
                 )}
               </div>
             ))}
-            </div>
-            <label className="check"><input type="checkbox" data-testid="cli-import" checked={s.cliImport !== false} onChange={(e) => set({ ...s, cliImport: e.target.checked })} /> Import the provider the Supercharge CLI is set up with</label>
-            {props.onCliImport && <button className="secondary" data-testid="cli-reimport" onClick={async () => { const p = await props.onCliImport!().catch(() => null); set({ ...s, cliRemoved: [], providers: (p && mergeCli(providers, p)) || providers }); setProviderError(p ? "" : "The CLI has no provider to import."); }}>Re-import from CLI</button>}
+            </div>}
+            {!cliOwns && <><label className="check"><input type="checkbox" data-testid="cli-import" checked={s.cliImport !== false} onChange={(e) => set({ ...s, cliImport: e.target.checked })} /> Import the provider the Supercharge CLI is set up with</label>
+            {props.onCliImport && <button className="secondary" data-testid="cli-reimport" onClick={async () => { const p = await props.onCliImport!().catch(() => null); set({ ...s, cliRemoved: [], providers: (p && mergeCli(providers, p)) || providers }); setProviderError(p ? "" : "The CLI has no provider to import."); }}>Re-import from CLI</button>}</>}
           </div>
         )}
 

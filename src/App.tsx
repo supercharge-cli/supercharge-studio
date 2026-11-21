@@ -1588,7 +1588,7 @@ export default function App() {
         <Suspense fallback={null}><CliSetup
           status={cli}
           mode={cliSetup}
-          onDone={() => { setCliSetup(null); setAgentMissing(false); void cliStatus(false).then(setCli); void connect(); }}
+          onDone={() => { const fresh = cliSetup === "missing"; setCliSetup(null); setAgentMissing(false); void cliStatus(false).then(setCli); void connect(); if (fresh) openSettings("providers"); }}
           onSkip={() => setCliSetup(null)}
         /></Suspense>
       )}

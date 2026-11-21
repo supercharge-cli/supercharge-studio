@@ -22,3 +22,10 @@
 .psetup-wait{display:flex;align-items:center;gap:8px}
 .psetup-spin{width:12px;height:12px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--acc);animation:psetup-spin .8s linear infinite;flex:none}
 @keyframes psetup-spin{to{transform:rotate(1turn)}}
+.psetup-note{display:flex;gap:8px;align-items:flex-start;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel);color:var(--muted);font-size:12.5px;line-height:1.45}
+.psetup-tag{font-weight:500;font-size:11.5px;color:var(--muted)}
+.psetup-tag.ok{color:var(--ok)}
+.psetup .prov-row .prov-main{min-width:0;flex:1}
+.psetup .prov-row .prov-main span{overflow-wrap:anywhere}
+.psetup-form .check{flex-direction:row;align-items:center;gap:8px}
+.psetup-form>p{margin:0}
