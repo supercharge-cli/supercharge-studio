@@ -24,6 +24,7 @@ import { phoneIp } from "./ip";
 import { AfterReconnect, offline } from "./offline";
 import { type Attachment, deviceBlocks, fmtSize, fromFile, isImage, rejectReason } from "../lib/attachments";
 import { APP_VERSION, checkUpdate, pickApk, UPDATE_EVERY } from "../lib/updates";
+import { canonicalThemeId, themeList } from "../lib/themes";
 import { effortLabel, reasoningOption, sameEffort } from "../lib/sessionOptions";
 import { ContextMeter, type WindowCtl } from "../components/ContextMeter";
 import { applyWindow, windowOption } from "../lib/contextWindow";
@@ -259,10 +260,10 @@ export default function MobileApp() {
       const saved = localStorage.getItem("supercharge-studio/v1");
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.settings?.theme) return parsed.settings.theme;
+        if (parsed.settings?.theme) return canonicalThemeId(parsed.settings.theme) ?? parsed.settings.theme;
       }
     } catch {}
-    return "dark";
+    return "system";
   });
   const [mobileDensity, setMobileDensity] = useState<string>(() => {
     try {
@@ -950,24 +951,11 @@ export default function MobileApp() {
                 try {
                   const saved = localStorage.getItem("supercharge-studio/v1");
                   const parsed = saved ? JSON.parse(saved) : {};
-                  parsed.settings = { ...parsed.settings, theme: t };
+                  parsed.settings = { ...parsed.settings, theme: canonicalThemeId(t) ?? t };
                   localStorage.setItem("supercharge-studio/v1", JSON.stringify(parsed));
                 } catch {}
               }}>
-                <option value="dark">Dark</option>
-                <option value="zed">Zed Dark</option>
-                <option value="warp">Warp Carbon</option>
-                <option value="ascii">ASCII Mono</option>
-                <option value="matrix">Matrix Green</option>
-                <option value="nord">Nord</option>
-                <option value="midnight">Midnight</option>
-                <option value="forest">Forest</option>
-                <option value="ember">Ember</option>
-                <option value="contrast">High Contrast</option>
-                <option value="light">Light</option>
-                <option value="paper">Paper</option>
-                <option value="sky">Sky</option>
-                <option value="rose">Rose</option>
+                {themeList.map((th) => <option key={th.id} value={th.id}>{th.name}</option>)}
               </select>
             </div>
             <div className="m-row m-notify" data-testid="m-notify"><span>Alerts</span>

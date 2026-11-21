@@ -1,5 +1,6 @@
 /** Local app data: groups → projects → chats. Persisted to localStorage. */
 import { DEFAULT_RELAY, ensureHostId, reachOf, type Reach } from "./reach";
+import { canonicalThemeId } from "./themes";
 /** `updatedAt`: last activity (ms). `cli`: discovered from the agent's session list (the CLI owns it). `cwd`: the session's own folder. */
 export type Chat = { id: string; title: string; sessionId?: string; createdAt: number; updatedAt?: number; cli?: boolean; cwd?: string;
   /** Set when the chat runs in its own git worktree (cwd = path). */
@@ -66,7 +67,7 @@ export type Settings = {
   accent?: UiAccent;
   /** Chat text size in px (default 14). */
   fontSize?: number;
-  /** UI density: compact (zcode style), normal, comfortable. */
+  /** UI density: compact, normal, or comfortable. */
   density?: UiDensity;
   /** Frame and border styling: modern hairline, ascii box, minimal flat. */
   boxStyle?: UiBoxStyle;
@@ -76,7 +77,7 @@ export type Settings = {
   monoFont?: UiMonoFont;
   /** Skip animations for instantaneous transitions. */
   reduceMotion?: boolean;
-  /** Phosphor CRT scanlines effect (inspired by ascii.rest). */
+  /** Optional CRT scanlines overlay. */
   scanlines?: boolean;
   /** Terminal cursor shape in inputs. */
   cursorStyle?: UiCursorStyle;
@@ -124,10 +125,11 @@ export const defaultData = (): AppData => ({
 export function load(): AppData {
   try {
     const raw = localStorage.getItem(KEY);
-    const data = raw ? migrate({ ...defaultData(), ...JSON.parse(raw) }) : defaultData();
+    const parsed = raw ? JSON.parse(raw) : null;
+    const data = parsed ? migrate({ ...defaultData(), ...parsed }) : defaultData();
     const gateway = gatewayPrefs(data.settings.gateway);
-    if (JSON.stringify(data.settings.gateway) !== JSON.stringify(gateway)) {
-      data.settings = { ...data.settings, gateway };
+    if (JSON.stringify(data.settings.gateway) !== JSON.stringify(gateway)) data.settings = { ...data.settings, gateway };
+    if (raw && JSON.stringify(parsed.settings) !== JSON.stringify(data.settings)) {
       try { save(data); } catch { /* storage may be unavailable */ }
     }
     return data;
@@ -137,12 +139,15 @@ export function load(): AppData {
 }
 /** Upgrade older saved data in place; never drops chats, projects or groups. */
 export function migrate(d: AppData): AppData {
-  if ((d.schema ?? 1) >= 2) return d;
+  const theme = canonicalThemeId(d.settings?.theme);
+  const settings = theme && theme !== d.settings.theme ? { ...d.settings, theme } : d.settings;
+  if ((d.schema ?? 1) >= 2 && settings === d.settings) return d;
   return {
     ...d,
     schema: 2,
     sidebarView: d.sidebarView ?? "projects",
     hiddenSessions: d.hiddenSessions ?? [],
+    settings,
     groups: (d.groups ?? []).map((g) => ({ ...g, projects: (g.projects ?? []).map((p) => ({ ...p, chats: (p.chats ?? []).map((c) => ({ ...c, updatedAt: c.updatedAt ?? c.createdAt })) })) })),
   };
 }

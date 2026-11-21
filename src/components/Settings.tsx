@@ -7,7 +7,7 @@ import type { ConfigOption } from "../acp/types";
 import { Icon } from "./Icon";
 import { Plugins } from "./Plugins";
 import type { PluginRpc } from "../lib/plugins";
-import { themeList } from "../lib/themes";
+import { canonicalThemeId, themeList } from "../lib/themes";
 import { APP_VERSION } from "../lib/updates";
 import ProviderSetup from "./ProviderSetup";
 import { agentCheck, agentInfo, agentLog, providerDiscoverModels, type AgentInfo, type DiscoveredModel } from "../lib/desktop";
@@ -132,7 +132,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
   useEffect(() => {
     if (tab === "appearance") {
       const root = document.documentElement;
-      if (s.theme) root.dataset.theme = s.theme;
+      if (s.theme) root.dataset.theme = canonicalThemeId(s.theme) ?? s.theme;
       if (s.density) root.dataset.density = s.density;
       if (s.boxStyle) root.dataset.boxStyle = s.boxStyle;
       if (s.monoFont) root.dataset.fontPref = s.monoFont;
@@ -317,9 +317,9 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
               <label>Interface density</label>
               <div className="seg" role="radiogroup" aria-label="Density">
                 {[
-                  { id: "compact", label: "Compact (Zed / Code editor)" },
-                  { id: "normal", label: "Normal (Terminal balanced)" },
-                  { id: "comfortable", label: "Comfortable (Spacious)" },
+                  { id: "compact", label: "Compact" },
+                  { id: "normal", label: "Normal" },
+                  { id: "comfortable", label: "Comfortable" },
                 ].map((d) => (
                   <button
                     key={d.id}
@@ -340,9 +340,9 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
               <label>Border & Frame style</label>
               <div className="seg" role="radiogroup" aria-label="Box style">
                 {[
-                  { id: "modern", label: "Modern Hairline (Zed)" },
-                  { id: "ascii", label: "ASCII Box [ ] (ascii.rest)" },
-                  { id: "minimal", label: "Rounded Minimal (Warp)" },
+                  { id: "modern", label: "Modern hairline" },
+                  { id: "ascii", label: "ASCII box" },
+                  { id: "minimal", label: "Rounded minimal" },
                 ].map((b) => (
                   <button
                     key={b.id}
@@ -363,8 +363,8 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
               <label>Agent prompt glyph</label>
               <div className="seg" role="radiogroup" aria-label="Prompt glyph">
                 {[
-                  { id: "❯", label: "❯ Chevron (Warp)" },
-                  { id: "$", label: "$ POSIX Shell" },
+                  { id: "❯", label: "❯ Chevron" },
+                  { id: "$", label: "$ Shell" },
                   { id: "::", label: ":: ASCII Colon" },
                   { id: ">", label: "> Arrow" },
                   { id: "λ", label: "λ Lambda" },
@@ -412,9 +412,9 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
               <label>Code & metadata font</label>
               <div className="seg" role="radiogroup" aria-label="Monospace font">
                 {[
-                  { id: "modern", label: "Modern (JetBrains / SF Mono)" },
-                  { id: "terminal", label: "Classic Terminal (VT323 / Courier)" },
-                  { id: "default", label: "System Default" },
+                  { id: "modern", label: "Modern" },
+                  { id: "terminal", label: "Classic" },
+                  { id: "default", label: "System default" },
                 ].map((f) => (
                   <button
                     key={f.id}
@@ -478,7 +478,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
 
             <div className="stack" style={{ gap: 8 }}>
               <label className="check"><input type="checkbox" checked={!!s.reduceMotion} onChange={(e) => set({ ...s, reduceMotion: e.target.checked })} /> Instant transitions (zero animations, maximum efficiency)</label>
-              <label className="check"><input type="checkbox" checked={!!s.scanlines} onChange={(e) => set({ ...s, scanlines: e.target.checked })} /> CRT phosphor scanlines & monitor glow (ascii.rest retro aesthetic)</label>
+              <label className="check"><input type="checkbox" checked={!!s.scanlines} onChange={(e) => set({ ...s, scanlines: e.target.checked })} /> CRT phosphor scanlines and monitor glow</label>
             </div>
             <p className="muted small">All customizations apply instantly when saved. Themes, density, and box styles sync seamlessly with mobile.</p>
           </div>
@@ -486,7 +486,7 @@ export function SettingsScreen(props: Props & { initial?: Section }) {
 
         {tab === "shortcuts" && (
           <div className="stack shortcuts-page">
-            <p className="muted small">Studio developer keybindings inspired by Zed & Warp.</p>
+            <p className="muted small">Keyboard shortcuts used in Studio.</p>
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>
               {[
                 { key: "Ctrl + K", action: "Command Palette & Fuzzy File Finder", scope: "Global" },

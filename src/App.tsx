@@ -14,7 +14,7 @@ import { ComposerMenu } from "./components/ComposerMenu";
 import { effortToApply, optionFor, reasoningOption, setModelRequest, shownModel, updateSessionOptions } from "./lib/sessionOptions";
 import { providerCatalogKey } from "./lib/catalog";
 import { filterItems, insertMention, MenuItem, menuState, parseSlash } from "./lib/composer";
-import { resolveTheme, themeList } from "./lib/themes";
+import { findTheme, resolveTheme, themeList } from "./lib/themes";
 import { expandPrompt } from "./lib/prompts";
 import { acpServers } from "./lib/mcpServers";
 import { dueSchedules, nextRun } from "./lib/schedules";
@@ -1326,7 +1326,7 @@ export default function App() {
       run: (a) => { if (a) return setModel(a); if (modelOption?.options?.length) setTimeout(() => setDraftCaret("/models ")); else openSettings("agent"); },
       sub: modelOption?.options?.length ? () => modelOption!.options!.map((o) => ({ id: `m-${o.value}`, label: o.name ?? o.value, detail: o.value === modelOption!.currentValue ? "current" : o.name && o.name !== o.value ? o.value : undefined, value: o.value, icon: o.value === modelOption!.currentValue ? "check" : undefined })) : undefined,
     },
-    { name: "theme", detail: "Change the color theme", icon: theme === "light" ? "sun" : "moon", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/theme ")); return; } const t = themeList.find((x) => x.id === a.toLowerCase() || x.name.toLowerCase() === a.toLowerCase()); if (!t) return false; setTheme(t.id); }, sub: () => themeList.map((t) => ({ id: `t-${t.id}`, label: t.name, detail: t.id === theme ? "current" : t.dark ? "dark" : "light", value: t.id, icon: t.id === theme ? "check" : undefined })) },
+    { name: "theme", detail: "Change the color theme", icon: theme === "light" ? "sun" : "moon", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/theme ")); return; } const t = findTheme(a); if (!t) return false; setTheme(t.id); }, sub: () => themeList.map((t) => ({ id: `t-${t.id}`, label: t.name, detail: t.id === theme ? "current" : t.dark ? "dark" : "light", value: t.id, icon: t.id === theme ? "check" : undefined })) },
     { name: "font", detail: "Chat text size", icon: "sliders", run: (a) => { if (!a) { setTimeout(() => setDraftCaret("/font ")); return; } const n = parseInt(a); if (!(n >= 12 && n <= 20)) return false; update((d) => ({ ...d, settings: { ...d.settings, fontSize: n } })); }, sub: () => [12, 13, 14, 15, 16, 18, 20].map((n) => ({ id: `f-${n}`, label: `${n}px`, detail: n === (fontSize ?? 14) ? "current" : undefined, value: String(n), icon: n === (fontSize ?? 14) ? "check" : undefined })) },
     { name: "help", detail: "Show commands and shortcuts", icon: "command", run: () => {
       const lines = [...nativeCommands.map((c) => `- \`/${c.name}\` ${c.detail}`), ...commands.map((c) => `- \`/${c.name}\` ${c.description ?? ""} (agent)`)];
@@ -1553,7 +1553,7 @@ export default function App() {
       : m.kind === "tool" ? (
         sess.toolCalls[m.toolCallId] ? <ToolCard tc={sess.toolCalls[m.toolCallId]} /> : null
       ) : m.kind === "agent" ? (
-        <div className="warp-block agent-block">
+        <div className="msg-block agent-block">
           <div className="block-toolbar row between">
             <span className="block-badge"><strong style={{ color: "var(--acc)" }}>{data.settings.promptGlyph ?? "❯"} [ AGENT ]</strong></span>
             <div className="block-acts">
@@ -1581,7 +1581,7 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div className="warp-block user-block">
+        <div className="msg-block user-block">
           <div className="block-toolbar row between">
             <span className="block-badge">[ YOU ]</span>
             <div className="block-acts">
@@ -1790,7 +1790,7 @@ export default function App() {
                         <span className="hud-pill"><strong>STATUS</strong> {conn === "open" ? "ACP Connected" : "Connecting…"}</span>
                         <span className="hud-pill"><strong>MODEL</strong> {shownModel(realModel, data.settings.lastModel, baseModel?.currentValue) || "Autonomous Agent"}</span>
                       </div>
-                      <p className="hud-sub">Minimalist Developer Architecture · Zed & Warp Shell</p>
+                      <p className="hud-sub">Minimalist developer workspace</p>
                     </div>
                     <h2>{active ? active.project.name : "No project open"}</h2>
                     <p>{active ? "What should we work on?" : "Add a project in the sidebar, then start a chat."}</p>
