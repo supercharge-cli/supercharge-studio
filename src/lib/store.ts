@@ -24,6 +24,21 @@ const gatewayPrefs = (saved?: GatewayPrefs): GatewayPrefs => {
   return g.relayUrl?.trim().replace(/\/+$/, "") === DEFAULT_RELAY ? { ...g, relayUrl: "" } : g;
 };
 
+export type UiDensity = "compact" | "normal" | "comfortable";
+export type UiBoxStyle = "modern" | "ascii" | "minimal";
+export type UiPromptGlyph = "❯" | "$" | "::" | ">" | "λ" | "⚡";
+export type UiMonoFont = "modern" | "terminal" | "default";
+export type UiCursorStyle = "block" | "bar" | "underline";
+export type UiAccent = "theme" | "sky" | "emerald" | "amber" | "rose" | "violet";
+export const ACCENTS: { id: UiAccent; name: string; c: string }[] = [
+  { id: "theme", name: "Theme default", c: "var(--fg)" },
+  { id: "sky", name: "Sky", c: "#38bdf8" },
+  { id: "emerald", name: "Emerald", c: "#34d399" },
+  { id: "amber", name: "Amber", c: "#fbbf24" },
+  { id: "rose", name: "Rose", c: "#fb7185" },
+  { id: "violet", name: "Violet", c: "#a78bfa" },
+];
+
 export type Settings = {
   /** Model last picked in the composer; new chats start with it when the agent offers it. */
   lastModel?: string;
@@ -47,8 +62,24 @@ export type Settings = {
   /** Imported providers the user removed (`Provider.cli` keys); not re-added until "Re-import". */
   cliRemoved?: string[];
   theme?: Theme;
+  /** Accent color override; "theme" (or unset) follows the active theme. */
+  accent?: UiAccent;
   /** Chat text size in px (default 14). */
   fontSize?: number;
+  /** UI density: compact (zcode style), normal, comfortable. */
+  density?: UiDensity;
+  /** Frame and border styling: modern hairline, ascii box, minimal flat. */
+  boxStyle?: UiBoxStyle;
+  /** Prompt glyph shown before agent turns. */
+  promptGlyph?: UiPromptGlyph;
+  /** Monospace code & metadata font preference. */
+  monoFont?: UiMonoFont;
+  /** Skip animations for instantaneous transitions. */
+  reduceMotion?: boolean;
+  /** Phosphor CRT scanlines effect (inspired by ascii.rest). */
+  scanlines?: boolean;
+  /** Terminal cursor shape in inputs. */
+  cursorStyle?: UiCursorStyle;
   onboarded?: boolean;
   /** When the agent at `bind` rejects our key: "own" = run our own managed agent on `ownBind` (default), "key" = use the key the user entered. */
   agentChoice?: "own" | "key";

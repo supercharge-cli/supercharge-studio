@@ -54,7 +54,7 @@ test("/help lists commands and agent commands still go to the agent", async ({ p
   await expect(page.locator(".messages")).toContainText("Configure provider");
 });
 
-test("composer focus is a single subtle outer border, no inner textarea ring", async ({ page }) => {
+test("composer focus is a single hairline outer border that brightens, no inner textarea ring", async ({ page }) => {
   await boot(page);
   const box = page.locator(".composer textarea");
   const before = await page.locator(".composer").evaluate((el) => getComputedStyle(el).borderColor);
@@ -64,6 +64,7 @@ test("composer focus is a single subtle outer border, no inner textarea ring", a
   const outer = await page.locator(".composer").evaluate((el) => { const c = getComputedStyle(el); return { color: c.borderColor, width: c.borderTopWidth, shadow: c.boxShadow }; });
   expect(outer.width).toBe("1px");
   expect(outer.color).not.toBe(before);
-  expect(outer.shadow).not.toContain("0px 0px 0px");
+  // v3 redesign: focus only brightens the 1px border to the foreground color — no glow ring, no shadow.
+  expect(outer.shadow).toBe("none");
   await page.locator(".composer-wrap").screenshot({ path: "test-results/shots/cm2-composer-focus.png" });
 });

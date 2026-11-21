@@ -254,13 +254,64 @@ export default function MobileApp() {
     return () => { vv?.removeEventListener("resize", fit); window.removeEventListener("resize", fit); };
   }, []);
 
+  const [mobileTheme, setMobileTheme] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem("supercharge-studio/v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.settings?.theme) return parsed.settings.theme;
+      }
+    } catch {}
+    return "dark";
+  });
+  const [mobileDensity, setMobileDensity] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem("supercharge-studio/v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.settings?.density) return parsed.settings.density;
+      }
+    } catch {}
+    return "normal";
+  });
+  const [mobileBoxStyle, setMobileBoxStyle] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem("supercharge-studio/v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.settings?.boxStyle) return parsed.settings.boxStyle;
+      }
+    } catch {}
+    return "modern";
+  });
+  const [mobileAccent, setMobileAccent] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem("supercharge-studio/v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.settings?.accent) return parsed.settings.accent;
+      }
+    } catch {}
+    return "theme";
+  });
+
   useEffect(() => {
     const mq = window.matchMedia?.("(prefers-color-scheme: light)");
-    const apply = () => (document.documentElement.dataset.theme = mq?.matches ? "light" : "dark");
+    const apply = () => {
+      const root = document.documentElement;
+      if (mobileTheme && mobileTheme !== "system") {
+        root.dataset.theme = mobileTheme;
+      } else {
+        root.dataset.theme = mq?.matches ? "light" : "dark";
+      }
+      root.dataset.density = mobileDensity;
+      root.dataset.boxStyle = mobileBoxStyle;
+      if (mobileAccent && mobileAccent !== "theme") root.dataset.accent = mobileAccent; else delete root.dataset.accent;
+    };
     apply();
     mq?.addEventListener?.("change", apply);
     return () => mq?.removeEventListener?.("change", apply);
-  }, []);
+  }, [mobileTheme, mobileDensity, mobileBoxStyle, mobileAccent]);
 
   useEffect(() => {
     if (!creds) return;
@@ -891,6 +942,34 @@ export default function MobileApp() {
               }} />
             </div>}
             <button className="m-row" onClick={() => { setSheet(false); void client.current?.ext("_supercharge/focus", { sessionId: open }); setToast("Opened on your computer"); }}><span>Open on computer</span><Icon name="panelRight" size={15} /></button>
+            <div className="m-row" data-testid="m-appearance">
+              <span>Theme</span>
+              <select style={{ width: "auto", border: "0", background: "none", color: "var(--fg)", fontWeight: 600, fontSize: "14px" }} value={mobileTheme} onChange={(e) => {
+                const t = e.target.value;
+                setMobileTheme(t);
+                try {
+                  const saved = localStorage.getItem("supercharge-studio/v1");
+                  const parsed = saved ? JSON.parse(saved) : {};
+                  parsed.settings = { ...parsed.settings, theme: t };
+                  localStorage.setItem("supercharge-studio/v1", JSON.stringify(parsed));
+                } catch {}
+              }}>
+                <option value="dark">Dark</option>
+                <option value="zed">Zed Dark</option>
+                <option value="warp">Warp Carbon</option>
+                <option value="ascii">ASCII Mono</option>
+                <option value="matrix">Matrix Green</option>
+                <option value="nord">Nord</option>
+                <option value="midnight">Midnight</option>
+                <option value="forest">Forest</option>
+                <option value="ember">Ember</option>
+                <option value="contrast">High Contrast</option>
+                <option value="light">Light</option>
+                <option value="paper">Paper</option>
+                <option value="sky">Sky</option>
+                <option value="rose">Rose</option>
+              </select>
+            </div>
             <div className="m-row m-notify" data-testid="m-notify"><span>Alerts</span>
               <span className="m-notify-opts">
                 {([["done", "Done"], ["error", "Errors"], ["permission", "Approvals"], ["sound", "Sound"]] as const).map(([k, label]) => (

@@ -100,7 +100,7 @@ export default function App() {
   }, []);
   const retryRef = useRef<((t: string) => void) | null>(null);
   const [loadingChats, setLoadingChats] = useState<Set<string>>(() => new Set());
-  const [settingsSection, setSettingsSection] = useState<"connection" | "devices" | "providers" | "agent" | "appearance" | undefined>();
+  const [settingsSection, setSettingsSection] = useState<"connection" | "devices" | "providers" | "agent" | "appearance" | "shortcuts" | undefined>();
   const [palette, setPalette] = useState(false);
   const [toolsTab, setToolsTab] = useState<ToolsTab>();
   const openTools = (t: ToolsTab) => { setToolsTab(t); setView("tools"); };
@@ -545,6 +545,27 @@ export default function App() {
   }, [theme]);
   const fontSize = data.settings.fontSize;
   useEffect(() => { document.documentElement.style.setProperty("--fs", `${fontSize ?? 14}px`); }, [fontSize]);
+
+  const density = data.settings.density;
+  const boxStyle = data.settings.boxStyle;
+  const promptGlyph = data.settings.promptGlyph;
+  const monoFont = data.settings.monoFont;
+  const reduceMotion = data.settings.reduceMotion;
+  const scanlines = data.settings.scanlines;
+  const cursorStyle = data.settings.cursorStyle;
+  const accent = data.settings.accent;
+  useEffect(() => {
+    const root = document.documentElement;
+    if (density) root.dataset.density = density; else delete root.dataset.density;
+    if (boxStyle) root.dataset.boxStyle = boxStyle; else delete root.dataset.boxStyle;
+    if (accent && accent !== "theme") root.dataset.accent = accent; else delete root.dataset.accent;
+    if (monoFont) root.dataset.fontPref = monoFont; else delete root.dataset.fontPref;
+    if (scanlines) root.dataset.scanlines = "true"; else delete root.dataset.scanlines;
+    if (cursorStyle) root.dataset.cursorStyle = cursorStyle; else delete root.dataset.cursorStyle;
+    if (promptGlyph) root.style.setProperty("--prompt-glyph", `"${promptGlyph}"`);
+    else root.style.removeProperty("--prompt-glyph");
+    if (reduceMotion) root.dataset.reduceMotion = "true"; else delete root.dataset.reduceMotion;
+  }, [density, boxStyle, monoFont, promptGlyph, reduceMotion, scanlines, cursorStyle, accent]);
 
   // First desktop run: optional test provider from the environment (key goes straight to secure storage).
   useEffect(() => {
@@ -1103,7 +1124,7 @@ export default function App() {
     sess.commands.length > 0 ? sess.commands : ((clientRef.current?.initResult?._meta as any)?.availableCommands ?? []);
 
   const setTheme = (t: string) => update((d) => ({ ...d, settings: { ...d.settings, theme: t } }));
-  const openSettings = (section?: "connection" | "devices" | "providers" | "agent" | "appearance") => { setSettingsSection(section); setView("settings"); };
+  const openSettings = (section?: "connection" | "devices" | "providers" | "agent" | "appearance" | "shortcuts") => { setSettingsSection(section); setView("settings"); };
 
   // ---- Composer: slash commands ----
   const realModel = agentModel(configOptions);
@@ -1519,13 +1540,35 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const copyMsg = (txt: string, idx: number) => {
+    void navigator.clipboard?.writeText(txt);
+    setCopiedIdx(idx);
+    setTimeout(() => setCopiedIdx(null), 1500);
+  };
+
   const renderItem = useCallback(
     (m: ChatItem, i: number) =>
       m.kind === "thought" ? <Thought text={m.text} index={i} />
       : m.kind === "tool" ? (
         sess.toolCalls[m.toolCallId] ? <ToolCard tc={sess.toolCalls[m.toolCallId]} /> : null
       ) : m.kind === "agent" ? (
-        <div className="bubble agent"><Markdown text={m.text} /></div>
+        <div className="warp-block agent-block">
+          <div className="block-toolbar row between">
+            <span className="block-badge"><strong style={{ color: "var(--acc)" }}>{data.settings.promptGlyph ?? "❯"} [ AGENT ]</strong></span>
+            <div className="block-acts">
+              <button
+                type="button"
+                className="icon sm"
+                title="Copy markdown"
+                onClick={() => copyMsg(m.text, i)}
+              >
+                {copiedIdx === i ? <span className="copy-ok">✓ Copied</span> : <Icon name="copy" size={13} />}
+              </button>
+            </div>
+          </div>
+          <div className="bubble agent"><Markdown text={m.text} /></div>
+        </div>
       ) : (m as any).changes ? (
         <div className="turn-changes" data-testid="turn-changes"><Icon name="code" size={13} /> {m.text} <span className="muted small">{((m as any).changes as string[]).map((x) => x.split("/").pop()).slice(0, 3).join(", ")}</span><div style={{ flex: 1 }} /><button className="secondary compact" data-testid="turn-review" onClick={() => openPanel("changes")}>Review</button></div>
       ) : (m as any).error ? (
@@ -1538,9 +1581,32 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div className={`bubble ${m.kind}`}>{(m as any).from && <span className="from"><Icon name="phone" size={11} /> {(m as any).from}</span>}{m.text}{(m as any).attachments?.length > 0 && <span className="att-names" data-testid="bubble-attachments">{(m as any).attachments.map((n: string) => <span key={n} className="att-name"><Icon name="file" size={11} /> {n}</span>)}</span>}</div>
+        <div className="warp-block user-block">
+          <div className="block-toolbar row between">
+            <span className="block-badge">[ YOU ]</span>
+            <div className="block-acts">
+              <button
+                type="button"
+                className="icon sm"
+                title="Tweak prompt in composer"
+                onClick={() => { setDraft(m.text); composerRef.current?.focus(); }}
+              >
+                <Icon name="edit" size={13} />
+              </button>
+              <button
+                type="button"
+                className="icon sm"
+                title="Copy prompt"
+                onClick={() => copyMsg(m.text, i)}
+              >
+                {copiedIdx === i ? <span className="copy-ok">✓ Copied</span> : <Icon name="copy" size={13} />}
+              </button>
+            </div>
+          </div>
+          <div className={`bubble ${m.kind}`}>{(m as any).from && <span className="from"><Icon name="phone" size={11} /> {(m as any).from}</span>}{m.text}{(m as any).attachments?.length > 0 && <span className="att-names" data-testid="bubble-attachments">{(m as any).attachments.map((n: string) => <span key={n} className="att-name"><Icon name="file" size={11} /> {n}</span>)}</span>}</div>
+        </div>
       ),
-    [sess.toolCalls],
+    [sess.toolCalls, data.settings.promptGlyph, copiedIdx],
   );
 
   return (
@@ -1718,16 +1784,30 @@ export default function App() {
                 {sess.items.length === 0 && !isBusy && !(activeChat && loadingChats.has(activeChat.id)) && (
                   <div className="empty chat-start fade-in" data-testid="chat-start">
                     <LogoMark />
+                    <div className="workspace-hud">
+                      <div className="hud-line">
+                        <span className="hud-pill"><strong>WORKSPACE</strong> {active ? active.project.name : "none"}</span>
+                        <span className="hud-pill"><strong>STATUS</strong> {conn === "open" ? "ACP Connected" : "Connecting…"}</span>
+                        <span className="hud-pill"><strong>MODEL</strong> {shownModel(realModel, data.settings.lastModel, baseModel?.currentValue) || "Autonomous Agent"}</span>
+                      </div>
+                      <p className="hud-sub">Minimalist Developer Architecture · Zed & Warp Shell</p>
+                    </div>
                     <h2>{active ? active.project.name : "No project open"}</h2>
                     <p>{active ? "What should we work on?" : "Add a project in the sidebar, then start a chat."}</p>
                     {active && (
-                      <div className="start-pills">
+                      <div className="start-pills start-cards-grid">
                         {[
-                          ["Explain this project", "Explain how this project is structured."],
-                          ["Find a bug", "Look for a bug in the current project and tell me what is wrong."],
-                          ["Review changes", "Review the uncommitted changes and summarize them."],
-                        ].map(([label, text]) => (
-                          <button key={label} type="button" title="Put this in the message box" onClick={() => setDraftCaret(text)}>{label}</button>
+                          ["Explain this project", "Explain how this project is structured.", "$ explain-architecture", "code"],
+                          ["Find a bug", "Look for a bug in the current project and tell me what is wrong.", "$ run-diagnostics", "search"],
+                          ["Review changes", "Review the uncommitted changes and summarize them.", "$ git-diff-review", "file"],
+                        ].map(([label, text, cmd, icon]) => (
+                          <button key={label} type="button" className="start-card" title="Put this in the message box" onClick={() => setDraftCaret(text)}>
+                            <div className="start-card-cmd row between">
+                              <span><Icon name={icon as any} size={13} /> {cmd}</span>
+                              <kbd>↵</kbd>
+                            </div>
+                            <span className="start-card-lbl">{label}</span>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -1818,6 +1898,34 @@ export default function App() {
               ) : (
                 <button className="round" aria-label="Send" title="Send (Enter)" onClick={() => void send()} disabled={conn !== "open" || !active || (!draft.trim() && !atts.length)}><Icon name="send" /><span className="sr">Send</span></button>
               )}
+            </div>
+            <div className="composer-toolbar row">
+              <button
+                type="button"
+                className="comp-tool-chip ghost sm"
+                title="Reference a file from workspace (@)"
+                onClick={() => { setDraft((d) => d + (d.endsWith(" ") || !d ? "@" : " @")); composerRef.current?.focus(); }}
+              >
+                <span>@</span> file
+              </button>
+              <button
+                type="button"
+                className="comp-tool-chip ghost sm"
+                title="Run slash command (/)"
+                onClick={() => { setDraft((d) => d + (d.endsWith(" ") || !d ? "/" : " /")); composerRef.current?.focus(); }}
+              >
+                <span>/</span> command
+              </button>
+              <button
+                type="button"
+                className={`comp-tool-chip ghost sm ${data.settings.alwaysApprove ? "active" : ""}`}
+                title="Toggle Auto-approve permissions"
+                onClick={() => update((d) => ({ ...d, settings: { ...d.settings, alwaysApprove: !d.settings.alwaysApprove } }))}
+              >
+                <Icon name="bolt" size={11} /> {data.settings.alwaysApprove ? "Auto-Approve" : "Safe Mode"}
+              </button>
+              <div className="spacer" />
+              <span className="muted comp-char-count">{draft.length > 0 ? `${draft.length} chars` : ""}</span>
             </div>
             <p className="hint" data-testid="composer-hint">
               {conn !== "open"

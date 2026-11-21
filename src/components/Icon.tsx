@@ -10,7 +10,7 @@ const P: Record<string, string> = {
   panelLeft: "M3 4h18v16H3zM9 4v16",
   panelRight: "M3 4h18v16H3zM15 4v16",
   code: "m8 7-5 5 5 5M16 7l5 5-5 5",
-  send: "M22 2 11 13M22 2l-7 20-4-9-9-4Z",
+  send: "M12 19V5M5 12l7-7 7 7",
   stop: "M6 6h12v12H6z",
   folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z",
   chat: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z",
@@ -28,6 +28,7 @@ const P: Record<string, string> = {
   qr: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM18 18h3v3h-3z",
   laptop: "M4 5h16v11H4zM2 19h20",
   arrowLeft: "M19 12H5M12 19l-7-7 7-7",
+  copy: "M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M16 4h2a2 2 0 0 1 2 2v4M21 14H11a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2Z",
 };
 
 export function Icon({ name, size = 16, title, className }: { name: keyof typeof P | string; size?: number; title?: string; className?: string }) {

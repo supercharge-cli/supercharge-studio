@@ -52,7 +52,12 @@ export const ToolCard = memo(function ToolCard({ tc, compact }: { tc: ToolCall; 
         <span className="chev"><Icon name="chevronDown" size={14} /></span>
       </button>
       <div className="tc-collapse"><div className="tc-inner">
-        {typeof cmd === "string" && <pre className="mono tc-cmd">$ {cmd}</pre>}
+        {typeof cmd === "string" && (
+          <div className="tc-cmd-wrap row between">
+            <pre className="mono tc-cmd">$ {cmd}</pre>
+            <button className="icon sm" title="Copy command" onClick={(e) => { e.stopPropagation(); void navigator.clipboard.writeText(cmd); }}><Icon name="copy" size={12} /></button>
+          </div>
+        )}
         {tc.locations.map((l, i) => (
           <div key={i} className="muted mono">{l.path}{l.line ? `:${l.line}` : ""}</div>
         ))}
