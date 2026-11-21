@@ -395,6 +395,11 @@ impl Telemetry {
     /// The phone only reports its own connection and errors; its chats run through the desktop
     /// app, which counts them, so nothing is counted twice.
     pub fn track(&self, event: &str, props: &Value) -> bool {
+        // The UI may name a feature it used, but only one from [`FEATURES`] (nothing else is sent).
+        if event == "feature_used" {
+            let name = props.get("feature").and_then(Value::as_str).and_then(|n| FEATURES.iter().copied().find(|f| *f == n));
+            return self.component != "mobile" && name.is_some_and(|n| self.feature(n));
+        }
         if !self.usage_enabled() || !JS_EVENTS.contains(&event) || (self.component == "mobile" && !matches!(event, "agent_connected" | "error")) {
             return false;
         }
@@ -1274,6 +1279,18 @@ mod tests {
         assert!(m.track("agent_connected", &Value::Null));
         assert_eq!(m.usage_event("app_opened", Default::default()).unwrap()["properties"]["platform"], if cfg!(target_os = "ios") { "ios" } else { "android" });
         let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn ui_feature_names_are_allowlisted() {
+        let (base, _rx) = mock();
+        let t = Telemetry::new(cfg(&base), "desktop", "1.0.1", &tmp("ui-feature"), false);
+        assert!(t.track("feature_used", &json!({ "feature": "provider_setup" })));
+        assert!(!t.track("feature_used", &json!({ "feature": "provider_setup" })), "once per run");
+        assert!(!t.track("feature_used", &json!({ "feature": "sk-secret" })));
+        assert!(!t.track("feature_used", &Value::Null));
+        let m = Telemetry::new(cfg(&base), "mobile", "1.0.1", &tmp("ui-feature-phone"), false);
+        assert!(!m.track("feature_used", &json!({ "feature": "provider_setup" })));
     }
 
     #[test]
