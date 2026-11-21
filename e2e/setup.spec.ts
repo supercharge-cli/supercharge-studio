@@ -102,8 +102,9 @@ test("desktop: Nous Research signs in with a device code, then picks a model", a
 
 test("desktop: enter custom model id + optional fields from provider setup without fetching", async ({ page }) => {
   await openSetup(page);
+  // Pick the row once the catalog has loaded (Enter before it arrives selects nothing).
   await page.getByTestId("setup-filter").fill("groq");
-  await page.getByTestId("setup-filter").press("Enter");
+  await page.getByTestId("setup-p-groq").click();
   await page.getByTestId("setup-f-chat_completions").click();
   await page.getByTestId("setup-key").fill("gsk-good");
   await page.getByTestId("setup-enter-model").click();
